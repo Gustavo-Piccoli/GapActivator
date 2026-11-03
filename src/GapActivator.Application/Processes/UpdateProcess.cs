@@ -16,6 +16,7 @@ internal sealed class UpdateProcessHandler(
     {
         ArgumentNullException.ThrowIfNull(command);
         ProcessDefinition definition = command.Definition;
+        DateTimeOffset now = time.GetUtcNow();
 
         Process process = await processes.GetByIdAsync(command.Id, ct)
             ?? throw new CommandRejectedException(RejectionCodes.NotFound, $"Process {command.Id} was not found.");
@@ -39,8 +40,8 @@ internal sealed class UpdateProcessHandler(
             definition.Kind,
             mapper.MapLaunch(definition, process),
             ProcessDefinitionMapper.MapLimits(definition),
-            mapper.MapSchedules(definition, process),
-            time.GetUtcNow());
+            mapper.MapSchedules(definition, process, now),
+            now);
 
         return await ProcessSavedFactory.CreateAsync(processes, process, ct);
     }

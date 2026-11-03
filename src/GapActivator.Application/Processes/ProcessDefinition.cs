@@ -12,7 +12,12 @@ public enum ScheduleInputKind
 public sealed record ScheduleInput(Guid? Id, ScheduleInputKind Kind, DateTimeOffset At, string? Rule);
 
 /// <summary>A secret with a null <paramref name="Value"/> keeps the stored secret of that name.</summary>
-public sealed record EnvironmentVariableInput(string Name, string? Value, bool IsSecret);
+public sealed record EnvironmentVariableInput(string Name, string? Value, bool IsSecret)
+{
+    /// <summary>Masks a secret value so a logged or displayed command never exposes it.</summary>
+    public override string ToString() =>
+        $"EnvironmentVariableInput {{ Name = {Name}, Value = {(Value is null ? "null" : IsSecret ? "***" : Value)}, IsSecret = {IsSecret} }}";
+}
 
 public sealed record ProcessDefinition(
     string Name,

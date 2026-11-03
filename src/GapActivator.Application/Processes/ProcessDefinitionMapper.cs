@@ -9,8 +9,7 @@ namespace GapActivator.Application.Processes;
 /// <summary>Turns a <see cref="ProcessDefinition"/> into domain values; shared by register and update.</summary>
 internal sealed class ProcessDefinitionMapper(
     ISecretProtector protector,
-    IOccurrenceCalculator calculator,
-    TimeProvider time)
+    IOccurrenceCalculator calculator)
 {
     public static ExecutionLimits MapLimits(ProcessDefinition definition) =>
         new(definition.TimeLimit, definition.GracePeriod);
@@ -18,7 +17,7 @@ internal sealed class ProcessDefinitionMapper(
     public LaunchOptions MapLaunch(ProcessDefinition definition, Process? existing)
     {
         var variables = new List<EnvironmentVariable>();
-        foreach (EnvironmentVariableInput input in definition.Environment ?? [])
+        foreach (EnvironmentVariableInput input in definition.Environment)
         {
             variables.Add(MapVariable(input, existing));
         }
@@ -34,13 +33,12 @@ internal sealed class ProcessDefinitionMapper(
     /// Builds the schedules. An input that carries the Id of an existing schedule with an identical definition keeps
     /// that instance; every other input becomes a new schedule (Q-12, Q-13).
     /// </summary>
-    public List<Schedule> MapSchedules(ProcessDefinition definition, Process? existing)
+    public List<Schedule> MapSchedules(ProcessDefinition definition, Process? existing, DateTimeOffset now)
     {
-        DateTimeOffset now = time.GetUtcNow();
         var used = new HashSet<ScheduleId>();
         var result = new List<Schedule>();
 
-        foreach (ScheduleInput input in definition.Schedules ?? [])
+        foreach (ScheduleInput input in definition.Schedules)
         {
             RecurrenceRule? rule = ParseRule(input);
             Schedule? kept = FindUnchanged(existing, input, rule, used);
