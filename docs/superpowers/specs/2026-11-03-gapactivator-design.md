@@ -208,6 +208,9 @@ Disable and delete (builder's call, confirmed in design review):
 - An exhausted recurrence (COUNT reached, UNTIL passed) simply finishes: no next occurrence, no error.
 - A manual run (run now) consumes the occurrences that are due at its start, like a scheduled run (owner decision).
 - Occurrences that came due while a process was **Disabled** or **Blocked** are **discarded** when it is enabled or unblocked: no catch-up run; the process waits for its next future occurrence (owner decision). "Unblock and run" still runs at once because the run is manual.
+- A new recurring schedule ignores occurrences before the moment it is saved: its first run is the first occurrence at or after save time, and COUNT still counts from the anchor (owner decision).
+- A new or changed OneTime schedule whose instant is not in the future is rejected when saving (owner decision).
+- Occurrences that came due while the installation was **paused** are discarded on Resume: no catch-up run. Pending retries stay pending (owner decision).
 - Time-zone semantics: rules expand on the zone's wall clock; a nonexistent local time (spring forward) uses the pre-gap offset; an ambiguous local time (fall back) resolves to its first pass, so sub-daily rules run the repeated hour once.
 - RRULE frequency SECONDLY is rejected; MINUTELY and coarser are accepted; UNTIL has no artificial year range (owner decision).
 - **Known legacy bug, not to be reproduced:** an occurrence exactly equal to the reference instant was neither advanced nor considered (`<` in one place, `>` in the other), so the schedule could silently drop out. GapActivator must have a test for the equality case.
@@ -252,6 +255,7 @@ The app asks: "The process is already running. Do you want to cancel the current
 | Situation | Behavior |
 |---|---|
 | Run now on a blocked process | "Unblock and run" action. |
+| Run now on a disabled process | Allowed for RunToCompletion; rejected for Service kind (enable it to start) (owner decision). |
 | Cancel during Launching | Abort the launch; if the executable already started, signal it immediately. |
 | Cancel with nothing running | Command rejected: nothing to cancel. |
 | GapActivator stops or restarts during runs | Graceful cancel → **Interrupted**, not a failure. |

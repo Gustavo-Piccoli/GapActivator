@@ -13,14 +13,25 @@ public sealed class RecurringSchedule : Schedule
 
     public DateTimeOffset Anchor { get; }
 
-    public static RecurringSchedule Create(RecurrenceRule rule, DateTimeOffset anchor, IOccurrenceCalculator calculator)
+    public static RecurringSchedule Create(RecurrenceRule rule, DateTimeOffset anchor, IOccurrenceCalculator calculator) =>
+        Create(rule, anchor, anchor, calculator);
+
+    /// <summary>Occurrences before <paramref name="notBefore"/> are ignored; COUNT still counts from the anchor.</summary>
+    public static RecurringSchedule Create(
+        RecurrenceRule rule,
+        DateTimeOffset anchor,
+        DateTimeOffset notBefore,
+        IOccurrenceCalculator calculator)
     {
         ArgumentNullException.ThrowIfNull(rule);
         ArgumentNullException.ThrowIfNull(calculator);
 
+        var first = calculator.FirstOccurrence(rule, anchor);
         return new RecurringSchedule(ScheduleId.New(), rule, anchor)
         {
-            NextOccurrenceAt = calculator.FirstOccurrence(rule, anchor),
+            NextOccurrenceAt = first is { } f && f < notBefore
+                ? calculator.NextOccurrence(rule, anchor, notBefore.AddTicks(-1))
+                : first,
         };
     }
 

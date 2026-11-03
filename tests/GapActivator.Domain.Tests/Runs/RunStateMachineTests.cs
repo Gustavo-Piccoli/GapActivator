@@ -97,7 +97,7 @@ public class RunStateMachineTests
 
         run.MarkRunning(5, T0, T1);
         run.State.ShouldBe(RunState.Stopping);
-        var started = run.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<RunStarted>();
+        var started = run.DomainEvents.OfType<RunStarted>().ShouldHaveSingleItem();
         started.RunId.ShouldBe(run.Id);
         started.ProcessId.ShouldBe(run.ProcessId);
         started.Pid.ShouldBe(5);
@@ -156,6 +156,31 @@ public class RunStateMachineTests
     }
 
     [Fact]
+    public void RequestStop_FirstReason_RaisesRunStopRequested()
+    {
+        var run = Build(RunState.Running);
+
+        run.RequestStop(StopReason.UserCancel, T1);
+
+        var e = run.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<RunStopRequested>();
+        e.RunId.ShouldBe(run.Id);
+        e.ProcessId.ShouldBe(run.ProcessId);
+        e.Reason.ShouldBe(StopReason.UserCancel);
+        e.OccurredAt.ShouldBe(T1);
+    }
+
+    [Fact]
+    public void RequestStop_SecondReason_RaisesNothingMore()
+    {
+        var run = Build(RunState.Running);
+        run.RequestStop(StopReason.TimeLimit, T0);
+
+        run.RequestStop(StopReason.UserCancel, T1);
+
+        run.DomainEvents.OfType<RunStopRequested>().ShouldHaveSingleItem().Reason.ShouldBe(StopReason.TimeLimit);
+    }
+
+    [Fact]
     public void RequestStop_WhenCompleted_Throws()
     {
         var run = Build(RunState.Completed);
@@ -194,7 +219,7 @@ public class RunStateMachineTests
         run.Outcome.ShouldBe(expected);
         run.StartedAt.ShouldBeNull();
         run.Killed.ShouldBeFalse();
-        var completed = run.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<RunCompleted>();
+        var completed = run.DomainEvents.OfType<RunCompleted>().ShouldHaveSingleItem();
         completed.Outcome.ShouldBe(expected);
         completed.RunId.ShouldBe(run.Id);
         completed.ProcessId.ShouldBe(run.ProcessId);

@@ -12,6 +12,9 @@ public sealed record RunSkipped(RunId RunId, ProcessId ProcessId, DateTimeOffset
 public sealed record RunStarted(RunId RunId, ProcessId ProcessId, int Pid, DateTimeOffset OccurredAt)
     : IDomainEvent;
 
+public sealed record RunStopRequested(RunId RunId, ProcessId ProcessId, StopReason Reason, DateTimeOffset OccurredAt)
+    : IDomainEvent;
+
 public sealed record RunCompleted(
     RunId RunId,
     ProcessId ProcessId,
