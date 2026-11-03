@@ -39,5 +39,8 @@ public sealed record LaunchOptions
 
     public string? WorkingDirectory { get; }
 
+    /// <summary>The configured working directory, or the executable's folder when none is set.</summary>
+    public string EffectiveWorkingDirectory => WorkingDirectory ?? Path.GetDirectoryName(Executable.Value)!;
+
     public EnvironmentVariables Environment { get; }
 }

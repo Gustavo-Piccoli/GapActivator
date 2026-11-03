@@ -160,6 +160,20 @@ public class ValueObjectTests
     }
 
     [Fact]
+    public void EffectiveWorkingDirectory_Unset_IsExecutableFolder()
+    {
+        new LaunchOptions(ExecutablePath.Create(@"C:\Tools\backup.exe"), "", null, EnvironmentVariables.Empty)
+            .EffectiveWorkingDirectory.ShouldBe(@"C:\Tools");
+    }
+
+    [Fact]
+    public void EffectiveWorkingDirectory_Set_IsThatFolder()
+    {
+        new LaunchOptions(ExecutablePath.Create(@"C:\Tools\backup.exe"), "", @"D:\Work", EnvironmentVariables.Empty)
+            .EffectiveWorkingDirectory.ShouldBe(@"D:\Work");
+    }
+
+    [Fact]
     public void ExecutionLimits_PerProcessTimeLimit_WinsOverDefault()
     {
         new ExecutionLimits(TimeSpan.FromHours(2), null).EffectiveTimeLimit(TimeSpan.FromHours(8))
