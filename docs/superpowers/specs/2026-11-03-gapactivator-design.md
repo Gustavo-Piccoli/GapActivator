@@ -142,7 +142,8 @@ Fields (indicative; final names are the builder's call):
 - Kind: **RunToCompletion** or **Service** (long-running, must stay up while GapActivator runs; relaunched when it exits).
 - Executable path, arguments, working directory, environment variables.
 - Schedules (0..n, owned by the aggregate; see 6.4). A Service-kind process has no schedule; it runs whenever enabled.
-- Time limit (optional, per process; falls back to the installation default; none = unlimited).
+- Time limit (optional, per process; falls back to the installation default; none = unlimited). **Owner decision:** time limits never apply to Service-kind processes; a Service-kind registration with a per-process time limit is rejected.
+- Working directory default (owner decision): when not set, the executable's folder.
 - Cancellation grace period (per process; falls back to the installation default, 30 s).
 - Lifecycle state: **Enabled**, **Disabled** (manual pause, new), **Blocked** (failure limit reached).
 - Consecutive failure count.
@@ -204,6 +205,9 @@ Disable and delete (builder's call, confirmed in design review):
 - Next run of a process = the earliest next occurrence among its schedules.
 - Time zone: the machine's local time zone (legacy hard-coded a specific zone; removed).
 - Missed occurrences (machine off, service stopped): run **once**, then jump to the next future occurrence (legacy behavior). The run is flagged **late** in history.
+- An exhausted recurrence (COUNT reached, UNTIL passed) simply finishes: no next occurrence, no error.
+- A manual run (run now) consumes the occurrences that are due at its start, like a scheduled run (owner decision).
+- RRULE frequency SECONDLY is rejected; MINUTELY and coarser are accepted; UNTIL has no artificial year range (owner decision).
 - **Known legacy bug, not to be reproduced:** an occurrence exactly equal to the reference instant was neither advanced nor considered (`<` in one place, `>` in the other), so the schedule could silently drop out. GapActivator must have a test for the equality case.
 
 ### 6.5 Settings (installation)
@@ -212,9 +216,11 @@ Cycle interval, failure limit, default time limit, default cancellation grace pe
 
 The legacy "simplified log" flag (it only changed a log header) is replaced by the log level.
 
+**Pause (owner decision):** the installation can be **paused**. While paused, no new run starts — not by schedule, retry, run now, or Service-kind relaunch. Runs already active finish normally (controller's call; the owner may change it). The paused flag is persisted and survives restarts. Log retention is by age in days (files older than N days are deleted), replacing the legacy "keep the N newest folders".
+
 ### 6.6 Domain events
 
-At least: RunStarted, RunCompleted (with outcome), RunLate, RunSkipped, ProcessBlocked, ProcessUnblocked, ServiceProcessCrashed, CycleFailed, GapActivatorStarted, GapActivatorRestarted. Events are persisted as **run events** (history) and dispatched to notification handlers after the transaction commits.
+At least: RunStarted, RunCompleted (with outcome), RunLate, RunSkipped, ProcessBlocked, ProcessUnblocked, ServiceProcessCrashed, InstallationPaused, InstallationResumed, CycleFailed, GapActivatorStarted, GapActivatorRestarted. Events are persisted as **run events** (history) and dispatched to notification handlers after the transaction commits.
 
 ## 7. Child process contract
 
@@ -281,7 +287,7 @@ Legacy behavior preserved: a long-running run must never block the scheduling of
 ## 11. Installer and distribution
 
 - Inno Setup, **per machine** (admin required to register a service), x64 and ARM64.
-- Installs the service and the app; registers the service with recovery actions; creates the event source, the Operators group, data folders, and ACLs.
+- Installs the service and the app; registers the service with automatic (delayed) start and recovery actions "restart after 60 s" on every failure with the failure count reset after 1 day (owner decision); creates the event source, the Operators group, data folders, and ACLs.
 - Account page: virtual account (default) or a specific account (pre-filled with the current user; grants "Log on as a service").
 - **On the final page**: "Create a desktop shortcut" and "Create a Start Menu shortcut" (both checked), and "Launch GapActivator now".
 - Uninstaller removes the service and shortcuts; keeps data unless the user opts to delete it.
@@ -299,7 +305,7 @@ Legacy behavior preserved: a long-running run must never block the scheduling of
 
 ## 13. Behavior inventory from the legacy activator
 
-As the **first task of Plan 1** (most rules land in the domain), the builder writes an inventory of the legacy activator's rules (from its code and its ~435 unit tests), each marked **keep**, **redesign** (with the new rule), or **drop**, and turns every kept/redesigned rule into a test in the new codebase. The inventory lives in the new repo in neutral terms (no legacy names). The legacy repository is private and read-only for this work; its location is given to the builder outside this document, and nothing from it is copied. Known items are already captured in sections 6–9.
+As the **first task of Plan 1** (most rules land in the domain), the builder writes an inventory of the legacy activator's rules (from its code and its unit tests (216 unit and 36 integration tests)), each marked **keep**, **redesign** (with the new rule), or **drop**, and turns every kept/redesigned rule into a test in the new codebase. The inventory lives in the new repo in neutral terms (no legacy names). The legacy repository is private and read-only for this work; its location is given to the builder outside this document, and nothing from it is copied. Known items are already captured in sections 6–9.
 
 Known legacy defects, flagged rather than reproduced:
 
