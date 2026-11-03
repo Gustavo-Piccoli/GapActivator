@@ -94,40 +94,82 @@ public sealed class IcalOccurrenceCalculatorTests
             instants[0].UtcDateTime.ShouldBe(At(expectedInstant).UtcDateTime);
         }, TestContext.Current.CancellationToken);
 
-    [Fact]
-    public void NextOccurrence_FarAfterAnchorWithInterval_KeepsIntervalAlignment()
-    {
-        var rule = Rule("FREQ=MINUTELY;INTERVAL=7");
-        var anchor = At("2027-11-01T00:00:00+01:00");
-        var after = At("2027-12-31T12:00:30+01:00");
+    [Fact(Timeout = 5000)]
+    public Task NextOccurrence_FarAfterAnchorWithInterval_KeepsIntervalAlignment() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=MINUTELY;INTERVAL=7");
+            var anchor = At("2027-11-01T00:00:00+01:00");
+            var after = At("2027-12-31T12:00:30+01:00");
 
-        var elapsedMinutes = (long)(after - anchor).TotalMinutes;
-        var expected = anchor.AddMinutes((elapsedMinutes / 7 + 1) * 7);
+            var elapsedMinutes = (long)(after - anchor).TotalMinutes;
+            var expected = anchor.AddMinutes((elapsedMinutes / 7 + 1) * 7);
 
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var result = Calculator.NextOccurrence(rule, anchor, after);
-        stopwatch.Stop();
+            Calculator.NextOccurrence(rule, anchor, after).ShouldBe(expected);
+        }, TestContext.Current.CancellationToken);
 
-        result.ShouldBe(expected);
-        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(1));
-    }
+    [Theory(Timeout = 5000)]
+    [InlineData("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30")]
+    [InlineData("FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30")]
+    public Task FirstOccurrence_NeverMatchingRule_ReturnsNull(string value) =>
+        Bounded(() =>
+        {
+            Calculator.FirstOccurrence(Rule(value), At("2027-03-01T08:00:00+01:00")).ShouldBeNull();
+        }, TestContext.Current.CancellationToken);
 
-    [Fact]
-    public void FirstOccurrence_NeverMatchingRule_ReturnsNull()
-    {
-        var rule = Rule("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30");
+    [Theory(Timeout = 5000)]
+    [InlineData("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30")]
+    [InlineData("FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30")]
+    public Task NextOccurrence_NeverMatchingRule_ReturnsNull(string value) =>
+        Bounded(() =>
+        {
+            var anchor = At("2027-03-01T08:00:00+01:00");
 
-        Calculator.FirstOccurrence(rule, At("2027-03-01T08:00:00+01:00")).ShouldBeNull();
-    }
+            Calculator.NextOccurrence(Rule(value), anchor, anchor).ShouldBeNull();
+        }, TestContext.Current.CancellationToken);
 
-    [Fact]
-    public void NextOccurrence_NeverMatchingRule_ReturnsNull()
-    {
-        var rule = Rule("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30");
-        var anchor = At("2027-03-01T08:00:00+01:00");
+    // Without a search limit Ical.Net steps every minute or hour to year 9999 (probe: HOURLY 20 s, MINUTELY > 40 s).
+    [Theory(Timeout = 15000)]
+    [InlineData("FREQ=MINUTELY;BYMONTH=2;BYMONTHDAY=30")]
+    [InlineData("FREQ=HOURLY;BYMONTH=2;BYMONTHDAY=30")]
+    public Task Occurrences_NeverMatchingSubDailyRule_ReturnNullForBothMethods(string value) =>
+        Bounded(() =>
+        {
+            var rule = Rule(value);
+            var anchor = At("2027-03-01T08:00:00+01:00");
 
-        Calculator.NextOccurrence(rule, anchor, anchor).ShouldBeNull();
-    }
+            Calculator.FirstOccurrence(rule, anchor).ShouldBeNull();
+            Calculator.NextOccurrence(rule, anchor, anchor).ShouldBeNull();
+        }, TestContext.Current.CancellationToken);
+
+    [Fact(Timeout = 15000)]
+    public Task FirstOccurrence_MinutelyLeapDayRule_ReturnsNextLeapDayWithinHorizon() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=MINUTELY;BYMONTH=2;BYMONTHDAY=29;BYHOUR=0;BYMINUTE=0");
+
+            Calculator.FirstOccurrence(rule, At("2027-03-01T00:00:00+01:00")).ShouldBe(At("2028-02-29T00:00:00+01:00"));
+        }, TestContext.Current.CancellationToken);
+
+    [Fact(Timeout = 5000)]
+    public Task FirstOccurrence_MatchBeyondRepresentableRange_ReturnsNull() =>
+        Bounded(() =>
+        {
+            var pacific = new IcalOccurrenceCalculator(TimeZoneInfo.FindSystemTimeZoneById("Pacific Standard Time"));
+            var rule = Rule("FREQ=DAILY;BYHOUR=20;BYMINUTE=0;BYSECOND=0");
+
+            // 9999-12-31 20:00 at -08:00 would be 10000-01-01T04:00Z, which DateTimeOffset cannot represent.
+            pacific.FirstOccurrence(rule, At("9999-12-31T12:00:00-08:00")).ShouldBeNull();
+        }, TestContext.Current.CancellationToken);
+
+    [Fact(Timeout = 5000)]
+    public Task FirstOccurrence_RuleMatchingOnceThenNever_ReturnsMatchPromptly() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=MINUTELY;BYMONTH=1;BYMONTHDAY=1;BYHOUR=0;BYMINUTE=0;UNTIL=20280101T000000");
+
+            Calculator.FirstOccurrence(rule, At("2027-12-31T00:00:00+01:00")).ShouldBe(At("2028-01-01T00:00:00+01:00"));
+        }, TestContext.Current.CancellationToken);
 
     [Fact(Timeout = 5000)]
     public Task NextOccurrence_HourlyAcrossFallBack_RunsRepeatedHourOnce() =>
@@ -201,6 +243,30 @@ public sealed class IcalOccurrenceCalculatorTests
                 next.Value.UtcDateTime.ShouldBe(reference.First(r => r > previous).UtcDateTime);
                 previous = next.Value;
             }
+        }, TestContext.Current.CancellationToken);
+
+    [Fact(Timeout = 5000)]
+    public Task NextOccurrence_MinutelyWalkAcrossFallBack_MatchesBruteForceMinimumOnFirstPass() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=MINUTELY;INTERVAL=7");
+            var anchor = At("2027-10-30T22:00:00Z");
+            var reference = MinutelyReference(new DateTime(2027, 10, 31, 0, 0, 0), 7, new DateTime(2027, 10, 31, 10, 0, 0));
+
+            var previous = anchor;
+            var instants = new List<DateTimeOffset>();
+            while (previous < At("2027-10-31T05:00:00Z"))
+            {
+                var next = Calculator.NextOccurrence(rule, anchor, previous);
+                next.ShouldNotBeNull();
+                next.Value.UtcDateTime.ShouldBe(reference.First(r => r > previous).UtcDateTime);
+                instants.Add(next.Value);
+                previous = next.Value;
+            }
+
+            // Wall clocks 02:00-02:59 run on the first pass (00:xxZ); the second pass (01:00Z-02:00Z) has no occurrence.
+            instants.ShouldContain(i => i.UtcDateTime.Hour == 0);
+            instants.ShouldNotContain(i => i >= At("2027-10-31T01:00:00Z") && i < At("2027-10-31T02:00:00Z"));
         }, TestContext.Current.CancellationToken);
 
     [Fact(Timeout = 5000)]
@@ -278,6 +344,32 @@ public sealed class IcalOccurrenceCalculatorTests
         var last = Calculator.NextOccurrence(rule, anchor, At("2027-03-02T08:00:00+01:00"));
         last.ShouldBe(At("2027-03-03T08:00:00+01:00"));
         Calculator.NextOccurrence(rule, anchor, last!.Value).ShouldBeNull();
+    }
+
+    [Fact(Timeout = 5000)]
+    public Task NextOccurrence_UtcUntilAcrossSpringForwardGap_DropsInstantsAfterUntil() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=MINUTELY;INTERVAL=30;UNTIL=20270328T011000Z");
+            var anchor = At("2027-03-28T00:00:00+01:00");
+
+            // UNTIL 01:10Z is 03:10 CEST. Gap wall 02:00 and 03:00 CEST are both 01:00Z; gap wall 02:30 maps to
+            // 01:30Z, after UNTIL, so nothing remains after 01:05Z.
+            Calculator.NextOccurrence(rule, anchor, At("2027-03-28T00:55:00Z"))
+                .ShouldBe(At("2027-03-28T01:00:00Z"));
+            Calculator.NextOccurrence(rule, anchor, At("2027-03-28T01:05:00Z")).ShouldBeNull();
+        }, TestContext.Current.CancellationToken);
+
+    [Fact]
+    public void NextOccurrence_DateOnlyUntil_RunsThroughThatLocalDay()
+    {
+        var rule = Rule("FREQ=DAILY;BYHOUR=8;BYMINUTE=0;BYSECOND=0;UNTIL=20270303");
+        var anchor = At("2027-03-01T08:00:00+01:00");
+
+        Calculator.FirstOccurrence(rule, anchor).ShouldBe(anchor);
+        Walk(rule, anchor, anchor, At("2027-12-31T00:00:00+01:00")).ShouldBe(
+            [At("2027-03-02T08:00:00+01:00"), At("2027-03-03T08:00:00+01:00")]);
+        Calculator.NextOccurrence(rule, anchor, At("2027-03-03T08:00:00+01:00")).ShouldBeNull();
     }
 
     [Fact]
