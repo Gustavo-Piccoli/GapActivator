@@ -17,6 +17,12 @@ public class ValueObjectTests
     }
 
     [Fact]
+    public void ProcessId_New_ProducesVersion7Guid()
+    {
+        ProcessId.New().Value.Version.ShouldBe(7);
+    }
+
+    [Fact]
     public void ProcessName_Create_TrimsValue()
     {
         ProcessName.Create("  Nightly backup  ").Value.ShouldBe("Nightly backup");
@@ -61,15 +67,27 @@ public class ValueObjectTests
     [InlineData("backup.exe")]
     [InlineData("\"C:\\Tools\\a.exe\"")]
     [InlineData("C:\\Tools\\a|b.exe")]
+    [InlineData("C:\\Tools\\a\"b.exe")]
+    [InlineData("C:\\Tools\\a.exe\"")]
     public void ExecutablePath_Create_InvalidValue_Throws(string value)
     {
         Should.Throw<DomainException>(() => ExecutablePath.Create(value));
     }
 
     [Fact]
-    public void ExecutablePath_Create_TooLong_Throws()
+    public void ExecutablePath_Create_ExactlyAtMaxLength_Succeeds()
     {
-        Should.Throw<DomainException>(() => ExecutablePath.Create(@"C:\" + new string('a', 32_770)));
+        var path = @"C:\" + new string('a', ExecutablePath.MaxLength - 3);
+
+        ExecutablePath.Create(path).Value.Length.ShouldBe(32_767);
+    }
+
+    [Fact]
+    public void ExecutablePath_Create_OneOverMaxLength_Throws()
+    {
+        var path = @"C:\" + new string('a', ExecutablePath.MaxLength - 2);
+
+        Should.Throw<DomainException>(() => ExecutablePath.Create(path));
     }
 
     [Fact]
@@ -137,6 +155,60 @@ public class ValueObjectTests
     }
 
     [Fact]
+    public void EnvironmentVariables_Items_CannotBeCastToAMutableCollection()
+    {
+        var items = EnvironmentVariables.Create([EnvironmentVariable.Plain("A", "1")]).Items;
+
+        (items is EnvironmentVariable[]).ShouldBeFalse();
+        (items is List<EnvironmentVariable>).ShouldBeFalse();
+        Should.Throw<NotSupportedException>(() => ((IList<EnvironmentVariable>)items).Add(EnvironmentVariable.Plain("B", "2")));
+    }
+
+    [Fact]
+    public void EnvironmentVariables_Create_SourceMutatedAfterwards_DoesNotAffectInstance()
+    {
+        var source = new List<EnvironmentVariable> { EnvironmentVariable.Plain("A", "1") };
+        var vars = EnvironmentVariables.Create(source);
+
+        source.Add(EnvironmentVariable.Plain("B", "2"));
+
+        vars.Items.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void EnvironmentVariables_Create_NullElement_ThrowsArgumentNull()
+    {
+        Should.Throw<ArgumentNullException>(() => EnvironmentVariables.Create([EnvironmentVariable.Plain("A", "1"), null!]));
+    }
+
+    [Fact]
+    public void EnvironmentVariables_Create_NullCollection_ThrowsArgumentNull()
+    {
+        Should.Throw<ArgumentNullException>(() => EnvironmentVariables.Create(null!));
+    }
+
+    [Fact]
+    public void EnvironmentVariables_Equality_SameItemsSameOrder_AreEqual()
+    {
+        var first = EnvironmentVariables.Create([EnvironmentVariable.Plain("A", "1"), EnvironmentVariable.Plain("B", "2")]);
+        var second = EnvironmentVariables.Create([EnvironmentVariable.Plain("A", "1"), EnvironmentVariable.Plain("B", "2")]);
+
+        first.ShouldBe(second);
+        first.GetHashCode().ShouldBe(second.GetHashCode());
+        EnvironmentVariables.Create([]).ShouldBe(EnvironmentVariables.Empty);
+    }
+
+    [Fact]
+    public void EnvironmentVariables_Equality_DifferentOrderOrValues_AreNotEqual()
+    {
+        var baseline = EnvironmentVariables.Create([EnvironmentVariable.Plain("A", "1"), EnvironmentVariable.Plain("B", "2")]);
+
+        baseline.ShouldNotBe(EnvironmentVariables.Create([EnvironmentVariable.Plain("B", "2"), EnvironmentVariable.Plain("A", "1")]));
+        baseline.ShouldNotBe(EnvironmentVariables.Create([EnvironmentVariable.Plain("A", "1"), EnvironmentVariable.Plain("B", "3")]));
+        baseline.ShouldNotBe(EnvironmentVariables.Create([EnvironmentVariable.Plain("A", "1")]));
+    }
+
+    [Fact]
     public void LaunchOptions_Valid_Succeeds()
     {
         var options = new LaunchOptions(
@@ -146,10 +218,37 @@ public class ValueObjectTests
     }
 
     [Fact]
-    public void LaunchOptions_ArgumentsTooLong_Throws()
+    public void LaunchOptions_ArgumentsExactlyAtMaxLength_Succeeds()
+    {
+        var options = new LaunchOptions(
+            ExecutablePath.Create(@"C:\Tools\backup.exe"),
+            new string('x', LaunchOptions.MaxArgumentsLength),
+            null,
+            EnvironmentVariables.Empty);
+
+        options.Arguments.Length.ShouldBe(8_191);
+    }
+
+    [Fact]
+    public void LaunchOptions_ArgumentsOneOverMaxLength_Throws()
     {
         Should.Throw<DomainException>(() => new LaunchOptions(
-            ExecutablePath.Create(@"C:\Tools\backup.exe"), new string('x', 8_192), null, EnvironmentVariables.Empty));
+            ExecutablePath.Create(@"C:\Tools\backup.exe"),
+            new string('x', LaunchOptions.MaxArgumentsLength + 1),
+            null,
+            EnvironmentVariables.Empty));
+    }
+
+    [Fact]
+    public void LaunchOptions_SameValuesDifferentEnvironmentInstances_AreEqual()
+    {
+        LaunchOptions Build() => new(
+            ExecutablePath.Create(@"C:\Tools\backup.exe"),
+            "--fast",
+            null,
+            EnvironmentVariables.Create([EnvironmentVariable.Plain("MODE", "1")]));
+
+        Build().ShouldBe(Build());
     }
 
     [Fact]
@@ -210,5 +309,13 @@ public class ValueObjectTests
     {
         Should.Throw<DomainException>(() => new ExecutionLimits(null, TimeSpan.FromMinutes(10.1)));
         _ = new ExecutionLimits(null, TimeSpan.FromMinutes(10));
+    }
+
+    [Fact]
+    public void ExecutionLimits_GracePeriodOverMaximum_MessageStatesTheMaximum()
+    {
+        var exception = Should.Throw<DomainException>(() => new ExecutionLimits(null, ExecutionLimits.MaxGracePeriod.Add(TimeSpan.FromSeconds(1))));
+
+        exception.Message.ShouldContain($"{ExecutionLimits.MaxGracePeriod.TotalMinutes} minutes");
     }
 }

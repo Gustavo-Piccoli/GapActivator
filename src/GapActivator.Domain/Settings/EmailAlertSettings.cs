@@ -72,6 +72,16 @@ public sealed record EmailAlertSettings
         var recipientList = recipients.ToImmutableArray();
         var alertList = alerts.Distinct().Order().ToImmutableArray();
 
+        if (!Enum.IsDefined(tls))
+        {
+            throw new DomainException($"TLS mode '{tls}' is not valid.");
+        }
+
+        if (alertList.Any(alert => !Enum.IsDefined(alert)))
+        {
+            throw new DomainException("An alert kind is not valid.");
+        }
+
         if (enabled)
         {
             Validate(host, port, username, password, sender, recipientList, alertList);

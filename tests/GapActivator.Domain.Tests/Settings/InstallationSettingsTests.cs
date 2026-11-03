@@ -5,6 +5,8 @@ namespace GapActivator.Domain.Tests.Settings;
 
 public class InstallationSettingsTests
 {
+    private static readonly DateTimeOffset Now = new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+
     private static void Apply(
         InstallationSettings s,
         TimeSpan? cycle = null,
@@ -116,6 +118,18 @@ public class InstallationSettingsTests
     }
 
     [Fact]
+    public void Change_UndefinedLogLevel_ThrowsAndLeavesStateUnchanged()
+    {
+        var s = InstallationSettings.Default();
+
+        Should.Throw<DomainException>(() => s.Change(
+            TimeSpan.FromSeconds(10), 5, null, TimeSpan.FromSeconds(30), 7, 365, (LogLevel)99, false));
+
+        s.LogLevel.ShouldBe(LogLevel.Information);
+        s.CycleInterval.ShouldBe(TimeSpan.FromSeconds(60));
+    }
+
+    [Fact]
     public void Change_Invalid_LeavesStateUnchanged()
     {
         var s = InstallationSettings.Default();
@@ -140,8 +154,6 @@ public class InstallationSettingsTests
     [Fact]
     public void ChangeEmail_Null_Throws() =>
         Should.Throw<ArgumentNullException>(() => InstallationSettings.Default().ChangeEmail(null!));
-
-    private static readonly DateTimeOffset Now = new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
     public void Default_IsNotPaused() => InstallationSettings.Default().IsPaused.ShouldBeFalse();
@@ -182,6 +194,29 @@ public class InstallationSettingsTests
     [Fact]
     public void Resume_WhenNotPaused_Throws() =>
         Should.Throw<DomainException>(() => InstallationSettings.Default().Resume(Now));
+
+    [Fact]
+    public void Pause_WhenAlreadyPaused_RaisesNoExtraEvent()
+    {
+        var s = InstallationSettings.Default();
+        s.Pause(Now);
+
+        Should.Throw<DomainException>(() => s.Pause(Now.AddMinutes(1)));
+
+        s.IsPaused.ShouldBeTrue();
+        s.DomainEvents.ShouldHaveSingleItem().ShouldBe(new InstallationPaused(Now));
+    }
+
+    [Fact]
+    public void Resume_WhenNotPaused_RaisesNoEvent()
+    {
+        var s = InstallationSettings.Default();
+
+        Should.Throw<DomainException>(() => s.Resume(Now));
+
+        s.IsPaused.ShouldBeFalse();
+        s.DomainEvents.ShouldBeEmpty();
+    }
 
     [Fact]
     public void Change_DoesNotAlterPause()

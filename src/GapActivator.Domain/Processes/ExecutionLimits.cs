@@ -16,7 +16,7 @@ public sealed record ExecutionLimits
 
         if (gracePeriod is { } grace && (grace <= TimeSpan.Zero || grace > MaxGracePeriod))
         {
-            throw new DomainException("Grace period must be greater than zero and at most 10 minutes.");
+            throw new DomainException($"Grace period must be greater than zero and at most {MaxGracePeriod.TotalMinutes} minutes.");
         }
 
         TimeLimit = timeLimit;

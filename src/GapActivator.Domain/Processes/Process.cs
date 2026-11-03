@@ -210,8 +210,6 @@ public sealed class Process : AggregateRoot<ProcessId>
     /// <summary>Advances the due schedules and returns the earliest occurrence consumed, or null when none was due.</summary>
     private DateTimeOffset? ConsumeDue(DateTimeOffset now, IOccurrenceCalculator calculator)
     {
-        ArgumentNullException.ThrowIfNull(calculator);
-
         DateTimeOffset? earliest = null;
         foreach (var schedule in _schedules)
         {
