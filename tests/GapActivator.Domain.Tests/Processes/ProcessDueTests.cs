@@ -270,6 +270,15 @@ public class ProcessDueTests
         Should.Throw<ArgumentNullException>(() => process.Unblock(At(10, 30), null!));
     }
 
+    [Fact]
+    public void EvaluateDue_NoSchedulesAndNoRetry_IsNeverDue()
+    {
+        var process = new ProcessBuilder().Build();
+
+        process.EvaluateDue(At(8, 0), LateThreshold, Calculator).ShouldBe(DueDecision.NotDue);
+        process.EvaluateDue(At(23, 0), LateThreshold, Calculator).ShouldBe(DueDecision.NotDue);
+    }
+
     private static Process HourlyProcess() =>
         new ProcessBuilder().WithSchedule(RecurringSchedule.Create(Hourly, Anchor, Calculator)).Build();
 

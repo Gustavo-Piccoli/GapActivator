@@ -304,4 +304,28 @@ public class ProcessFailureTests
         Should.Throw<ArgumentOutOfRangeException>(() => process.ApplyRunOutcome(RunOutcome.Failed, 0, Now));
         Should.Throw<ArgumentOutOfRangeException>(() => process.EnforceFailureLimit(0, Now));
     }
+
+    [Theory]
+    [MemberData(nameof(AllOutcomes))]
+    public void ApplyRunOutcome_AnyOutcomeOnFreshProcess_NeverMakesCounterNegative(RunOutcome outcome)
+    {
+        var process = new ProcessBuilder().Build();
+
+        process.ApplyRunOutcome(outcome, FailureLimit, Now.AddMinutes(1));
+
+        process.ConsecutiveFailures.ShouldBeGreaterThanOrEqualTo(0);
+    }
+
+    [Fact]
+    public void ApplyRunOutcome_CancelledOnFreshProcess_DoesNotScheduleRetry()
+    {
+        var process = new ProcessBuilder().Build();
+
+        process.ApplyRunOutcome(RunOutcome.Cancelled, FailureLimit, Now.AddMinutes(1));
+
+        process.RetryPending.ShouldBeFalse();
+        process.EvaluateDue(Now.AddMinutes(2), TimeSpan.FromMinutes(2), Calculator).ShouldBe(DueDecision.NotDue);
+    }
+
+    public static TheoryData<RunOutcome> AllOutcomes() => [.. Enum.GetValues<RunOutcome>()];
 }

@@ -41,4 +41,20 @@ public class RecurrenceRuleTests
     {
         Should.Throw<DomainException>(() => RecurrenceRule.Parse(value));
     }
+
+    [Fact]
+    public void Parse_SameRuleDifferentCase_AreEqual()
+    {
+        RecurrenceRule.Parse("freq=daily;byhour=8").ShouldBe(RecurrenceRule.Parse(" FREQ=DAILY;BYHOUR=8; "));
+    }
+
+    [Theory]
+    [InlineData("FREQ=DAILY;UNTIL=20270301")]
+    [InlineData("FREQ=DAILY;UNTIL=20270301T000000Z")]
+    [InlineData("FREQ=DAILY;UNTIL=21501231T235959Z")]
+    [InlineData("FREQ=DAILY;UNTIL=18991231")]
+    public void Parse_UntilDateOrUtcDateTimeWithoutYearRange_IsAccepted(string value)
+    {
+        RecurrenceRule.Parse(value).Value.ShouldBe(value);
+    }
 }

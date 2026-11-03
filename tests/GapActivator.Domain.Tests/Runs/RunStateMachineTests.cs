@@ -301,4 +301,19 @@ public class RunStateMachineTests
 
         Should.Throw<DomainException>(() => run.Abandon(T1));
     }
+
+    [Fact]
+    public void Begin_RecordsProcessNameSnapshotKindAndTrigger()
+    {
+        var processId = ProcessId.New();
+
+        var run = Run.Begin(processId, Name, ProcessKind.Service, RunTrigger.ServiceKeepAlive, null, false, T0);
+
+        run.ProcessId.ShouldBe(processId);
+        run.ProcessNameSnapshot.ShouldBe(Name);
+        run.Kind.ShouldBe(ProcessKind.Service);
+        run.Trigger.ShouldBe(RunTrigger.ServiceKeepAlive);
+        run.StartedAt.ShouldBeNull();
+        run.EndedAt.ShouldBeNull();
+    }
 }

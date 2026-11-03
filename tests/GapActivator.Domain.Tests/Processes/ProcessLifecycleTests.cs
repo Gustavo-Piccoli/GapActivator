@@ -371,6 +371,19 @@ public class ProcessLifecycleTests
         inherited.EffectiveGracePeriod(TimeSpan.FromSeconds(30)).ShouldBe(TimeSpan.FromSeconds(30));
     }
 
+    [Fact]
+    public void Register_UndefinedKind_Throws()
+    {
+        Should.Throw<DomainException>(() => Process.Register(
+            ProcessName.Create("Nightly backup"),
+            string.Empty,
+            (ProcessKind)99,
+            SampleLaunch(),
+            new ExecutionLimits(null, null),
+            [],
+            Now));
+    }
+
     private static Process BlockedProcess()
     {
         var process = new ProcessBuilder().Build();
