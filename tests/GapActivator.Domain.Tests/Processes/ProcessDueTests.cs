@@ -1,3 +1,4 @@
+using GapActivator.Domain.Common;
 using GapActivator.Domain.Processes;
 using GapActivator.Domain.Runs;
 using GapActivator.Domain.Scheduling;
@@ -264,10 +265,69 @@ public class ProcessDueTests
     public void Unblock_NullCalculator_Throws()
     {
         var process = HourlyProcess();
-        process.EnforceFailureLimit(failureLimit: 1, At(7, 0));
         process.ApplyRunOutcome(RunOutcome.Failed, failureLimit: 1, At(7, 0));
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Blocked);
 
         Should.Throw<ArgumentNullException>(() => process.Unblock(At(10, 30), null!));
+
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Blocked);
+        process.NextScheduledAt.ShouldBe(At(8, 0));
+    }
+
+    [Fact]
+    public void Enable_NullCalculatorOnEnabledProcess_ThrowsArgumentNullBeforeTheLifecycleCheck()
+    {
+        var process = HourlyProcess();
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Enabled);
+
+        Should.Throw<ArgumentNullException>(() => process.Enable(At(10, 30), null!));
+    }
+
+    [Fact]
+    public void Unblock_NullCalculatorOnEnabledProcess_ThrowsArgumentNullBeforeTheLifecycleCheck()
+    {
+        var process = HourlyProcess();
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Enabled);
+
+        Should.Throw<ArgumentNullException>(() => process.Unblock(At(10, 30), null!));
+    }
+
+    [Fact]
+    public void Enable_WhenAlreadyEnabled_ThrowsAndLeavesSchedulesUnconsumed()
+    {
+        var process = HourlyProcess();
+        var updatedAt = process.UpdatedAt;
+
+        Should.Throw<DomainException>(() => process.Enable(At(10, 30), Calculator));
+
+        process.NextScheduledAt.ShouldBe(At(8, 0));
+        process.UpdatedAt.ShouldBe(updatedAt);
+        process.EvaluateDue(At(10, 30), LateThreshold, Calculator).ScheduledFor.ShouldBe(At(8, 0));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Unblock_WhenNotBlocked_ThrowsAndLeavesSchedulesAndStateUnconsumed(bool disabled)
+    {
+        var process = HourlyProcess();
+        process.ApplyRunOutcome(RunOutcome.Failed, failureLimit: 3, At(7, 0));
+        if (disabled)
+        {
+            process.Disable(At(7, 1));
+        }
+
+        var lifecycle = process.Lifecycle;
+        var updatedAt = process.UpdatedAt;
+        process.ClearDomainEvents();
+
+        Should.Throw<DomainException>(() => process.Unblock(At(10, 30), Calculator));
+
+        process.Lifecycle.ShouldBe(lifecycle);
+        process.ConsecutiveFailures.ShouldBe(1);
+        process.NextScheduledAt.ShouldBe(At(8, 0));
+        process.UpdatedAt.ShouldBe(updatedAt);
+        process.DomainEvents.ShouldBeEmpty();
     }
 
     [Fact]

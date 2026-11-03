@@ -19,6 +19,11 @@ public class RunOutcomeRulesTests
         RunOutcomeRules.EffectOf(outcome).ShouldBe(expected);
 
     [Fact]
-    public void EffectOf_CoversEveryOutcome() =>
-        Enum.GetValues<RunOutcome>().Length.ShouldBe(10);
+    public void EffectOf_EveryRunOutcomeValue_ReturnsADefinedEffectWithoutThrowing()
+    {
+        foreach (var outcome in Enum.GetValues<RunOutcome>())
+        {
+            Enum.IsDefined(RunOutcomeRules.EffectOf(outcome)).ShouldBeTrue($"outcome {outcome}");
+        }
+    }
 }
