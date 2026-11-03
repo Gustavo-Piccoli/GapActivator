@@ -9,16 +9,21 @@ namespace GapActivator.Infrastructure.Scheduling;
 /// <summary>Expands recurrence rules with Ical.Net, interpreting wall-clock times in a fixed time zone.</summary>
 /// <remarks>
 /// Rules expand on the wall clock of the configured zone: Ical.Net only sees floating date-times, and this class maps
-/// each wall-clock occurrence to an instant. A nonexistent local time (spring-forward gap) uses the pre-gap offset, so it
-/// can land on the same instant as a later wall-clock occurrence, which then does not run again. An ambiguous local time
-/// (fall-back overlap) resolves to its first pass, so sub-daily rules run the repeated hour once, and an anchor inside the
-/// repeated hour is treated as its wall-clock value. A UTC UNTIL is converted to the zone's wall clock, so it still
-/// bounds the series as an instant.
+/// each wall-clock occurrence to an instant. INTERVAL therefore counts wall-clock time, so the cadence shifts by the DST
+/// change across a transition. A nonexistent local time (spring-forward gap) uses the pre-gap offset; mapped gap times
+/// are ordered by instant together with the real post-gap occurrences, and two that land on the same instant run once.
+/// An ambiguous local time (fall-back overlap) resolves to its first pass, so sub-daily rules run the repeated hour once,
+/// and an anchor inside the repeated hour is treated as its wall-clock value; with COUNT, such an anchor spends a slot on
+/// the first pass, which lies before the anchor. A UTC UNTIL is converted to the zone's wall clock, so it still bounds
+/// the series as an instant.
 /// </remarks>
 public sealed class IcalOccurrenceCalculator(TimeZoneInfo timeZone) : IOccurrenceCalculator
 {
     // Wall-clock order and instant order can differ around a DST transition, so enumeration starts this far before the bound.
     private static readonly TimeSpan SearchMargin = TimeSpan.FromDays(1);
+
+    // Safe upper bound for any zone's spring-forward gap.
+    private static readonly TimeSpan LargestDstGap = TimeSpan.FromHours(2);
 
     public DateTimeOffset? FirstOccurrence(DomainRule rule, DateTimeOffset anchor) =>
         Find(rule, anchor, anchor, inclusive: true);
@@ -55,23 +60,44 @@ public sealed class IcalOccurrenceCalculator(TimeZoneInfo timeZone) : IOccurrenc
             }
         }
 
+        // Gap times use the pre-gap offset, so a later wall clock can map to an earlier instant. Instant order can only be
+        // inverted within the zone's DST gap, so after the first match the occurrences up to that window are compared too.
+        DateTimeOffset? earliest = null;
+        var windowEnd = DateTime.MaxValue;
         try
         {
             foreach (var occurrence in calendarEvent.GetOccurrences(Floating(start)))
             {
-                var instant = ToInstant(occurrence.Period.StartTime.Value);
-                if (inclusive ? instant >= bound : instant > bound)
+                var wallClock = occurrence.Period.StartTime.Value;
+                if (wallClock > windowEnd)
                 {
-                    return instant;
+                    break;
+                }
+
+                var instant = ToInstant(wallClock);
+                if (inclusive ? instant < bound : instant <= bound)
+                {
+                    continue;
+                }
+
+                if (earliest is null)
+                {
+                    windowEnd = wallClock + LargestDstGap;
+                }
+
+                if (earliest is null || instant < earliest)
+                {
+                    earliest = instant;
                 }
             }
         }
         catch (EvaluationOutOfRangeException)
         {
-            // A rule that never matches (e.g. February 30th) makes Ical.Net enumerate to year 9999 and throw: series exhausted.
+            // A rule that never matches again (e.g. February 30th) makes Ical.Net enumerate to year 9999 and throw:
+            // the series is exhausted after whatever was already found.
         }
 
-        return null;
+        return earliest;
     }
 
     private DateTime WallClock(DateTimeOffset value) => TimeZoneInfo.ConvertTime(value, timeZone).DateTime;
