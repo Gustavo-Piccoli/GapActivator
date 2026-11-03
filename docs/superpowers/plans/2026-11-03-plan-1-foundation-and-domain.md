@@ -34,7 +34,7 @@
 
 ## Execution notes
 
-- Repository: `D:\Respositórios\Pessoal\GapActivator` (already contains the spec commit on `main`). Confirm the branch with the owner before the first commit.
+- Repository: the GapActivator working copy (already contains the spec commit on `main`). Confirm the branch with the owner before the first commit.
 - Every task ends with `dotnet build -c Release` and `dotnet test -c Release` green, plus `dotnet format --verify-no-changes`.
 - Test naming: `Method_Condition_ExpectedResult`.
 
