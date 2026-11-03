@@ -7,8 +7,19 @@ using DomainRule = GapActivator.Domain.Scheduling.RecurrenceRule;
 namespace GapActivator.Infrastructure.Scheduling;
 
 /// <summary>Expands recurrence rules with Ical.Net, interpreting wall-clock times in a fixed time zone.</summary>
+/// <remarks>
+/// Rules expand on the wall clock of the configured zone: Ical.Net only sees floating date-times, and this class maps
+/// each wall-clock occurrence to an instant. A nonexistent local time (spring-forward gap) uses the pre-gap offset, so it
+/// can land on the same instant as a later wall-clock occurrence, which then does not run again. An ambiguous local time
+/// (fall-back overlap) resolves to its first pass, so sub-daily rules run the repeated hour once, and an anchor inside the
+/// repeated hour is treated as its wall-clock value. A UTC UNTIL is converted to the zone's wall clock, so it still
+/// bounds the series as an instant.
+/// </remarks>
 public sealed class IcalOccurrenceCalculator(TimeZoneInfo timeZone) : IOccurrenceCalculator
 {
+    // Wall-clock order and instant order can differ around a DST transition, so enumeration starts this far before the bound.
+    private static readonly TimeSpan SearchMargin = TimeSpan.FromDays(1);
+
     public DateTimeOffset? FirstOccurrence(DomainRule rule, DateTimeOffset anchor) =>
         Find(rule, anchor, anchor, inclusive: true);
 
@@ -17,27 +28,38 @@ public sealed class IcalOccurrenceCalculator(TimeZoneInfo timeZone) : IOccurrenc
 
     private DateTimeOffset? Find(DomainRule rule, DateTimeOffset anchor, DateTimeOffset bound, bool inclusive)
     {
-        var elapsed = IsElapsedAnchor(rule, anchor);
-        var anchorLocal = ToCalDateTime(anchor, elapsed);
+        var pattern = new Ical.Net.DataTypes.RecurrenceRule(rule.Value);
+        if (pattern.Until is { IsUtc: true } until)
+        {
+            // Ical.Net compares a UTC UNTIL with floating occurrences as plain date-times; keep UNTIL an instant.
+            var untilUtc = new DateTimeOffset(DateTime.SpecifyKind(until.Value, DateTimeKind.Unspecified), TimeSpan.Zero);
+            pattern.Until = Floating(WallClock(untilUtc));
+        }
+
+        var anchorWallClock = WallClock(anchor);
         var calendarEvent = new CalendarEvent
         {
-            Start = anchorLocal,
-            RecurrenceRule = new Ical.Net.DataTypes.RecurrenceRule(rule.Value),
+            Start = Floating(anchorWallClock),
+            RecurrenceRule = pattern,
         };
 
         // Without COUNT, enumeration can start near the bound (DTSTART keeps INTERVAL/BY* alignment);
         // with COUNT it must start at the anchor so the series is counted from there.
-        var start = anchorLocal;
-        if (!HasCount(rule) && bound > anchor)
+        var start = anchorWallClock;
+        if (pattern.Count is null && bound > anchor)
         {
-            start = ToCalDateTime(bound, elapsed);
+            var nearBound = WallClock(bound) - SearchMargin;
+            if (nearBound > start)
+            {
+                start = nearBound;
+            }
         }
 
         try
         {
-            foreach (var occurrence in calendarEvent.GetOccurrences(start))
+            foreach (var occurrence in calendarEvent.GetOccurrences(Floating(start)))
             {
-                var instant = ToInstant(occurrence.Period.StartTime);
+                var instant = ToInstant(occurrence.Period.StartTime.Value);
                 if (inclusive ? instant >= bound : instant > bound)
                 {
                     return instant;
@@ -52,32 +74,40 @@ public sealed class IcalOccurrenceCalculator(TimeZoneInfo timeZone) : IOccurrenc
         return null;
     }
 
-    private CalDateTime ToCalDateTime(DateTimeOffset value, bool utc) =>
-        utc
-            ? new CalDateTime(value.UtcDateTime)
-            : new CalDateTime(TimeZoneInfo.ConvertTime(value, timeZone).DateTime, timeZone.Id);
+    private DateTime WallClock(DateTimeOffset value) => TimeZoneInfo.ConvertTime(value, timeZone).DateTime;
 
-    // A wall-clock DTSTART cannot express the second pass of an ambiguous local time (Ical.Net resolves it to the
-    // first pass), so sub-daily rules anchored there run on UTC, where the series is elapsed-time arithmetic.
-    private bool IsElapsedAnchor(DomainRule rule, DateTimeOffset anchor)
+    private static CalDateTime Floating(DateTime wallClock) =>
+        new(DateTime.SpecifyKind(wallClock, DateTimeKind.Unspecified), hasTime: true);
+
+    private DateTimeOffset ToInstant(DateTime wallClock)
     {
-        var wallClock = TimeZoneInfo.ConvertTime(anchor, timeZone).DateTime;
-        return IsSubDaily(rule)
-            && timeZone.IsAmbiguousTime(wallClock)
-            && anchor.Offset < timeZone.GetAmbiguousTimeOffsets(wallClock).Max();
+        var local = DateTime.SpecifyKind(wallClock, DateTimeKind.Unspecified);
+        TimeSpan offset;
+        if (timeZone.IsAmbiguousTime(local))
+        {
+            offset = timeZone.GetAmbiguousTimeOffsets(local).Max();
+        }
+        else if (timeZone.IsInvalidTime(local))
+        {
+            offset = PreGapOffset(local);
+        }
+        else
+        {
+            offset = timeZone.GetUtcOffset(local);
+        }
+
+        return TimeZoneInfo.ConvertTime(new DateTimeOffset(local, offset), timeZone);
     }
 
-    private static bool IsSubDaily(DomainRule rule) =>
-        rule.Value.Contains("FREQ=HOURLY", StringComparison.OrdinalIgnoreCase)
-        || rule.Value.Contains("FREQ=MINUTELY", StringComparison.OrdinalIgnoreCase)
-        || rule.Value.Contains("FREQ=SECONDLY", StringComparison.OrdinalIgnoreCase);
-
-    private static bool HasCount(DomainRule rule) =>
-        rule.Value.Contains("COUNT=", StringComparison.OrdinalIgnoreCase);
-
-    private DateTimeOffset ToInstant(CalDateTime value)
+    // The last valid local time before a spring-forward gap carries the offset in effect before the gap.
+    private TimeSpan PreGapOffset(DateTime nonexistent)
     {
-        var utc = new DateTimeOffset(DateTime.SpecifyKind(value.AsUtc, DateTimeKind.Utc));
-        return TimeZoneInfo.ConvertTime(utc, timeZone);
+        var beforeGap = nonexistent;
+        while (timeZone.IsInvalidTime(beforeGap))
+        {
+            beforeGap = beforeGap.AddMinutes(-1);
+        }
+
+        return timeZone.GetUtcOffset(beforeGap);
     }
 }
