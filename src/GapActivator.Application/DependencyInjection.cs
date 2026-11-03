@@ -1,3 +1,5 @@
+using GapActivator.Application.Events;
+using GapActivator.Application.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -11,6 +13,14 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddSingleton(TimeProvider.System);
+
+        services.AddSingleton<WriteGate>();
+        services.AddSingleton<ICommandDispatcher, CommandDispatcher>();
+        services.AddSingleton<IQueryDispatcher, QueryDispatcher>();
+        services.AddScoped<CallerAccessor>();
+        services.AddScoped<AfterCommit>();
+        services.AddScoped<EventBuffer>();
+        services.AddScoped<EventPublisher>();
         return services;
     }
 }
