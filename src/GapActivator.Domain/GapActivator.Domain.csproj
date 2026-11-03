@@ -4,5 +4,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="GapActivator.Domain.Tests" />
+    <InternalsVisibleTo Include="GapActivator.Testing" />
+  </ItemGroup>
 
 </Project>
