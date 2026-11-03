@@ -68,6 +68,86 @@ public sealed class IcalOccurrenceCalculatorTests
             Should.NotThrow(() => Calculator.NextOccurrence(rule, anchor, first ?? anchor));
         }, TestContext.Current.CancellationToken);
 
+    // The horizon is a budget of consecutive unmatched FREQ x INTERVAL steps: 8 years rounded up to whole steps, at least
+    // one. 2027 + 4k is never a leap year, so a 4-year cycle has no leap day at all and exhausts its 2 steps.
+    [Fact(Timeout = 5000)]
+    public Task FirstOccurrence_YearlyIntervalFourLeapDayFromCommonYear_ReturnsNull() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=YEARLY;INTERVAL=4;BYMONTH=2;BYMONTHDAY=29");
+
+            Calculator.FirstOccurrence(rule, At("2027-03-01T08:00:00+01:00")).ShouldBeNull();
+        }, TestContext.Current.CancellationToken);
+
+    // From 2027-03-01 the third step (2036) is a leap year: 9 years out, still inside the rounded-up budget.
+    [Fact(Timeout = 5000)]
+    public Task FirstOccurrence_YearlyIntervalThreeLeapDayOnLastBudgetedStep_IsFound() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=YEARLY;INTERVAL=3;BYMONTH=2;BYMONTHDAY=29");
+
+            Calculator.FirstOccurrence(rule, At("2027-03-01T08:00:00+01:00")).ShouldBe(At("2036-02-29T08:00:00+01:00"));
+        }, TestContext.Current.CancellationToken);
+
+    // INTERVAL >= 9 would round the budget down to zero steps; at least one step is always searched.
+    [Theory(Timeout = 5000)]
+    [InlineData(9, "2036-03-01T08:00:00+01:00")]
+    [InlineData(20, "2047-03-01T08:00:00+01:00")]
+    public Task NextOccurrence_YearlyIntervalOfNineOrMore_StillFindsTheNextStep(int interval, string expected) =>
+        Bounded(() =>
+        {
+            var rule = Rule($"FREQ=YEARLY;INTERVAL={interval}");
+            var anchor = At("2027-03-01T08:00:00+01:00");
+
+            Calculator.NextOccurrence(rule, anchor, anchor).ShouldBe(At(expected));
+        }, TestContext.Current.CancellationToken);
+
+    // Hand-derived: 1 Mar 2029 is a Thursday and DST starts on 25 Mar 2029.
+    [Fact(Timeout = 15000)]
+    public Task NextOccurrence_LastWeekdayOfMonthFarFromAnchor_ReturnsLastWeekday() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1");
+            var anchor = At("2027-03-01T08:00:00+01:00");
+
+            // 31 Mar 2029 is a Saturday, so the last weekday is Friday the 30th (CEST).
+            var march = Calculator.NextOccurrence(rule, anchor, At("2029-03-01T00:00:00+01:00"));
+            march.ShouldBe(At("2029-03-30T08:00:00+02:00"));
+
+            // 30 Apr 2029 is a Monday.
+            Calculator.NextOccurrence(rule, anchor, march!.Value).ShouldBe(At("2029-04-30T08:00:00+02:00"));
+        }, TestContext.Current.CancellationToken);
+
+    [Fact(Timeout = 15000)]
+    public Task NextOccurrence_SecondTuesdayOfMonthFarFromAnchor_ReturnsSecondTuesday() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=MONTHLY;BYDAY=2TU");
+            var anchor = At("2027-03-01T08:00:00+01:00");
+
+            // Tuesdays in March 2029 are the 6th and 13th; the 13th is still CET.
+            var march = Calculator.NextOccurrence(rule, anchor, At("2029-03-01T00:00:00+01:00"));
+            march.ShouldBe(At("2029-03-13T08:00:00+01:00"));
+
+            // 1 Apr 2029 is a Sunday: Tuesdays are the 3rd and 10th.
+            Calculator.NextOccurrence(rule, anchor, march!.Value).ShouldBe(At("2029-04-10T08:00:00+02:00"));
+        }, TestContext.Current.CancellationToken);
+
+    [Fact(Timeout = 15000)]
+    public Task NextOccurrence_BiweeklyMondayFarFromAnchor_KeepsTwoWeekAlignment() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=WEEKLY;INTERVAL=2;BYDAY=MO");
+            var anchor = At("2027-03-01T08:00:00+01:00");
+
+            // 731 days after the anchor is 1 Mar 2029; 728 days (52 fortnights) is Monday 26 Feb 2029, so the next is 12 Mar.
+            var next = Calculator.NextOccurrence(rule, anchor, At("2029-03-01T00:00:00+01:00"));
+            next.ShouldBe(At("2029-03-12T08:00:00+01:00"));
+
+            // Wall-clock cadence: 08:00 local across the 25 Mar 2029 change.
+            Calculator.NextOccurrence(rule, anchor, next!.Value).ShouldBe(At("2029-03-26T08:00:00+02:00"));
+        }, TestContext.Current.CancellationToken);
+
     [Fact]
     public void FirstOccurrence_AnchorMatchesRule_ReturnsAnchor()
     {
@@ -129,7 +209,7 @@ public sealed class IcalOccurrenceCalculatorTests
     [Theory(Timeout = 5000)]
     [InlineData("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
     [InlineData("FREQ=DAILY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
-    public Task FirstOccurrence_NeverMatchingRule_ReturnsNull(string value) =>
+    public Task FirstOccurrence_NoMatchWithinHorizon_ReturnsNull(string value) =>
         Bounded(() =>
         {
             Calculator.FirstOccurrence(Rule(value), At("2027-03-01T08:00:00+01:00")).ShouldBeNull();
@@ -138,7 +218,7 @@ public sealed class IcalOccurrenceCalculatorTests
     [Theory(Timeout = 5000)]
     [InlineData("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
     [InlineData("FREQ=DAILY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
-    public Task NextOccurrence_NeverMatchingRule_ReturnsNull(string value) =>
+    public Task NextOccurrence_NoMatchWithinHorizon_ReturnsNull(string value) =>
         Bounded(() =>
         {
             var anchor = At("2027-03-01T08:00:00+01:00");
@@ -150,7 +230,7 @@ public sealed class IcalOccurrenceCalculatorTests
     [Theory(Timeout = 15000)]
     [InlineData("FREQ=MINUTELY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
     [InlineData("FREQ=HOURLY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
-    public Task Occurrences_NeverMatchingSubDailyRule_ReturnNullForBothMethods(string value) =>
+    public Task Occurrences_NoMatchWithinHorizonSubDailyRule_ReturnNullForBothMethods(string value) =>
         Bounded(() =>
         {
             var rule = Rule(value);

@@ -17,7 +17,10 @@ namespace GapActivator.Infrastructure.Scheduling;
 /// and an anchor inside the repeated hour is treated as its wall-clock value; with COUNT, such an anchor spends a slot on
 /// the first pass, which lies before the anchor. A UTC UNTIL is converted to the zone's wall clock and still bounds the
 /// series as an instant; a DATE-only UNTIL runs through the end of that local day. A rule with no occurrence within
-/// 8 years of the search start (or of its previous occurrence) is reported as exhausted.
+/// 8 years of the search start (or of its previous occurrence) is reported as exhausted. The limit counts consecutive
+/// unmatched FREQ x INTERVAL steps, 8 years rounded up to whole steps and at least one, so the effective reach can be
+/// a little over 8 years (INTERVAL=3 reaches 9) and an INTERVAL of 9 years or more still searches its next step; for
+/// example, FREQ=YEARLY;INTERVAL=4;BYMONTH=2;BYMONTHDAY=29 from 2027-03-01 never meets a leap year and is exhausted.
 /// </remarks>
 public sealed class IcalOccurrenceCalculator(TimeZoneInfo timeZone) : IOccurrenceCalculator
 {
