@@ -23,12 +23,16 @@ public sealed class InMemoryHistory(InMemoryStore store, InMemoryUnitOfWork unit
         ArgumentOutOfRangeException.ThrowIfLessThan(filter.PageSize, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(filter.PageSize, 200);
 
-        Run[] matching = [.. store.Runs.Values
-            .Where(r => filter.ProcessId is null || r.ProcessId == filter.ProcessId)
-            .Where(r => filter.Outcomes is null || (r.Outcome is { } outcome && filter.Outcomes.Contains(outcome)))
-            .Where(r => filter.From is null || r.CreatedAt >= filter.From)
-            .Where(r => filter.To is null || r.CreatedAt < filter.To)
-            .OrderByDescending(r => r.CreatedAt)];
+        Run[] matching;
+        lock (store.Sync)
+        {
+            matching = [.. store.Runs.Values
+                .Where(r => filter.ProcessId is null || r.ProcessId == filter.ProcessId)
+                .Where(r => filter.Outcomes is null || (r.Outcome is { } outcome && filter.Outcomes.Contains(outcome)))
+                .Where(r => filter.From is null || r.CreatedAt >= filter.From)
+                .Where(r => filter.To is null || r.CreatedAt < filter.To)
+                .OrderByDescending(r => r.CreatedAt)];
+        }
 
         Run[] page = [.. matching.Skip((filter.Page - 1) * filter.PageSize).Take(filter.PageSize)];
         foreach (Run run in page)
@@ -39,16 +43,26 @@ public sealed class InMemoryHistory(InMemoryStore store, InMemoryUnitOfWork unit
         return Task.FromResult(new RunPage(page, matching.Length));
     }
 
-    public Task<IReadOnlyList<HistoryEntry>> ListEntriesForRunAsync(RunId runId, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyList<HistoryEntry>>(
-            [.. store.History.Where(e => e.RunId == runId).OrderBy(e => e.OccurredAt)]);
+    public Task<IReadOnlyList<HistoryEntry>> ListEntriesForRunAsync(RunId runId, CancellationToken ct)
+    {
+        lock (store.Sync)
+        {
+            return Task.FromResult<IReadOnlyList<HistoryEntry>>(
+                [.. store.History.Where(e => e.RunId == runId).OrderBy(e => e.OccurredAt)]);
+        }
+    }
 
     public Task<IReadOnlyDictionary<ProcessId, Run>> LastCompletedRunsAsync(CancellationToken ct)
     {
-        Dictionary<ProcessId, Run> last = store.Runs.Values
-            .Where(r => r.State == RunState.Completed)
-            .GroupBy(r => r.ProcessId)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.EndedAt ?? r.CreatedAt).First());
+        Dictionary<ProcessId, Run> last;
+        lock (store.Sync)
+        {
+            last = store.Runs.Values
+                .Where(r => r.State == RunState.Completed)
+                .GroupBy(r => r.ProcessId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.EndedAt ?? r.CreatedAt).First());
+        }
+
         foreach (Run run in last.Values)
         {
             unitOfWork.Track(run);
@@ -57,21 +71,28 @@ public sealed class InMemoryHistory(InMemoryStore store, InMemoryUnitOfWork unit
         return Task.FromResult<IReadOnlyDictionary<ProcessId, Run>>(last);
     }
 
-    /// <summary>Removes completed runs ended before the cutoff, their entries and older run-less entries; returns the runs removed.</summary>
+    /// <summary>
+    /// Removes completed runs ended before the cutoff, their entries and older run-less entries; returns the runs
+    /// removed. It applies immediately, not on commit: it mirrors a set-based delete executed directly against the
+    /// store, outside the unit of work. It takes the store lock.
+    /// </summary>
     public Task<int> PurgeBeforeAsync(DateTimeOffset cutoff, CancellationToken ct)
     {
-        store.HistoryPurgeCutoffs.Add(cutoff);
-
-        RunId[] purgedRuns = [.. store.Runs.Values
-            .Where(r => r.State == RunState.Completed && r.EndedAt < cutoff)
-            .Select(r => r.Id)];
-        foreach (RunId id in purgedRuns)
+        lock (store.Sync)
         {
-            store.Runs.Remove(id);
-        }
+            store.HistoryPurgeCutoffs.Add(cutoff);
 
-        HashSet<RunId> purged = [.. purgedRuns];
-        store.History.RemoveAll(e => e.RunId is { } id ? purged.Contains(id) : e.OccurredAt < cutoff);
-        return Task.FromResult(purgedRuns.Length);
+            RunId[] purgedRuns = [.. store.Runs.Values
+                .Where(r => r.State == RunState.Completed && r.EndedAt < cutoff)
+                .Select(r => r.Id)];
+            foreach (RunId id in purgedRuns)
+            {
+                store.Runs.Remove(id);
+            }
+
+            HashSet<RunId> purged = [.. purgedRuns];
+            store.History.RemoveAll(e => e.RunId is { } id ? purged.Contains(id) : e.OccurredAt < cutoff);
+            return Task.FromResult(purgedRuns.Length);
+        }
     }
 }

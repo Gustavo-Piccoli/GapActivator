@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using GapActivator.Application.Ports;
 using GapActivator.Domain.Runs;
 using GapActivator.Domain.Settings;
@@ -55,11 +56,13 @@ public sealed class RecordingAppNotifier : IAppNotifier
 
 public sealed class FakeServiceControl : IServiceControl
 {
-    public int RestartCount { get; private set; }
+    private int _restartCount;
+
+    public int RestartCount => Volatile.Read(ref _restartCount);
 
     public Task RestartAsync(CancellationToken ct)
     {
-        RestartCount++;
+        Interlocked.Increment(ref _restartCount);
         return Task.CompletedTask;
     }
 }
@@ -72,14 +75,18 @@ public sealed class FakeLogRetention(InMemoryStore store) : ILogRetention
 
     public Task PurgeOlderThanAsync(int days, CancellationToken ct)
     {
-        store.LogRetentionDays.Add(days);
+        lock (store.Sync)
+        {
+            store.LogRetentionDays.Add(days);
+        }
+
         return Failure is null ? Task.CompletedTask : Task.FromException(Failure);
     }
 }
 
 public sealed class FakeRunOutputReader : IRunOutputReader
 {
-    public Dictionary<RunId, RunOutput> Outputs { get; } = [];
+    public ConcurrentDictionary<RunId, RunOutput> Outputs { get; } = [];
 
     public Task<RunOutput> ReadTailAsync(RunId runId, int maxBytes, CancellationToken ct) =>
         Task.FromResult(Outputs.GetValueOrDefault(runId) ?? new RunOutput(false, string.Empty, false));

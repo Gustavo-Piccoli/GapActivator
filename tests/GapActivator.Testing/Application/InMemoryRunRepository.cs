@@ -7,7 +7,12 @@ public sealed class InMemoryRunRepository(InMemoryStore store, InMemoryUnitOfWor
 {
     public Task<Run?> GetByIdAsync(RunId id, CancellationToken ct)
     {
-        Run? run = store.Runs.GetValueOrDefault(id);
+        Run? run;
+        lock (store.Sync)
+        {
+            run = store.Runs.GetValueOrDefault(id);
+        }
+
         if (run is not null)
         {
             unitOfWork.Track(run);
@@ -18,7 +23,12 @@ public sealed class InMemoryRunRepository(InMemoryStore store, InMemoryUnitOfWor
 
     public Task<Run?> GetActiveForProcessAsync(ProcessId processId, CancellationToken ct)
     {
-        Run? run = store.Runs.Values.FirstOrDefault(r => r.ProcessId == processId && r.State != RunState.Completed);
+        Run? run;
+        lock (store.Sync)
+        {
+            run = store.Runs.Values.FirstOrDefault(r => r.ProcessId == processId && r.State != RunState.Completed);
+        }
+
         if (run is not null)
         {
             unitOfWork.Track(run);
@@ -29,7 +39,12 @@ public sealed class InMemoryRunRepository(InMemoryStore store, InMemoryUnitOfWor
 
     public Task<IReadOnlyList<Run>> ListActiveAsync(CancellationToken ct)
     {
-        Run[] active = [.. store.Runs.Values.Where(r => r.State != RunState.Completed)];
+        Run[] active;
+        lock (store.Sync)
+        {
+            active = [.. store.Runs.Values.Where(r => r.State != RunState.Completed)];
+        }
+
         foreach (Run run in active)
         {
             unitOfWork.Track(run);
