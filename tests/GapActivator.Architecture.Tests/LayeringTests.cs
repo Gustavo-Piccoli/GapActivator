@@ -41,6 +41,30 @@ public class LayeringTests
         project.Descendants("ProjectReference").ShouldBeEmpty();
     }
 
+    [Fact]
+    public void Domain_SourceNeverReadsAClock()
+    {
+        string root = FindSolutionRoot();
+        string domainSource = Path.Combine(root, "src", "GapActivator.Domain");
+        Directory.Exists(domainSource).ShouldBeTrue($"Domain source folder not found at '{domainSource}'.");
+
+        string[] files = [.. Directory.EnumerateFiles(domainSource, "*.cs", SearchOption.AllDirectories)
+            .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                        && !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))];
+        files.ShouldNotBeEmpty($"No Domain source files found under '{domainSource}'.");
+
+        string[] forbidden =
+            ["DateTime.Now", "DateTime.UtcNow", "DateTimeOffset.Now", "DateTimeOffset.UtcNow", "TimeProvider", "Stopwatch"];
+
+        var offenders = files
+            .SelectMany(file => forbidden
+                .Where(token => File.ReadAllText(file).Contains(token, StringComparison.Ordinal))
+                .Select(token => $"{Path.GetRelativePath(root, file)}: {token}"))
+            .ToList();
+
+        offenders.ShouldBeEmpty("The domain must receive 'now' from callers and never read a clock.");
+    }
+
     private static string FindSolutionRoot()
     {
         DirectoryInfo? dir = new(AppContext.BaseDirectory);
