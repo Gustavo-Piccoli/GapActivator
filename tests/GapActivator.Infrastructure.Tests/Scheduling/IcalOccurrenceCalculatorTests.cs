@@ -39,9 +39,9 @@ public sealed class IcalOccurrenceCalculatorTests
     }
 
     [Theory]
-    [InlineData("2027-03-28T00:00:00+01:00", "2027-03-29T00:00:00+02:00")]
-    [InlineData("2027-10-31T00:00:00+02:00", "2027-11-01T00:00:00+01:00")]
-    public void NextOccurrence_DstTransitionDay_YieldsExactlyOneOccurrence(string dayStart, string dayEnd)
+    [InlineData("2027-03-28T00:00:00+01:00", "2027-03-29T00:00:00+02:00", "2027-03-28T01:30:00Z")]
+    [InlineData("2027-10-31T00:00:00+02:00", "2027-11-01T00:00:00+01:00", "2027-10-31T00:30:00Z")]
+    public void NextOccurrence_DstTransitionDay_YieldsExactlyOneOccurrenceAtExpectedInstant(string dayStart, string dayEnd, string expectedInstant)
     {
         var rule = Rule("FREQ=DAILY;BYHOUR=2;BYMINUTE=30;BYSECOND=0");
         var start = At(dayStart);
@@ -49,14 +49,68 @@ public sealed class IcalOccurrenceCalculatorTests
         var anchor = start.AddDays(-3);
 
         var count = 0;
+        var instants = new List<DateTimeOffset>();
         var cursor = Calculator.NextOccurrence(rule, anchor, start.AddTicks(-1));
         while (cursor is { } value && value < end)
         {
             count++;
+            instants.Add(value);
             cursor = Calculator.NextOccurrence(rule, anchor, value);
         }
 
         count.ShouldBe(1);
+        instants[0].UtcDateTime.ShouldBe(At(expectedInstant).UtcDateTime);
+    }
+
+    [Fact]
+    public void NextOccurrence_FarAfterAnchorWithInterval_KeepsIntervalAlignment()
+    {
+        var rule = Rule("FREQ=MINUTELY;INTERVAL=7");
+        var anchor = At("2027-11-01T00:00:00+01:00");
+        var after = At("2027-12-31T12:00:30+01:00");
+
+        var elapsedMinutes = (long)(after - anchor).TotalMinutes;
+        var expected = anchor.AddMinutes((elapsedMinutes / 7 + 1) * 7);
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var result = Calculator.NextOccurrence(rule, anchor, after);
+        stopwatch.Stop();
+
+        result.ShouldBe(expected);
+        stopwatch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public void FirstOccurrence_NeverMatchingRule_ReturnsNull()
+    {
+        var rule = Rule("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30");
+
+        Calculator.FirstOccurrence(rule, At("2027-03-01T08:00:00+01:00")).ShouldBeNull();
+    }
+
+    [Fact]
+    public void NextOccurrence_NeverMatchingRule_ReturnsNull()
+    {
+        var rule = Rule("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30");
+        var anchor = At("2027-03-01T08:00:00+01:00");
+
+        Calculator.NextOccurrence(rule, anchor, anchor).ShouldBeNull();
+    }
+
+    [Fact]
+    public void FirstOccurrence_AnchorInAmbiguousHourWithCount_StartsAtSecondOccurrenceOfWallClock()
+    {
+        var rule = Rule("FREQ=HOURLY;COUNT=3");
+        var anchor = At("2027-10-31T01:30:00Z");
+
+        var first = Calculator.FirstOccurrence(rule, anchor);
+        first.ShouldNotBeNull();
+        first.Value.UtcDateTime.ShouldBe(anchor.UtcDateTime);
+
+        var second = Calculator.NextOccurrence(rule, anchor, first.Value);
+        var third = Calculator.NextOccurrence(rule, anchor, second!.Value);
+        third.ShouldNotBeNull();
+        third.Value.UtcDateTime.ShouldBe(At("2027-10-31T03:30:00Z").UtcDateTime);
     }
 
     [Fact]
