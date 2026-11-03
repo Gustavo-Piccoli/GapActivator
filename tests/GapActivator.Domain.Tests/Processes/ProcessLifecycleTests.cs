@@ -273,7 +273,7 @@ public class ProcessLifecycleTests
         var process = new ProcessBuilder().Build();
         process.Disable(Now.AddMinutes(1));
 
-        process.Enable(Later);
+        process.Enable(Later, Calculator);
 
         process.Lifecycle.ShouldBe(ProcessLifecycle.Enabled);
         process.UpdatedAt.ShouldBe(Later);
@@ -284,7 +284,7 @@ public class ProcessLifecycleTests
     {
         var process = BlockedProcess();
 
-        process.Unblock(Later);
+        process.Unblock(Later, Calculator);
 
         process.Lifecycle.ShouldBe(ProcessLifecycle.Enabled);
         process.ConsecutiveFailures.ShouldBe(0);
@@ -296,7 +296,7 @@ public class ProcessLifecycleTests
     [Fact]
     public void Enable_WhenEnabled_Throws()
     {
-        Should.Throw<DomainException>(() => new ProcessBuilder().Build().Enable(Later));
+        Should.Throw<DomainException>(() => new ProcessBuilder().Build().Enable(Later, Calculator));
     }
 
     [Fact]
@@ -304,7 +304,7 @@ public class ProcessLifecycleTests
     {
         var process = BlockedProcess();
 
-        Should.Throw<DomainException>(() => process.Enable(Later));
+        Should.Throw<DomainException>(() => process.Enable(Later, Calculator));
         process.Lifecycle.ShouldBe(ProcessLifecycle.Blocked);
     }
 
@@ -329,7 +329,7 @@ public class ProcessLifecycleTests
     [Fact]
     public void Unblock_WhenEnabled_Throws()
     {
-        Should.Throw<DomainException>(() => new ProcessBuilder().Build().Unblock(Later));
+        Should.Throw<DomainException>(() => new ProcessBuilder().Build().Unblock(Later, Calculator));
     }
 
     [Fact]
@@ -338,7 +338,7 @@ public class ProcessLifecycleTests
         var process = new ProcessBuilder().Build();
         process.Disable(Now.AddMinutes(1));
 
-        Should.Throw<DomainException>(() => process.Unblock(Later));
+        Should.Throw<DomainException>(() => process.Unblock(Later, Calculator));
         process.Lifecycle.ShouldBe(ProcessLifecycle.Disabled);
     }
 

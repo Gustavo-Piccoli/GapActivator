@@ -9,6 +9,7 @@ public class ProcessFailureTests
 {
     private const int FailureLimit = 3;
     private static readonly DateTimeOffset Now = ProcessBuilder.BaseTime;
+    private static readonly FakeOccurrenceCalculator Calculator = new(TimeSpan.FromHours(1));
 
     [Fact]
     public void ApplyRunOutcome_TwoFailures_CountsAndSetsRetryPending()
@@ -176,7 +177,7 @@ public class ProcessFailureTests
         process.EnforceFailureLimit(FailureLimit, Now.AddMinutes(5));
         process.Lifecycle.ShouldBe(ProcessLifecycle.Blocked);
 
-        process.Unblock(Now.AddMinutes(6));
+        process.Unblock(Now.AddMinutes(6), Calculator);
 
         process.Lifecycle.ShouldBe(ProcessLifecycle.Enabled);
         process.ConsecutiveFailures.ShouldBe(0);
@@ -223,7 +224,7 @@ public class ProcessFailureTests
             process.ApplyRunOutcome(RunOutcome.Failed, FailureLimit, Now.AddMinutes(minute));
         }
 
-        process.Enable(Now.AddMinutes(5));
+        process.Enable(Now.AddMinutes(5), Calculator);
         process.Lifecycle.ShouldBe(ProcessLifecycle.Enabled);
 
         process.EnforceFailureLimit(FailureLimit, Now.AddMinutes(6));
