@@ -141,6 +141,14 @@ public sealed class Process : AggregateRoot<ProcessId>
                 UpdatedAt = now;
                 break;
             case FailureEffect.Unchanged:
+                // A cancelled run was stopped on purpose, so it must not be relaunched as a retry;
+                // the counter stays. Interrupted, Skipped and Stopped leave the retry pending.
+                if (outcome == RunOutcome.Cancelled && RetryPending)
+                {
+                    RetryPending = false;
+                    UpdatedAt = now;
+                }
+
                 break;
         }
     }
