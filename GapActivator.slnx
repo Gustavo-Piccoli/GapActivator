@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/GapActivator.Domain/GapActivator.Domain.csproj" />
+    <Project Path="src/GapActivator.Infrastructure/GapActivator.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/GapActivator.Architecture.Tests/GapActivator.Architecture.Tests.csproj" />
+    <Project Path="tests/GapActivator.Domain.Tests/GapActivator.Domain.Tests.csproj" />
+    <Project Path="tests/GapActivator.Infrastructure.Tests/GapActivator.Infrastructure.Tests.csproj" />
+    <Project Path="tests/GapActivator.Testing/GapActivator.Testing.csproj" />
+  </Folder>
+</Solution>
