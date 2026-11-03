@@ -140,6 +140,79 @@ public class ProcessFailureTests
         process.DomainEvents.ShouldBeEmpty();
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    public void ApplyRunOutcome_FailedWhileBlocked_CountsWithoutEventOrRetry(int failureLimit)
+    {
+        var process = new ProcessBuilder().Build();
+        for (var minute = 1; minute <= failureLimit; minute++)
+        {
+            process.ApplyRunOutcome(RunOutcome.Failed, failureLimit, Now.AddMinutes(minute));
+        }
+
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Blocked);
+        process.ClearDomainEvents();
+
+        process.ApplyRunOutcome(RunOutcome.Failed, failureLimit, Now.AddMinutes(10));
+
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Blocked);
+        process.ConsecutiveFailures.ShouldBe(1);
+        process.RetryPending.ShouldBeFalse();
+        process.UpdatedAt.ShouldBe(Now.AddMinutes(10));
+        process.DomainEvents.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Unblock_WithRetryPending_ClearsIt()
+    {
+        var process = new ProcessBuilder().Build();
+        for (var minute = 1; minute <= 4; minute++)
+        {
+            process.ApplyRunOutcome(RunOutcome.Failed, failureLimit: 10, Now.AddMinutes(minute));
+        }
+
+        process.RetryPending.ShouldBeTrue();
+        process.EnforceFailureLimit(FailureLimit, Now.AddMinutes(5));
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Blocked);
+
+        process.Unblock(Now.AddMinutes(6));
+
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Enabled);
+        process.ConsecutiveFailures.ShouldBe(0);
+        process.RetryPending.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ApplyRunOutcome_ServiceStopped_LeavesCounterUnchanged()
+    {
+        var process = new ProcessBuilder().OfKind(ProcessKind.Service).Build();
+        process.ApplyRunOutcome(RunOutcome.Crashed, FailureLimit, Now.AddMinutes(1));
+
+        process.ApplyRunOutcome(RunOutcome.Stopped, FailureLimit, Now.AddMinutes(2));
+
+        process.ConsecutiveFailures.ShouldBe(1);
+        process.RetryPending.ShouldBeFalse();
+        process.UpdatedAt.ShouldBe(Now.AddMinutes(1));
+    }
+
+    [Fact]
+    public void ApplyRunOutcome_ServiceCrashesReachingLimit_Blocks()
+    {
+        var process = new ProcessBuilder().OfKind(ProcessKind.Service).Build();
+
+        for (var minute = 1; minute <= FailureLimit; minute++)
+        {
+            process.ApplyRunOutcome(RunOutcome.Crashed, FailureLimit, Now.AddMinutes(minute));
+        }
+
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Blocked);
+        process.ConsecutiveFailures.ShouldBe(0);
+        process.RetryPending.ShouldBeFalse();
+        process.DomainEvents.ShouldHaveSingleItem()
+            .ShouldBe(new ProcessBlocked(process.Id, FailuresReached: 3, Now.AddMinutes(3)));
+    }
+
     [Fact]
     public void Enable_ThenEnforceFailureLimit_BlocksWhenCounterAtLimit()
     {

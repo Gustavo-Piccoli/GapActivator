@@ -99,6 +99,7 @@ public sealed class Process : AggregateRoot<ProcessId>
         RequireLifecycle(ProcessLifecycle.Blocked, "unblocked");
         Lifecycle = ProcessLifecycle.Enabled;
         ConsecutiveFailures = 0;
+        RetryPending = false;
         UpdatedAt = now;
         Raise(new ProcessUnblocked(Id, now));
     }
@@ -117,9 +118,9 @@ public sealed class Process : AggregateRoot<ProcessId>
             case FailureEffect.Increment:
                 ConsecutiveFailures++;
 
-                // A Disabled process only counts: it is never blocked or retried here;
-                // EnforceFailureLimit blocks it once it is enabled again.
-                if (Lifecycle != ProcessLifecycle.Disabled)
+                // Only an Enabled process can be blocked or retried; a Disabled or Blocked one
+                // just counts (EnforceFailureLimit blocks a Disabled one once it is enabled again).
+                if (Lifecycle == ProcessLifecycle.Enabled)
                 {
                     if (ConsecutiveFailures >= failureLimit)
                     {
@@ -173,6 +174,8 @@ public sealed class Process : AggregateRoot<ProcessId>
     /// </summary>
     public DueDecision EvaluateDue(DateTimeOffset now, TimeSpan lateThreshold, IOccurrenceCalculator calculator)
     {
+        ArgumentNullException.ThrowIfNull(calculator);
+
         if (Kind != ProcessKind.RunToCompletion || Lifecycle != ProcessLifecycle.Enabled)
         {
             return DueDecision.NotDue;
@@ -187,7 +190,11 @@ public sealed class Process : AggregateRoot<ProcessId>
     }
 
     /// <summary>Advances every schedule whose next occurrence is at or before <paramref name="now"/> (used by manual runs too).</summary>
-    public void ConsumeDueOccurrences(DateTimeOffset now, IOccurrenceCalculator calculator) => ConsumeDue(now, calculator);
+    public void ConsumeDueOccurrences(DateTimeOffset now, IOccurrenceCalculator calculator)
+    {
+        ArgumentNullException.ThrowIfNull(calculator);
+        ConsumeDue(now, calculator);
+    }
 
     public TimeSpan? EffectiveTimeLimit(TimeSpan? installationDefault) =>
         Kind == ProcessKind.Service ? null : Limits.EffectiveTimeLimit(installationDefault);

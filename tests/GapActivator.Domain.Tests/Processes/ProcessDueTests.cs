@@ -111,11 +111,20 @@ public class ProcessDueTests
     public void EvaluateDue_WhenDisabled_IsNotDueAndConsumesNothing()
     {
         var process = HourlyProcess();
-        process.ApplyRunOutcome(RunOutcome.Failed, failureLimit: 3, At(7, 0));
         process.Disable(At(7, 1));
 
         process.EvaluateDue(At(8, 30), LateThreshold, Calculator).ShouldBe(DueDecision.NotDue);
         process.NextScheduledAt.ShouldBe(At(8, 0));
+    }
+
+    [Fact]
+    public void EvaluateDue_NullCalculatorWhileDisabled_Throws()
+    {
+        var process = HourlyProcess();
+        process.Disable(At(7, 1));
+
+        Should.Throw<ArgumentNullException>(() => process.EvaluateDue(At(8, 30), LateThreshold, null!));
+        Should.Throw<ArgumentNullException>(() => process.ConsumeDueOccurrences(At(8, 30), null!));
     }
 
     [Fact]
