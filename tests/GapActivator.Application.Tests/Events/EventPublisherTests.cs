@@ -18,14 +18,33 @@ public class EventPublisherTests
     public async Task Publish_HandlerThrows_OtherHandlersStillRun()
     {
         var state = new ProbeState();
-        await using ApplicationTestHost host = ProbeHost.Create(
-            state, services => services.AddScoped<INotificationHandler, ThrowingNotificationHandler>());
+        var recorder = new LogRecorder();
+        var publisher = new EventPublisher(
+            [new ThrowingNotificationHandler(), new RecordingNotificationHandler(state, new WriteGate())],
+            new RecordingLogger<EventPublisher>(recorder));
+        InstallationPaused paused = new(DateTimeOffset.UnixEpoch);
+        InstallationResumed resumed = new(DateTimeOffset.UnixEpoch);
 
-        int result = await host.Run<ProbeCommand, int>(new ProbeCommand());
+        await publisher.PublishAsync([paused, resumed], CancellationToken.None);
 
-        result.ShouldBe(42);
-        state.Published.ShouldHaveSingleItem().ShouldBeOfType<InstallationPaused>();
-        host.Log.Entries.Any(e => e.Level == LogLevel.Warning && e.Exception?.Message == "notification failed")
+        state.Published.ShouldBe([paused, resumed]);
+        recorder.Entries.Count(e => e.Level == LogLevel.Warning && e.Exception?.Message == "notification failed")
+            .ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Publish_HandlerCancelledWhileTokenNotCancelled_IsSwallowedAndLoggedAsWarning()
+    {
+        var state = new ProbeState();
+        var recorder = new LogRecorder();
+        var publisher = new EventPublisher(
+            [new CancellingHandler(), new RecordingNotificationHandler(state, new WriteGate())],
+            new RecordingLogger<EventPublisher>(recorder));
+
+        await publisher.PublishAsync([new InstallationPaused(DateTimeOffset.UnixEpoch)], CancellationToken.None);
+
+        state.Published.Count.ShouldBe(1);
+        recorder.Entries.Any(e => e.Level == LogLevel.Warning && e.Exception is OperationCanceledException)
             .ShouldBeTrue();
     }
 
@@ -64,6 +83,6 @@ public class EventPublisherTests
     private sealed class CancellingHandler : INotificationHandler
     {
         public Task HandleAsync(IDomainEvent domainEvent, CancellationToken ct) =>
-            Task.FromCanceled(ct);
+            Task.FromCanceled(new CancellationToken(true));
     }
 }
