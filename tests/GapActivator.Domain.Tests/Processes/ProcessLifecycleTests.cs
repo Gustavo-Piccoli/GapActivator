@@ -180,6 +180,34 @@ public class ProcessLifecycleTests
     }
 
     [Fact]
+    public void Update_KindChanged_ResetsFailuresAndRetry()
+    {
+        var process = new ProcessBuilder().Build();
+        process.ApplyRunOutcome(RunOutcome.Failed, failureLimit: 3, Now.AddMinutes(1));
+
+        process.Update(process.Name, process.Description, ProcessKind.Service, process.Launch, process.Limits, [], Later);
+
+        process.Kind.ShouldBe(ProcessKind.Service);
+        process.ConsecutiveFailures.ShouldBe(0);
+        process.RetryPending.ShouldBeFalse();
+        process.UpdatedAt.ShouldBe(Later);
+    }
+
+    [Fact]
+    public void Update_SameKind_KeepsFailures()
+    {
+        var process = new ProcessBuilder().Build();
+        process.ApplyRunOutcome(RunOutcome.Failed, failureLimit: 3, Now.AddMinutes(1));
+        process.ApplyRunOutcome(RunOutcome.Failed, failureLimit: 3, Now.AddMinutes(2));
+
+        process.Update(
+            ProcessName.Create("Renamed job"), process.Description, ProcessKind.RunToCompletion, process.Launch, process.Limits, [], Later);
+
+        process.ConsecutiveFailures.ShouldBe(2);
+        process.RetryPending.ShouldBeTrue();
+    }
+
+    [Fact]
     public void Disable_WhenEnabled_Disables()
     {
         var process = new ProcessBuilder().Build();
@@ -188,6 +216,18 @@ public class ProcessLifecycleTests
 
         process.Lifecycle.ShouldBe(ProcessLifecycle.Disabled);
         process.UpdatedAt.ShouldBe(Later);
+    }
+
+    [Fact]
+    public void Disable_WithRetryPending_ClearsRetry()
+    {
+        var process = new ProcessBuilder().Build();
+        process.ApplyRunOutcome(RunOutcome.Failed, failureLimit: 3, Now.AddMinutes(1));
+
+        process.Disable(Later);
+
+        process.RetryPending.ShouldBeFalse();
+        process.ConsecutiveFailures.ShouldBe(1);
     }
 
     [Fact]
