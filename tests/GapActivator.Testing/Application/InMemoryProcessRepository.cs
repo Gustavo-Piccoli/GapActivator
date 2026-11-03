@@ -11,7 +11,12 @@ public sealed class InMemoryProcessRepository(InMemoryStore store, InMemoryUnitO
             throw new InvalidOperationException($"Simulated failure while loading process {id}.");
         }
 
-        Process? process = store.Processes.GetValueOrDefault(id);
+        Process? process;
+        lock (store.Sync)
+        {
+            process = store.Processes.GetValueOrDefault(id);
+        }
+
         if (process is not null)
         {
             unitOfWork.Track(process);
@@ -22,7 +27,12 @@ public sealed class InMemoryProcessRepository(InMemoryStore store, InMemoryUnitO
 
     public Task<IReadOnlyList<Process>> ListAsync(CancellationToken ct)
     {
-        Process[] all = [.. store.Processes.Values];
+        Process[] all;
+        lock (store.Sync)
+        {
+            all = [.. store.Processes.Values];
+        }
+
         foreach (Process process in all)
         {
             unitOfWork.Track(process);
@@ -31,12 +41,22 @@ public sealed class InMemoryProcessRepository(InMemoryStore store, InMemoryUnitO
         return Task.FromResult<IReadOnlyList<Process>>(all);
     }
 
-    public Task<bool> NameExistsAsync(ProcessName name, ProcessId? excluding, CancellationToken ct) =>
-        Task.FromResult(store.Processes.Values.Any(p => p.Id != excluding && p.Name == name));
+    public Task<bool> NameExistsAsync(ProcessName name, ProcessId? excluding, CancellationToken ct)
+    {
+        lock (store.Sync)
+        {
+            return Task.FromResult(store.Processes.Values.Any(p => p.Id != excluding && p.Name == name));
+        }
+    }
 
     public Task<IReadOnlyList<Process>> ListByExecutableAsync(ExecutablePath executable, ProcessId? excluding, CancellationToken ct)
     {
-        Process[] matches = [.. store.Processes.Values.Where(p => p.Id != excluding && p.Launch.Executable == executable)];
+        Process[] matches;
+        lock (store.Sync)
+        {
+            matches = [.. store.Processes.Values.Where(p => p.Id != excluding && p.Launch.Executable == executable)];
+        }
+
         foreach (Process process in matches)
         {
             unitOfWork.Track(process);
@@ -53,6 +73,7 @@ public sealed class InMemoryProcessRepository(InMemoryStore store, InMemoryUnitO
 
     public void Remove(Process process)
     {
+        // Tracked so the events raised by the removed process are still dequeued.
         unitOfWork.Track(process);
         unitOfWork.Stage(() => store.Processes.Remove(process.Id));
     }

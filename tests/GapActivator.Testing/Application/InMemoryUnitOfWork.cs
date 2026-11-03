@@ -4,7 +4,11 @@ using GapActivator.Domain.Settings;
 
 namespace GapActivator.Testing;
 
-/// <summary>Tracks the aggregates of one scope and applies staged changes to the store on commit.</summary>
+/// <summary>
+/// Tracks the aggregates of one scope and applies staged changes to the store on commit. A failed commit discards
+/// staged adds, removes and history entries, but in-place mutations of loaded aggregates remain visible to later
+/// scopes (no cloning). Tests must not assert "state unchanged after a failed commit" through this fake.
+/// </summary>
 public sealed class InMemoryUnitOfWork(InMemoryStore store) : IUnitOfWork
 {
     private readonly List<Action> _staged = [];
@@ -30,6 +34,8 @@ public sealed class InMemoryUnitOfWork(InMemoryStore store) : IUnitOfWork
                     events.AddRange(settings.DomainEvents);
                     settings.ClearDomainEvents();
                     break;
+                default:
+                    throw new InvalidOperationException($"Unknown tracked aggregate type {aggregate.GetType().Name}.");
             }
         }
 
@@ -46,9 +52,12 @@ public sealed class InMemoryUnitOfWork(InMemoryStore store) : IUnitOfWork
             throw failure;
         }
 
-        foreach (Action change in _staged)
+        lock (store.Sync)
         {
-            change();
+            foreach (Action change in _staged)
+            {
+                change();
+            }
         }
 
         _staged.Clear();
