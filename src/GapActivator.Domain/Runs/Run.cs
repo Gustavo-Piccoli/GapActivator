@@ -115,7 +115,12 @@ public sealed class Run : AggregateRoot<RunId>
             throw new DomainException("A Service-kind run has no time limit.");
         }
 
-        StopReason ??= reason;
+        if (StopReason is null)
+        {
+            StopReason = reason;
+            Raise(new RunStopRequested(Id, ProcessId, reason, now));
+        }
+
         if (State == RunState.Running)
         {
             State = RunState.Stopping;

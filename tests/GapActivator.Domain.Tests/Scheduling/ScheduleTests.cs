@@ -92,6 +92,47 @@ public class ScheduleTests
         schedule.IsExhausted.ShouldBeTrue();
     }
 
+    [Fact] // Q-13
+    public void RecurringSchedule_CreateWithNotBeforeAfterAnchor_SkipsEarlierOccurrences()
+    {
+        var calc = new FakeOccurrenceCalculator(TimeSpan.FromHours(1));
+
+        var schedule = RecurringSchedule.Create(Rule, Anchor, Anchor.AddMinutes(90), calc);
+
+        schedule.NextOccurrenceAt.ShouldBe(Anchor.AddHours(2));
+    }
+
+    [Fact] // Q-13, equality case
+    public void RecurringSchedule_CreateWithNotBeforeOnAnOccurrence_KeepsThatOccurrence()
+    {
+        var calc = new FakeOccurrenceCalculator(TimeSpan.FromHours(1));
+
+        var schedule = RecurringSchedule.Create(Rule, Anchor, Anchor.AddHours(2), calc);
+
+        schedule.NextOccurrenceAt.ShouldBe(Anchor.AddHours(2));
+    }
+
+    [Fact] // Q-13
+    public void RecurringSchedule_CreateWithNotBeforeBeforeAnchor_StartsAtAnchor()
+    {
+        var calc = new FakeOccurrenceCalculator(TimeSpan.FromHours(1));
+
+        var schedule = RecurringSchedule.Create(Rule, Anchor, Anchor.AddHours(-3), calc);
+
+        schedule.NextOccurrenceAt.ShouldBe(Anchor);
+    }
+
+    [Fact] // Q-13
+    public void RecurringSchedule_CreateWithNotBeforeAfterExhaustion_IsExhausted()
+    {
+        var calc = new FakeOccurrenceCalculator(TimeSpan.FromHours(1), count: 2);
+
+        var schedule = RecurringSchedule.Create(Rule, Anchor, Anchor.AddHours(5), calc);
+
+        schedule.NextOccurrenceAt.ShouldBeNull();
+        schedule.IsExhausted.ShouldBeTrue();
+    }
+
     [Fact]
     public void RecurringSchedule_Create_CalculatorResultDiffersFromAnchor_UsesTheCalculatorResult()
     {
