@@ -94,8 +94,8 @@ public class UpdateProcessEdgeCaseTests
         await using var host = new ApplicationTestHost();
         ProcessSaved saved = await host.Run<RegisterProcess, ProcessSaved>(new RegisterProcess(
             ProcessDefinitions.Basic(description: "Before")));
-        ProcessDefinition definition = ProcessDefinitions.Basic(kind: ProcessKind.Service, description: "After")
-            with { TimeLimit = TimeSpan.FromMinutes(5) };
+        ProcessDefinition definition = ProcessDefinitions.Basic(kind: ProcessKind.Service, description: "After");
+        definition = definition with { TimeLimit = TimeSpan.FromMinutes(5) };
 
         await Should.ThrowAsync<DomainException>(
             () => host.Run<UpdateProcess, ProcessSaved>(new UpdateProcess(saved.Id, definition)));
