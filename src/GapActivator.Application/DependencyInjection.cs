@@ -1,5 +1,6 @@
 using GapActivator.Application.Events;
 using GapActivator.Application.Messaging;
+using GapActivator.Application.Processes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -21,6 +22,11 @@ public static class DependencyInjection
         services.AddScoped<AfterCommit>();
         services.AddScoped<EventBuffer>();
         services.AddScoped<EventPublisher>();
+
+        services.AddScoped<ProcessDefinitionMapper>();
+        services.AddScoped<ICommandHandler<RegisterProcess, ProcessSaved>, RegisterProcessHandler>();
+        services.AddScoped<ICommandHandler<UpdateProcess, ProcessSaved>, UpdateProcessHandler>();
+        services.AddScoped<ICommandHandler<DeleteProcess, Unit>, DeleteProcessHandler>();
         return services;
     }
 }
