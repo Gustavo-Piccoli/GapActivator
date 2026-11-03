@@ -82,4 +82,11 @@ public class ScheduleTests
         schedule.IsExhausted.ShouldBeTrue();
         schedule.NextOccurrenceAt.ShouldBeNull();
     }
+
+    [Fact]
+    public void RecurringSchedule_Create_NullRule_Throws()
+    {
+        Should.Throw<ArgumentNullException>(() =>
+            RecurringSchedule.Create(null!, Anchor, new FakeOccurrenceCalculator(TimeSpan.FromHours(1))));
+    }
 }

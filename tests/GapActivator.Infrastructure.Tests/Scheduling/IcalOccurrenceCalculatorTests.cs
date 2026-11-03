@@ -343,4 +343,16 @@ public sealed class IcalOccurrenceCalculatorTests
             // One :15 instant per elapsed hour (9600), minus the skipped second pass of 02:15 on 2027-10-31.
             count.ShouldBe(9599);
         }, TestContext.Current.CancellationToken);
+
+    [Fact]
+    public void NextOccurrence_DifferentZones_ComputeOnEachZoneWallClock()
+    {
+        var rule = Rule("FREQ=DAILY;BYHOUR=8;BYMINUTE=0;BYSECOND=0");
+        var anchor = At("2027-03-01T08:00:00+01:00");
+        var utcCalculator = new IcalOccurrenceCalculator(TimeZoneInfo.Utc);
+
+        // The anchor is 07:00Z; 08:00 wall clock is 07:00Z in the Central European zone but 08:00Z in UTC.
+        Calculator.NextOccurrence(rule, anchor, anchor).ShouldBe(At("2027-03-02T08:00:00+01:00"));
+        utcCalculator.NextOccurrence(rule, anchor, anchor).ShouldBe(At("2027-03-01T08:00:00Z"));
+    }
 }
