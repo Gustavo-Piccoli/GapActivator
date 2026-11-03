@@ -7,6 +7,8 @@ public sealed record ExecutablePath
 {
     public const int MaxLength = 32_767;
 
+    internal static readonly char[] Wildcards = ['*', '?'];
+
     private ExecutablePath(string value) => Value = value;
 
     public string Value { get; }
@@ -19,7 +21,7 @@ public sealed record ExecutablePath
             throw new DomainException($"Executable path must be between 1 and {MaxLength} characters.");
         }
 
-        if (trimmed.Contains('"') || trimmed.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+        if (trimmed.Contains('"') || trimmed.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || trimmed.IndexOfAny(Wildcards) >= 0)
         {
             throw new DomainException("Executable path contains invalid characters.");
         }
@@ -27,6 +29,11 @@ public sealed record ExecutablePath
         if (!Path.IsPathFullyQualified(trimmed))
         {
             throw new DomainException("Executable path must be fully qualified.");
+        }
+
+        if (Path.GetFileName(trimmed.AsSpan()).IsEmpty)
+        {
+            throw new DomainException("Executable path must end with a file name.");
         }
 
         return new ExecutablePath(trimmed);

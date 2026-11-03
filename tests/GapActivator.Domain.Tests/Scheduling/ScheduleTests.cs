@@ -138,6 +138,43 @@ public class ScheduleTests
         schedule.NextOccurrenceAt.ShouldBe(Anchor);
     }
 
+    [Theory]
+    [InlineData(10)]
+    [InlineData(30)]
+    public void RecurringSchedule_Advance_CalculatorReturnsOccurrenceNotAfterNow_Throws(int minutesFromCurrent)
+    {
+        var schedule = RecurringSchedule.Create(Rule, Anchor, new ScriptedCalculator(Anchor, null));
+        var now = Anchor.AddMinutes(30);
+        var misbehaving = new ScriptedCalculator(Anchor, Anchor.AddMinutes(minutesFromCurrent));
+
+        Should.Throw<InvalidOperationException>(() => schedule.Advance(now, misbehaving));
+
+        schedule.NextOccurrenceAt.ShouldBe(Anchor);
+    }
+
+    [Fact]
+    public void RecurringSchedule_Advance_CalculatorReturnsOccurrenceJustAfterNow_Accepts()
+    {
+        var schedule = RecurringSchedule.Create(Rule, Anchor, new ScriptedCalculator(Anchor, null));
+        var now = Anchor.AddMinutes(30);
+
+        schedule.Advance(now, new ScriptedCalculator(Anchor, now.AddTicks(1)));
+
+        schedule.NextOccurrenceAt.ShouldBe(now.AddTicks(1));
+    }
+
+    [Fact]
+    public void OneTimeSchedule_Advance_AlreadyFulfilled_Throws()
+    {
+        var schedule = OneTimeSchedule.Create(Anchor);
+        var calculator = new FakeOccurrenceCalculator(TimeSpan.FromHours(1));
+        schedule.Advance(Anchor.AddMinutes(5), calculator);
+
+        Should.Throw<InvalidOperationException>(() => schedule.Advance(Anchor.AddMinutes(10), calculator));
+
+        schedule.FulfilledAt.ShouldBe(Anchor.AddMinutes(5));
+    }
+
     [Fact]
     public void RecurringSchedule_Advance_CalculatorReturnsLaterOccurrence_Accepts()
     {

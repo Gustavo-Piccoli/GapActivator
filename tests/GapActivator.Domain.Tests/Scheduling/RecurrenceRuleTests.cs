@@ -196,6 +196,8 @@ public class RecurrenceRuleTests
     [InlineData("FREQ=MONTHLY;BYSETPOS=1")]
     [InlineData("FREQ=DAILY;BYSETPOS=1;INTERVAL=2")]
     [InlineData("FREQ=DAILY;BYSETPOS=1;WKST=MO")]
+    [InlineData("FREQ=YEARLY;BYWEEKNO=20;BYDAY=2MO")]
+    [InlineData("FREQ=YEARLY;BYWEEKNO=20;BYDAY=MO,-1FR")]
     public void Parse_ForbiddenCombinations_Throw(string value)
     {
         Should.Throw<DomainException>(() => RecurrenceRule.Parse(value));
