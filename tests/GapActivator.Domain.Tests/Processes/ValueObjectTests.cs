@@ -65,6 +65,7 @@ public class ValueObjectTests
     [Theory]
     [InlineData("")]
     [InlineData("backup.exe")]
+    [InlineData("%USERPROFILE%\\tools\\backup.exe")]
     [InlineData("\"C:\\Tools\\a.exe\"")]
     [InlineData("C:\\Tools\\a|b.exe")]
     [InlineData("C:\\Tools\\a\"b.exe")]
