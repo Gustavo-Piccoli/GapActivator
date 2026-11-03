@@ -84,9 +84,90 @@ public class ScheduleTests
     }
 
     [Fact]
+    public void RecurringSchedule_Create_CalculatorReturnsNothing_IsExhaustedImmediately()
+    {
+        var schedule = RecurringSchedule.Create(Rule, Anchor, new FakeOccurrenceCalculator(TimeSpan.FromHours(1), count: 0));
+
+        schedule.NextOccurrenceAt.ShouldBeNull();
+        schedule.IsExhausted.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void RecurringSchedule_Create_CalculatorResultDiffersFromAnchor_UsesTheCalculatorResult()
+    {
+        var first = Anchor.AddHours(3);
+
+        var schedule = RecurringSchedule.Create(Rule, Anchor, new ScriptedCalculator(first: first, next: null));
+
+        schedule.Anchor.ShouldBe(Anchor);
+        schedule.NextOccurrenceAt.ShouldBe(first);
+    }
+
+    [Fact]
+    public void RecurringSchedule_Advance_NotYetDue_ThrowsAndKeepsTheOccurrence()
+    {
+        var calculator = new FakeOccurrenceCalculator(TimeSpan.FromHours(1));
+        var schedule = RecurringSchedule.Create(Rule, Anchor, calculator);
+
+        Should.Throw<InvalidOperationException>(() => schedule.Advance(Anchor.AddMinutes(-1), calculator));
+
+        schedule.NextOccurrenceAt.ShouldBe(Anchor);
+    }
+
+    [Fact]
+    public void RecurringSchedule_Advance_WhenExhausted_Throws()
+    {
+        var calculator = new FakeOccurrenceCalculator(TimeSpan.FromHours(1), count: 1);
+        var schedule = RecurringSchedule.Create(Rule, Anchor, calculator);
+        schedule.Advance(Anchor, calculator);
+
+        Should.Throw<InvalidOperationException>(() => schedule.Advance(Anchor.AddHours(5), calculator));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-30)]
+    public void RecurringSchedule_Advance_CalculatorReturnsNonIncreasingOccurrence_Throws(int minutesFromCurrent)
+    {
+        var schedule = RecurringSchedule.Create(Rule, Anchor, new ScriptedCalculator(Anchor, null));
+        var misbehaving = new ScriptedCalculator(Anchor, Anchor.AddMinutes(minutesFromCurrent));
+
+        var exception = Should.Throw<InvalidOperationException>(() => schedule.Advance(Anchor, misbehaving));
+
+        exception.Message.ShouldBe("Occurrence calculator returned a non-increasing occurrence.");
+        schedule.NextOccurrenceAt.ShouldBe(Anchor);
+    }
+
+    [Fact]
+    public void RecurringSchedule_Advance_CalculatorReturnsLaterOccurrence_Accepts()
+    {
+        var schedule = RecurringSchedule.Create(Rule, Anchor, new ScriptedCalculator(Anchor, null));
+
+        schedule.Advance(Anchor, new ScriptedCalculator(Anchor, Anchor.AddTicks(1)));
+
+        schedule.NextOccurrenceAt.ShouldBe(Anchor.AddTicks(1));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void FakeOccurrenceCalculator_NonPositiveStep_Throws(int seconds)
+    {
+        Should.Throw<ArgumentOutOfRangeException>(() => new FakeOccurrenceCalculator(TimeSpan.FromSeconds(seconds)));
+    }
+
+    [Fact]
     public void RecurringSchedule_Create_NullRule_Throws()
     {
         Should.Throw<ArgumentNullException>(() =>
             RecurringSchedule.Create(null!, Anchor, new FakeOccurrenceCalculator(TimeSpan.FromHours(1))));
+    }
+
+    /// <summary>Returns fixed answers regardless of the arguments; lets a test script a misbehaving calculator.</summary>
+    private sealed class ScriptedCalculator(DateTimeOffset? first, DateTimeOffset? next) : IOccurrenceCalculator
+    {
+        public DateTimeOffset? FirstOccurrence(RecurrenceRule rule, DateTimeOffset anchor) => first;
+
+        public DateTimeOffset? NextOccurrence(RecurrenceRule rule, DateTimeOffset anchor, DateTimeOffset after) => next;
     }
 }
