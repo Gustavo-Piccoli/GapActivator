@@ -22,6 +22,7 @@ public sealed class ProbeState
     private readonly List<string> _order = [];
     private readonly Lock _sync = new();
     private int _inFlight;
+    private int _handled;
     private int _maxInFlight;
 
     public Func<CancellationToken, Task> OnHandle { get; set; } = _ => Task.CompletedTask;
@@ -29,6 +30,14 @@ public sealed class ProbeState
     public List<Func<CancellationToken, Task>> Actions { get; } = [];
 
     public List<IDomainEvent> Published { get; } = [];
+
+    public int Handled => Volatile.Read(ref _handled);
+
+    public int? HistoryBeforeCommit { get; set; }
+
+    public int? HistoryAfterCommit { get; set; }
+
+    public bool? GateHeldDuringEvent { get; set; }
 
     public int MaxInFlight => Volatile.Read(ref _maxInFlight);
 
@@ -59,6 +68,7 @@ public sealed class ProbeState
 
     internal async Task TrackInFlightAsync(CancellationToken ct)
     {
+        Interlocked.Increment(ref _handled);
         int now = Interlocked.Increment(ref _inFlight);
         int seen;
         do
@@ -133,11 +143,12 @@ public sealed class ProbeQueryHandler(CallerAccessor accessor) : IQueryHandler<P
     public Task<string> HandleAsync(ProbeQuery query, CancellationToken ct) => Task.FromResult(accessor.Current.Name);
 }
 
-public sealed class RecordingNotificationHandler(ProbeState state) : INotificationHandler
+public sealed class RecordingNotificationHandler(ProbeState state, WriteGate gate) : INotificationHandler
 {
     public Task HandleAsync(IDomainEvent domainEvent, CancellationToken ct)
     {
         state.Note("event");
+        state.GateHeldDuringEvent = gate.IsHeld;
         lock (state.Published)
         {
             state.Published.Add(domainEvent);
@@ -154,13 +165,15 @@ public sealed class ThrowingNotificationHandler : INotificationHandler
 }
 
 /// <summary>Notes "commit" once the real commit has succeeded.</summary>
-public sealed class RecordingUnitOfWork(InMemoryUnitOfWork inner, ProbeState state) : IUnitOfWork
+public sealed class RecordingUnitOfWork(InMemoryUnitOfWork inner, ProbeState state, InMemoryStore store) : IUnitOfWork
 {
     public IReadOnlyList<IDomainEvent> DequeueDomainEvents() => inner.DequeueDomainEvents();
 
     public async Task CommitAsync(CancellationToken ct)
     {
+        state.HistoryBeforeCommit = store.History.Count;
         await inner.CommitAsync(ct);
+        state.HistoryAfterCommit = store.History.Count;
         state.Note("commit");
     }
 }
@@ -177,7 +190,8 @@ public static class ProbeHost
             services.AddScoped<IQueryHandler<ProbeQuery, string>, ProbeQueryHandler>();
             services.AddScoped<INotificationHandler, RecordingNotificationHandler>();
             services.AddScoped<IUnitOfWork>(sp => new RecordingUnitOfWork(
-                sp.GetRequiredService<InMemoryUnitOfWork>(), sp.GetRequiredService<ProbeState>()));
+                sp.GetRequiredService<InMemoryUnitOfWork>(), sp.GetRequiredService<ProbeState>(),
+                sp.GetRequiredService<InMemoryStore>()));
             extra?.Invoke(services);
         });
 }

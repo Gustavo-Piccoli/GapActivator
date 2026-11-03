@@ -11,8 +11,11 @@ namespace GapActivator.Application.Messaging;
 /// commit in one unit of work, release the gate, run the <see cref="AfterCommit"/> actions, then publish the events.
 /// The actions and the publishing run after the gate is released but before the scope is disposed, so the handler's
 /// scoped services stay alive for them. If the handler or the commit throws, nothing is committed, the actions are
-/// dropped, nothing is published, the gate is released and the exception propagates. A failing action is logged and
-/// the remaining actions and the publishing still run.
+/// dropped, nothing is published, the gate is released and the exception propagates. Once the commit has succeeded
+/// (or, for an ungated command, the handler has returned) SendAsync always returns the result of the handler: each
+/// action runs in its own try/catch (a cancellation is logged at Information, any other failure at Error) and the
+/// next action still runs, and a failure of the publishing is logged the same way and swallowed.
+/// The published events are the events of the aggregates first, then the buffered ones.
 /// An <see cref="IUngatedCommand"/> takes no gate, dequeues no aggregate events, writes no history and does not
 /// commit; its actions and <see cref="EventBuffer"/> events still run and are published after the handler returns,
 /// which keeps one code path.
@@ -83,9 +86,9 @@ public sealed partial class CommandDispatcher(
                 {
                     await action(ct);
                 }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                catch (OperationCanceledException ex)
                 {
-                    throw;
+                    LogActionCancelled(ex, typeof(TCommand).Name);
                 }
                 catch (Exception ex)
                 {
@@ -93,7 +96,19 @@ public sealed partial class CommandDispatcher(
                 }
             }
 
-            await services.GetRequiredService<EventPublisher>().PublishAsync(events, ct);
+            try
+            {
+                await services.GetRequiredService<EventPublisher>().PublishAsync(events, ct);
+            }
+            catch (OperationCanceledException ex)
+            {
+                LogPublishCancelled(ex, typeof(TCommand).Name);
+            }
+            catch (Exception ex)
+            {
+                LogPublishFailed(ex, typeof(TCommand).Name);
+            }
+
             return result;
         }
         finally
@@ -117,4 +132,13 @@ public sealed partial class CommandDispatcher(
 
     [LoggerMessage(Level = LogLevel.Error, Message = "An after-commit action of {Command} failed.")]
     private partial void LogActionFailed(Exception exception, string command);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "An after-commit action of {Command} was cancelled.")]
+    private partial void LogActionCancelled(Exception exception, string command);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Publishing the events of {Command} failed.")]
+    private partial void LogPublishFailed(Exception exception, string command);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Publishing the events of {Command} was cancelled.")]
+    private partial void LogPublishCancelled(Exception exception, string command);
 }

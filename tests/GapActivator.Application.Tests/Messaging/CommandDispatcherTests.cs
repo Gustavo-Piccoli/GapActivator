@@ -23,6 +23,7 @@ public class CommandDispatcherTests
             () => host.Run<ProbeCommand, int>(new ProbeCommand(), Caller.Viewer("viewer")));
 
         error.Code.ShouldBe(RejectionCodes.Unauthorized);
+        state.Handled.ShouldBe(0);
         host.Store.History.ShouldBeEmpty();
     }
 
@@ -73,7 +74,7 @@ public class CommandDispatcherTests
     }
 
     [Fact]
-    public async Task Send_Success_RunsActionsAndPublishesAfterTheGateIsReleased()
+    public async Task Send_Success_RunsActionsAndNotificationHandlersAfterTheGateIsReleased()
     {
         var state = new ProbeState();
         bool heldDuringAction = true;
@@ -90,6 +91,7 @@ public class CommandDispatcherTests
         await host.Run<ProbeCommand, int>(new ProbeCommand());
 
         heldDuringAction.ShouldBeFalse();
+        state.GateHeldDuringEvent.ShouldBe(false);
         gate.IsHeld.ShouldBeFalse();
     }
 
@@ -149,22 +151,12 @@ public class CommandDispatcherTests
     public async Task Send_DomainEvents_AreWrittenToHistoryInTheSameCommit()
     {
         var state = new ProbeState();
-        int historyAtAction = -1;
         await using ApplicationTestHost host = ProbeHost.Create(state);
-        state.Actions.Add(_ =>
-        {
-            historyAtAction = host.Store.History.Count;
-            return Task.CompletedTask;
-        });
-        state.OnHandle = _ =>
-        {
-            host.Store.History.ShouldBeEmpty();
-            return Task.CompletedTask;
-        };
 
         await host.Run<ProbeCommand, int>(new ProbeCommand());
 
-        historyAtAction.ShouldBe(1);
+        state.HistoryBeforeCommit.ShouldBe(0);
+        state.HistoryAfterCommit.ShouldBe(1);
         HistoryEntry entry = host.Store.History.ShouldHaveSingleItem();
         entry.Kind.ShouldBe(HistoryEntryKind.InstallationPaused);
         entry.OccurredAt.ShouldBe(host.Time.GetUtcNow());
@@ -184,6 +176,107 @@ public class CommandDispatcherTests
         result.ShouldBe(42);
         state.Order.ShouldBe(["commit", "action2", "event"]);
         host.Log.Entries.Any(e => e.Level == LogLevel.Error && e.Exception is InvalidOperationException).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Send_ActionCancelledAfterCommit_RemainingActionsAndPublishStillRunAndResultReturned()
+    {
+        var state = new ProbeState();
+        using var cts = new CancellationTokenSource();
+        state.Actions.Add(async ct =>
+        {
+            await cts.CancelAsync();
+            ct.ThrowIfCancellationRequested();
+        });
+        state.Actions.Add(_ => state.NoteAsync("action2"));
+        await using ApplicationTestHost host = ProbeHost.Create(state);
+
+        int result = await host.Send<ProbeCommand, int>(new ProbeCommand(), ct: cts.Token);
+
+        result.ShouldBe(42);
+        state.Order.ShouldBe(["commit", "action2", "event"]);
+        host.Log.Entries.Any(e => e.Level == LogLevel.Information && e.Exception is OperationCanceledException)
+            .ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Send_PublishThrowsAfterCommit_ResultStillReturned()
+    {
+        var state = new ProbeState();
+        state.Actions.Add(_ => state.NoteAsync("action"));
+        await using ApplicationTestHost host = ProbeHost.Create(
+            state,
+            services => services.AddScoped<INotificationHandler>(
+                _ => throw new InvalidOperationException("cannot resolve handler")));
+
+        int result = await host.Run<ProbeCommand, int>(new ProbeCommand());
+
+        result.ShouldBe(42);
+        state.Order.ShouldBe(["commit", "action"]);
+        host.Store.History.Count.ShouldBe(1);
+        host.Log.Entries.Any(e => e.Level == LogLevel.Error && e.Exception?.Message == "cannot resolve handler")
+            .ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Send_CancelledWhileWaitingForGate_ThrowsAndGateStillUsable()
+    {
+        var state = new ProbeState();
+        var firstEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int calls = 0;
+        state.OnHandle = async _ =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+            {
+                firstEntered.SetResult();
+                await releaseFirst.Task;
+            }
+        };
+        await using ApplicationTestHost host = ProbeHost.Create(state);
+        using var cts = new CancellationTokenSource();
+
+        Task<int> first = host.Run<ProbeCommand, int>(new ProbeCommand());
+        await firstEntered.Task.WaitAsync(Safety, TestContext.Current.CancellationToken);
+        Task<int> second = host.Send<ProbeCommand, int>(new ProbeCommand(), ct: cts.Token);
+        await cts.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => second);
+
+        releaseFirst.SetResult();
+        await first.WaitAsync(Safety, TestContext.Current.CancellationToken);
+        int third = await host.Run<ProbeCommand, int>(new ProbeCommand())
+            .WaitAsync(Safety, TestContext.Current.CancellationToken);
+
+        third.ShouldBe(42);
+        state.Handled.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Send_Unauthorized_RejectedWhileGateIsHeld()
+    {
+        var state = new ProbeState();
+        var firstEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        state.OnHandle = async _ =>
+        {
+            firstEntered.TrySetResult();
+            await releaseFirst.Task;
+        };
+        await using ApplicationTestHost host = ProbeHost.Create(state);
+
+        Task<int> first = host.Run<ProbeCommand, int>(new ProbeCommand());
+        await firstEntered.Task.WaitAsync(Safety, TestContext.Current.CancellationToken);
+
+        var error = await Should.ThrowAsync<CommandRejectedException>(
+            () => host.Run<ProbeCommand, int>(new ProbeCommand(), Caller.Viewer("viewer"))
+                .WaitAsync(Safety, TestContext.Current.CancellationToken));
+
+        error.Code.ShouldBe(RejectionCodes.Unauthorized);
+        state.Handled.ShouldBe(1);
+
+        releaseFirst.SetResult();
+        await first.WaitAsync(Safety, TestContext.Current.CancellationToken);
     }
 
     [Fact]
