@@ -72,7 +72,6 @@ public class ProcessFailureTests
     }
 
     [Theory]
-    [InlineData(RunOutcome.Cancelled)]
     [InlineData(RunOutcome.Interrupted)]
     [InlineData(RunOutcome.Skipped)]
     public void ApplyRunOutcome_NeutralOutcomeAfterTwoFailures_LeavesCounterUnchanged(RunOutcome outcome)
@@ -87,6 +86,22 @@ public class ProcessFailureTests
         process.RetryPending.ShouldBeTrue();
         process.Lifecycle.ShouldBe(ProcessLifecycle.Enabled);
         process.UpdatedAt.ShouldBe(Now.AddMinutes(2));
+    }
+
+    [Fact]
+    public void ApplyRunOutcome_CancelledWithRetryPending_ClearsRetryKeepsCounter()
+    {
+        var process = new ProcessBuilder().Build();
+        process.ApplyRunOutcome(RunOutcome.Failed, FailureLimit, Now.AddMinutes(1));
+        process.ApplyRunOutcome(RunOutcome.Failed, FailureLimit, Now.AddMinutes(2));
+        process.RetryPending.ShouldBeTrue();
+
+        process.ApplyRunOutcome(RunOutcome.Cancelled, FailureLimit, Now.AddMinutes(3));
+
+        process.RetryPending.ShouldBeFalse();
+        process.ConsecutiveFailures.ShouldBe(2);
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Enabled);
+        process.UpdatedAt.ShouldBe(Now.AddMinutes(3));
     }
 
     [Fact]
