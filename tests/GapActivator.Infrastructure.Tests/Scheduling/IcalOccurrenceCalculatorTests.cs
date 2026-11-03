@@ -12,6 +12,22 @@ public sealed class IcalOccurrenceCalculatorTests
 
     private static RecurrenceRule Rule(string value) => RecurrenceRule.Parse(value);
 
+    // DST-adjacent expansion once hung inside Ical.Net; running off the test thread lets the xUnit Timeout fail fast.
+    private static Task Bounded(Action body, CancellationToken cancellationToken) => Task.Run(body, cancellationToken);
+
+    private static List<DateTimeOffset> Walk(RecurrenceRule rule, DateTimeOffset anchor, DateTimeOffset from, DateTimeOffset to)
+    {
+        var instants = new List<DateTimeOffset>();
+        var cursor = Calculator.NextOccurrence(rule, anchor, from);
+        while (cursor is { } value && value < to)
+        {
+            instants.Add(value);
+            cursor = Calculator.NextOccurrence(rule, anchor, value);
+        }
+
+        return instants;
+    }
+
     [Fact]
     public void FirstOccurrence_AnchorMatchesRule_ReturnsAnchor()
     {
@@ -38,29 +54,21 @@ public sealed class IcalOccurrenceCalculatorTests
             .ShouldBe(At("2027-03-03T08:00:00+01:00"));
     }
 
-    [Theory]
+    [Theory(Timeout = 5000)]
     [InlineData("2027-03-28T00:00:00+01:00", "2027-03-29T00:00:00+02:00", "2027-03-28T01:30:00Z")]
     [InlineData("2027-10-31T00:00:00+02:00", "2027-11-01T00:00:00+01:00", "2027-10-31T00:30:00Z")]
-    public void NextOccurrence_DstTransitionDay_YieldsExactlyOneOccurrenceAtExpectedInstant(string dayStart, string dayEnd, string expectedInstant)
-    {
-        var rule = Rule("FREQ=DAILY;BYHOUR=2;BYMINUTE=30;BYSECOND=0");
-        var start = At(dayStart);
-        var end = At(dayEnd);
-        var anchor = start.AddDays(-3);
-
-        var count = 0;
-        var instants = new List<DateTimeOffset>();
-        var cursor = Calculator.NextOccurrence(rule, anchor, start.AddTicks(-1));
-        while (cursor is { } value && value < end)
+    public Task NextOccurrence_DstTransitionDay_YieldsExactlyOneOccurrenceAtExpectedInstant(string dayStart, string dayEnd, string expectedInstant) =>
+        Bounded(() =>
         {
-            count++;
-            instants.Add(value);
-            cursor = Calculator.NextOccurrence(rule, anchor, value);
-        }
+            var rule = Rule("FREQ=DAILY;BYHOUR=2;BYMINUTE=30;BYSECOND=0");
+            var start = At(dayStart);
+            var anchor = start.AddDays(-3);
 
-        count.ShouldBe(1);
-        instants[0].UtcDateTime.ShouldBe(At(expectedInstant).UtcDateTime);
-    }
+            var instants = Walk(rule, anchor, start.AddTicks(-1), At(dayEnd));
+
+            instants.Count.ShouldBe(1);
+            instants[0].UtcDateTime.ShouldBe(At(expectedInstant).UtcDateTime);
+        }, TestContext.Current.CancellationToken);
 
     [Fact]
     public void NextOccurrence_FarAfterAnchorWithInterval_KeepsIntervalAlignment()
@@ -97,34 +105,79 @@ public sealed class IcalOccurrenceCalculatorTests
         Calculator.NextOccurrence(rule, anchor, anchor).ShouldBeNull();
     }
 
-    [Fact]
-    public void FirstOccurrence_AnchorInAmbiguousHourWithCount_StartsAtSecondOccurrenceOfWallClock()
-    {
-        var rule = Rule("FREQ=HOURLY;COUNT=3");
-        var anchor = At("2027-10-31T01:30:00Z");
+    [Fact(Timeout = 5000)]
+    public Task NextOccurrence_HourlyAcrossFallBack_RunsRepeatedHourOnce() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=HOURLY;BYMINUTE=30;BYSECOND=0");
+            var anchor = At("2027-10-30T22:00:00Z");
 
-        var first = Calculator.FirstOccurrence(rule, anchor);
-        first.ShouldNotBeNull();
-        first.Value.UtcDateTime.ShouldBe(anchor.UtcDateTime);
+            var instants = Walk(rule, anchor, At("2027-10-30T23:00:00Z"), At("2027-10-31T05:00:00Z"));
 
-        var second = Calculator.NextOccurrence(rule, anchor, first.Value);
-        var third = Calculator.NextOccurrence(rule, anchor, second!.Value);
-        third.ShouldNotBeNull();
-        third.Value.UtcDateTime.ShouldBe(At("2027-10-31T03:30:00Z").UtcDateTime);
-    }
+            // 02:30 local runs on its first pass (00:30Z); the second pass (01:30Z) is skipped.
+            instants.Select(i => i.UtcDateTime).ShouldBe(
+            [
+                At("2027-10-30T23:30:00Z").UtcDateTime,
+                At("2027-10-31T00:30:00Z").UtcDateTime,
+                At("2027-10-31T02:30:00Z").UtcDateTime,
+                At("2027-10-31T03:30:00Z").UtcDateTime,
+                At("2027-10-31T04:30:00Z").UtcDateTime,
+            ]);
+        }, TestContext.Current.CancellationToken);
 
-    [Fact]
-    public void NextOccurrence_AcrossDst_OffsetFollowsZone()
-    {
-        var rule = Rule("FREQ=DAILY;BYHOUR=8;BYMINUTE=0;BYSECOND=0");
-        var anchor = At("2027-03-01T08:00:00+01:00");
+    [Fact(Timeout = 5000)]
+    public Task NextOccurrence_HourlyAcrossSpringForward_NeverRepeatsAnInstant() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=HOURLY;BYMINUTE=30;BYSECOND=0");
+            var anchor = At("2027-03-27T22:00:00Z");
 
-        Calculator.NextOccurrence(rule, anchor, At("2027-03-10T00:00:00+01:00"))
-            .ShouldBe(At("2027-03-10T08:00:00+01:00"));
-        var april = Calculator.NextOccurrence(rule, anchor, At("2027-04-10T00:00:00+02:00"));
-        april.ShouldBe(At("2027-04-10T08:00:00+02:00"));
-        april!.Value.Offset.ShouldBe(TimeSpan.FromHours(2));
-    }
+            var instants = Walk(rule, anchor, At("2027-03-27T23:00:00Z"), At("2027-03-28T04:00:00Z"));
+
+            // Nonexistent 02:30 local uses the pre-gap offset (01:30Z); 03:30 CEST is the same instant and is not repeated.
+            instants.ShouldBeUnique();
+            instants.Select(i => i.UtcDateTime).ShouldBe(
+            [
+                At("2027-03-27T23:30:00Z").UtcDateTime,
+                At("2027-03-28T00:30:00Z").UtcDateTime,
+                At("2027-03-28T01:30:00Z").UtcDateTime,
+                At("2027-03-28T02:30:00Z").UtcDateTime,
+                At("2027-03-28T03:30:00Z").UtcDateTime,
+            ]);
+        }, TestContext.Current.CancellationToken);
+
+    [Fact(Timeout = 5000)]
+    public Task FirstOccurrence_AnchorInRepeatedHour_ReturnsNextWallClockOccurrence() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=HOURLY;COUNT=3");
+            var anchor = At("2027-10-31T01:30:00Z");
+
+            // The anchor (second 02:30) expands as wall clock 02:30, 03:30, 04:30; the first pass of 02:30 is before it.
+            var first = Calculator.FirstOccurrence(rule, anchor);
+            first.ShouldNotBeNull();
+            first.Value.ShouldBeGreaterThanOrEqualTo(anchor);
+            first.Value.UtcDateTime.ShouldBe(At("2027-10-31T02:30:00Z").UtcDateTime);
+
+            var second = Calculator.NextOccurrence(rule, anchor, first.Value);
+            second.ShouldNotBeNull();
+            second.Value.UtcDateTime.ShouldBe(At("2027-10-31T03:30:00Z").UtcDateTime);
+            Calculator.NextOccurrence(rule, anchor, second.Value).ShouldBeNull();
+        }, TestContext.Current.CancellationToken);
+
+    [Fact(Timeout = 5000)]
+    public Task NextOccurrence_AcrossDst_OffsetFollowsZone() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=DAILY;BYHOUR=8;BYMINUTE=0;BYSECOND=0");
+            var anchor = At("2027-03-01T08:00:00+01:00");
+
+            Calculator.NextOccurrence(rule, anchor, At("2027-03-10T00:00:00+01:00"))
+                .ShouldBe(At("2027-03-10T08:00:00+01:00"));
+            var april = Calculator.NextOccurrence(rule, anchor, At("2027-04-10T00:00:00+02:00"));
+            april.ShouldBe(At("2027-04-10T08:00:00+02:00"));
+            april!.Value.Offset.ShouldBe(TimeSpan.FromHours(2));
+        }, TestContext.Current.CancellationToken);
 
     [Fact]
     public void NextOccurrence_WeeklyByDay_FromTuesdayReturnsWednesday()
@@ -159,6 +212,18 @@ public sealed class IcalOccurrenceCalculatorTests
     }
 
     [Fact]
+    public void NextOccurrence_UtcUntil_ComparesAsInstant()
+    {
+        var rule = Rule("FREQ=DAILY;BYHOUR=8;BYMINUTE=0;BYSECOND=0;UNTIL=20270303T073000Z");
+        var anchor = At("2027-03-01T08:00:00+01:00");
+
+        // 2027-03-03 08:00 CET is 07:00Z, before UNTIL (07:30Z), although its wall clock is later than 07:30.
+        var last = Calculator.NextOccurrence(rule, anchor, At("2027-03-02T08:00:00+01:00"));
+        last.ShouldBe(At("2027-03-03T08:00:00+01:00"));
+        Calculator.NextOccurrence(rule, anchor, last!.Value).ShouldBeNull();
+    }
+
+    [Fact]
     public void NextOccurrence_MinutelyInterval_ReturnsNextSlot()
     {
         var rule = Rule("FREQ=MINUTELY;INTERVAL=5");
@@ -168,23 +233,57 @@ public sealed class IcalOccurrenceCalculatorTests
             .ShouldBe(At("2027-03-01T08:05:00+01:00"));
     }
 
-    [Fact]
-    public void Occurrences_FourHundredDayWalk_AreStrictlyIncreasingAndNeverBeforeBounds()
-    {
-        var rule = Rule("FREQ=DAILY;BYHOUR=2;BYMINUTE=30;BYSECOND=0");
-        var anchor = At("2027-01-01T00:00:00+01:00");
-
-        var first = Calculator.FirstOccurrence(rule, anchor);
-        first.ShouldNotBeNull();
-        first.Value.ShouldBeGreaterThanOrEqualTo(anchor);
-
-        var previous = first.Value;
-        for (var day = 0; day < 400; day++)
+    [Fact(Timeout = 5000)]
+    public Task Occurrences_FourHundredDayWalk_AreStrictlyIncreasingAndNeverBeforeBounds() =>
+        Bounded(() =>
         {
-            var next = Calculator.NextOccurrence(rule, anchor, previous);
-            next.ShouldNotBeNull();
-            next.Value.ShouldBeGreaterThan(previous);
-            previous = next.Value;
-        }
-    }
+            var rule = Rule("FREQ=DAILY;BYHOUR=2;BYMINUTE=30;BYSECOND=0");
+            var anchor = At("2027-01-01T00:00:00+01:00");
+
+            var first = Calculator.FirstOccurrence(rule, anchor);
+            first.ShouldNotBeNull();
+            first.Value.ShouldBeGreaterThanOrEqualTo(anchor);
+
+            var previous = first.Value;
+            for (var day = 0; day < 400; day++)
+            {
+                var next = Calculator.NextOccurrence(rule, anchor, previous);
+                next.ShouldNotBeNull();
+                next.Value.ShouldBeGreaterThan(previous);
+                previous = next.Value;
+            }
+        }, TestContext.Current.CancellationToken);
+
+    [Fact(Timeout = 30000)]
+    public Task Occurrences_HourlyFourHundredDayWalk_AreStrictlyIncreasingWithoutLongGaps() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=HOURLY;BYMINUTE=15;BYSECOND=0");
+            var anchor = At("2027-01-01T00:00:00+01:00");
+            var end = anchor.AddDays(400);
+
+            var first = Calculator.FirstOccurrence(rule, anchor);
+            first.ShouldNotBeNull();
+            first.Value.ShouldBe(At("2027-01-01T00:15:00+01:00"));
+
+            var count = 1;
+            var previous = first.Value;
+            while (true)
+            {
+                var next = Calculator.NextOccurrence(rule, anchor, previous);
+                next.ShouldNotBeNull();
+                next.Value.ShouldBeGreaterThan(previous);
+                (next.Value - previous).ShouldBeLessThanOrEqualTo(TimeSpan.FromHours(2));
+                if (next.Value >= end)
+                {
+                    break;
+                }
+
+                count++;
+                previous = next.Value;
+            }
+
+            // One :15 instant per elapsed hour (9600), minus the skipped second pass of 02:15 on 2027-10-31.
+            count.ShouldBe(9599);
+        }, TestContext.Current.CancellationToken);
 }
