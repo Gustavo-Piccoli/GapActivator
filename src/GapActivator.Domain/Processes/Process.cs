@@ -66,8 +66,18 @@ public sealed class Process : AggregateRoot<ProcessId>
         LaunchOptions launch,
         ExecutionLimits limits,
         IEnumerable<Schedule> schedules,
-        DateTimeOffset now) =>
+        DateTimeOffset now)
+    {
+        var kindChanged = kind != Kind;
         Define(name, description, kind, launch, limits, schedules, now);
+
+        // Failures counted under the old kind say nothing about the new one.
+        if (kindChanged)
+        {
+            ConsecutiveFailures = 0;
+            RetryPending = false;
+        }
+    }
 
     public void Enable(DateTimeOffset now)
     {
@@ -80,6 +90,7 @@ public sealed class Process : AggregateRoot<ProcessId>
     {
         RequireLifecycle(ProcessLifecycle.Enabled, "disabled");
         Lifecycle = ProcessLifecycle.Disabled;
+        RetryPending = false;
         UpdatedAt = now;
     }
 
@@ -105,13 +116,19 @@ public sealed class Process : AggregateRoot<ProcessId>
                 break;
             case FailureEffect.Increment:
                 ConsecutiveFailures++;
-                if (ConsecutiveFailures >= failureLimit)
+
+                // A Disabled process only counts: it is never blocked or retried here;
+                // EnforceFailureLimit blocks it once it is enabled again.
+                if (Lifecycle != ProcessLifecycle.Disabled)
                 {
-                    Block(now);
-                }
-                else if (Kind == ProcessKind.RunToCompletion)
-                {
-                    RetryPending = true;
+                    if (ConsecutiveFailures >= failureLimit)
+                    {
+                        Block(now);
+                    }
+                    else if (Kind == ProcessKind.RunToCompletion)
+                    {
+                        RetryPending = true;
+                    }
                 }
 
                 UpdatedAt = now;
@@ -127,6 +144,11 @@ public sealed class Process : AggregateRoot<ProcessId>
         if (Kind != ProcessKind.Service)
         {
             throw new DomainException("Only a Service-kind process can be found running.");
+        }
+
+        if (ConsecutiveFailures == 0)
+        {
+            return;
         }
 
         ConsecutiveFailures = 0;

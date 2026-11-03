@@ -113,6 +113,55 @@ public class ProcessFailureTests
     }
 
     [Fact]
+    public void MarkServiceFoundRunning_CounterZero_DoesNotTouchUpdatedAt()
+    {
+        var process = new ProcessBuilder().OfKind(ProcessKind.Service).CreatedAt(Now).Build();
+
+        process.MarkServiceFoundRunning(Now.AddMinutes(1));
+
+        process.ConsecutiveFailures.ShouldBe(0);
+        process.UpdatedAt.ShouldBe(Now);
+    }
+
+    [Fact]
+    public void ApplyRunOutcome_FailureReachingLimitWhileDisabled_StaysDisabledAndCounts()
+    {
+        var process = new ProcessBuilder().Build();
+        process.ApplyRunOutcome(RunOutcome.Failed, FailureLimit, Now.AddMinutes(1));
+        process.ApplyRunOutcome(RunOutcome.Failed, FailureLimit, Now.AddMinutes(2));
+        process.Disable(Now.AddMinutes(3));
+
+        process.ApplyRunOutcome(RunOutcome.Failed, FailureLimit, Now.AddMinutes(4));
+
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Disabled);
+        process.ConsecutiveFailures.ShouldBe(3);
+        process.RetryPending.ShouldBeFalse();
+        process.UpdatedAt.ShouldBe(Now.AddMinutes(4));
+        process.DomainEvents.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Enable_ThenEnforceFailureLimit_BlocksWhenCounterAtLimit()
+    {
+        var process = new ProcessBuilder().Build();
+        process.Disable(Now.AddMinutes(1));
+        for (var minute = 2; minute <= 4; minute++)
+        {
+            process.ApplyRunOutcome(RunOutcome.Failed, FailureLimit, Now.AddMinutes(minute));
+        }
+
+        process.Enable(Now.AddMinutes(5));
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Enabled);
+
+        process.EnforceFailureLimit(FailureLimit, Now.AddMinutes(6));
+
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Blocked);
+        process.ConsecutiveFailures.ShouldBe(0);
+        process.DomainEvents.ShouldHaveSingleItem()
+            .ShouldBe(new ProcessBlocked(process.Id, FailuresReached: 3, Now.AddMinutes(6)));
+    }
+
+    [Fact]
     public void MarkServiceFoundRunning_RunToCompletion_Throws()
     {
         var process = new ProcessBuilder().Build();
