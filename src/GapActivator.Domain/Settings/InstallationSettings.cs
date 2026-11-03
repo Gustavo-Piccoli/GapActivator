@@ -41,7 +41,6 @@ public sealed class InstallationSettings : AggregateRoot<int>
         LogRetentionDays = 30,
         HistoryRetentionDays = 90,
         LogLevel = LogLevel.Information,
-        Email = EmailAlertSettings.Disabled,
         CheckForUpdates = true,
     };
 

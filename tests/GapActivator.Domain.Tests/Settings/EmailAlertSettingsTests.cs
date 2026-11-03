@@ -135,6 +135,31 @@ public class EmailAlertSettingsTests
         a.GetHashCode().ShouldBe(b.GetHashCode());
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Create_UndefinedTlsMode_Throws(bool enabled) =>
+        Should.Throw<DomainException>(() => EmailAlertSettings.Create(
+            enabled, "smtp.example.com", 587, (TlsMode)99, "user", null, "activator@example.com",
+            ["ops@example.com"], [AlertKind.RunFailed]));
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Create_UndefinedAlertKind_Throws(bool enabled) =>
+        Should.Throw<DomainException>(() => EmailAlertSettings.Create(
+            enabled, "smtp.example.com", 587, TlsMode.StartTls, "user", null, "activator@example.com",
+            ["ops@example.com"], [AlertKind.RunFailed, (AlertKind)99]));
+
+    [Fact]
+    public void Create_DuplicateAlerts_CollapseToOne()
+    {
+        var email = Valid(alerts: [AlertKind.RunFailed, AlertKind.RunFailed, AlertKind.CycleFailed, AlertKind.RunFailed]);
+
+        email.Alerts.Count.ShouldBe(2);
+        email.Alerts.ShouldBe([AlertKind.RunFailed, AlertKind.CycleFailed]);
+    }
+
     [Fact]
     public void Equals_DifferentRecipients_AreNotEqual()
     {

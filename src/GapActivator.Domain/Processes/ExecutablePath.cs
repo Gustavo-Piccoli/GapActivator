@@ -19,7 +19,7 @@ public sealed record ExecutablePath
             throw new DomainException($"Executable path must be between 1 and {MaxLength} characters.");
         }
 
-        if (trimmed.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+        if (trimmed.Contains('"') || trimmed.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
         {
             throw new DomainException("Executable path contains invalid characters.");
         }
