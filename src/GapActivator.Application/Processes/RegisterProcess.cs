@@ -14,6 +14,7 @@ internal sealed class RegisterProcessHandler(
     {
         ArgumentNullException.ThrowIfNull(command);
         ProcessDefinition definition = command.Definition;
+        DateTimeOffset now = time.GetUtcNow();
 
         // BI-001
         ProcessName name = ProcessName.Create(definition.Name);
@@ -28,8 +29,8 @@ internal sealed class RegisterProcessHandler(
             definition.Kind,
             mapper.MapLaunch(definition, null),
             ProcessDefinitionMapper.MapLimits(definition),
-            mapper.MapSchedules(definition, null),
-            time.GetUtcNow());
+            mapper.MapSchedules(definition, null, now),
+            now);
         processes.Add(process);
 
         return await ProcessSavedFactory.CreateAsync(processes, process, ct);
