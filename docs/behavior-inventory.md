@@ -166,4 +166,5 @@ These rules were not decided by the first version of the design; the owner decid
 | Q-8 | Process names are unique case-insensitively, ignoring surrounding whitespace. | BI-001 |
 | Q-9 | The installer sets automatic (delayed) start and "restart after 60 s" on every failure, with the failure count reset after 1 day (§11). | BI-107 |
 | Q-10 | Time limits never apply to Service-kind processes; a Service-kind registration with a per-process time limit is rejected (§6.2). | BI-108 |
+| Q-11 | Occurrences missed while Disabled or Blocked are discarded on Enable/Unblock; no catch-up run (§6.4). | — |
 | — | Log retention is by age in days: files older than N days are deleted (§6.5). | BI-087 |

@@ -79,11 +79,14 @@ public sealed class Process : AggregateRoot<ProcessId>
         }
     }
 
-    public void Enable(DateTimeOffset now)
+    /// <summary>Enables a disabled process; occurrences that came due while it was disabled are discarded.</summary>
+    public void Enable(DateTimeOffset now, IOccurrenceCalculator calculator)
     {
+        ArgumentNullException.ThrowIfNull(calculator);
         RequireLifecycle(ProcessLifecycle.Disabled, "enabled");
         Lifecycle = ProcessLifecycle.Enabled;
         UpdatedAt = now;
+        ConsumeDue(now, calculator);
     }
 
     public void Disable(DateTimeOffset now)
@@ -94,13 +97,16 @@ public sealed class Process : AggregateRoot<ProcessId>
         UpdatedAt = now;
     }
 
-    public void Unblock(DateTimeOffset now)
+    /// <summary>Unblocks a blocked process; occurrences that came due while it was blocked are discarded.</summary>
+    public void Unblock(DateTimeOffset now, IOccurrenceCalculator calculator)
     {
+        ArgumentNullException.ThrowIfNull(calculator);
         RequireLifecycle(ProcessLifecycle.Blocked, "unblocked");
         Lifecycle = ProcessLifecycle.Enabled;
         ConsecutiveFailures = 0;
         RetryPending = false;
         UpdatedAt = now;
+        ConsumeDue(now, calculator);
         Raise(new ProcessUnblocked(Id, now));
     }
 

@@ -200,6 +200,76 @@ public class ProcessDueTests
         new ProcessBuilder().Build().NextScheduledAt.ShouldBeNull();
     }
 
+    [Fact]
+    public void Enable_AfterMissedOccurrences_DiscardsThem()
+    {
+        var process = HourlyProcess();
+        process.Disable(At(7, 0));
+
+        process.Enable(At(10, 30), Calculator);
+
+        process.NextScheduledAt.ShouldBe(At(11, 0));
+        process.EvaluateDue(At(10, 30), LateThreshold, Calculator).ShouldBe(DueDecision.NotDue);
+    }
+
+    [Fact]
+    public void Unblock_AfterMissedOccurrences_DiscardsThem()
+    {
+        var process = HourlyProcess();
+        process.ApplyRunOutcome(RunOutcome.Failed, failureLimit: 3, At(7, 0));
+        process.EnforceFailureLimit(failureLimit: 1, At(7, 0));
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Blocked);
+
+        process.Unblock(At(10, 30), Calculator);
+
+        process.NextScheduledAt.ShouldBe(At(11, 0));
+        process.EvaluateDue(At(10, 30), LateThreshold, Calculator).ShouldBe(DueDecision.NotDue);
+    }
+
+    [Fact]
+    public void Enable_OneTimeMissedWhileDisabled_IsFulfilledWithoutRun()
+    {
+        var oneTime = OneTimeSchedule.Create(At(9, 0));
+        var process = new ProcessBuilder().WithSchedule(oneTime).Build();
+        process.Disable(At(7, 0));
+
+        process.Enable(At(10, 30), Calculator);
+
+        oneTime.FulfilledAt.ShouldBe(At(10, 30));
+        oneTime.IsExhausted.ShouldBeTrue();
+        process.EvaluateDue(At(10, 30), LateThreshold, Calculator).ShouldBe(DueDecision.NotDue);
+    }
+
+    [Fact]
+    public void Enable_NothingMissed_KeepsNextOccurrence()
+    {
+        var process = HourlyProcess();
+        process.Disable(At(7, 0));
+
+        process.Enable(At(7, 30), Calculator);
+
+        process.NextScheduledAt.ShouldBe(At(8, 0));
+    }
+
+    [Fact]
+    public void Enable_NullCalculator_Throws()
+    {
+        var process = HourlyProcess();
+        process.Disable(At(7, 0));
+
+        Should.Throw<ArgumentNullException>(() => process.Enable(At(10, 30), null!));
+    }
+
+    [Fact]
+    public void Unblock_NullCalculator_Throws()
+    {
+        var process = HourlyProcess();
+        process.EnforceFailureLimit(failureLimit: 1, At(7, 0));
+        process.ApplyRunOutcome(RunOutcome.Failed, failureLimit: 1, At(7, 0));
+
+        Should.Throw<ArgumentNullException>(() => process.Unblock(At(10, 30), null!));
+    }
+
     private static Process HourlyProcess() =>
         new ProcessBuilder().WithSchedule(RecurringSchedule.Create(Hourly, Anchor, Calculator)).Build();
 
