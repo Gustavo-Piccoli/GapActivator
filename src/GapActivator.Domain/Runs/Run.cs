@@ -110,6 +110,11 @@ public sealed class Run : AggregateRoot<RunId>
     public void RequestStop(StopReason reason, DateTimeOffset now)
     {
         RequireState("request stop", RunState.Launching, RunState.Running, RunState.Stopping);
+        if (reason == Runs.StopReason.TimeLimit && Kind == ProcessKind.Service)
+        {
+            throw new DomainException("A Service-kind run has no time limit.");
+        }
+
         StopReason ??= reason;
         if (State == RunState.Running)
         {

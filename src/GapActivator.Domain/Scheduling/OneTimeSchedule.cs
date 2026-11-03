@@ -17,6 +17,11 @@ public sealed class OneTimeSchedule : Schedule
 
     internal override void Advance(DateTimeOffset now, IOccurrenceCalculator calculator)
     {
+        if (FulfilledAt is not null)
+        {
+            throw new InvalidOperationException("A one-time schedule has already been fulfilled.");
+        }
+
         FulfilledAt = now;
         NextOccurrenceAt = null;
     }

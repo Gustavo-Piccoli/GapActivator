@@ -33,7 +33,8 @@ public sealed class RecurringSchedule : Schedule
         }
 
         var next = calculator.NextOccurrence(Rule, Anchor, now);
-        if (next is { } occurrence && occurrence <= current)
+        // The port contract is "strictly after now", which also implies strictly after the current occurrence.
+        if (next is { } occurrence && occurrence <= now)
         {
             throw new InvalidOperationException("Occurrence calculator returned a non-increasing occurrence.");
         }

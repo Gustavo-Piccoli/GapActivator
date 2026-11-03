@@ -118,6 +118,19 @@ public class RunStateMachineTests
         run.Outcome.ShouldBe(RunOutcome.TimedOut);
     }
 
+    [Theory]
+    [InlineData(RunState.Launching)]
+    [InlineData(RunState.Running)]
+    public void RequestStop_TimeLimitOnServiceRun_Throws(RunState state)
+    {
+        var run = Build(state, ProcessKind.Service);
+
+        Should.Throw<DomainException>(() => run.RequestStop(StopReason.TimeLimit, T1));
+
+        run.State.ShouldBe(state);
+        run.StopReason.ShouldBeNull();
+    }
+
     [Fact]
     public void RequestStop_WhileRunning_GoesToStopping()
     {
@@ -168,7 +181,6 @@ public class RunStateMachineTests
     [InlineData(StopReason.UserCancel, ProcessKind.RunToCompletion, RunOutcome.Cancelled)]
     [InlineData(StopReason.UserCancel, ProcessKind.Service, RunOutcome.Stopped)]
     [InlineData(StopReason.TimeLimit, ProcessKind.RunToCompletion, RunOutcome.TimedOut)]
-    [InlineData(StopReason.TimeLimit, ProcessKind.Service, RunOutcome.TimedOut)]
     [InlineData(StopReason.Shutdown, ProcessKind.RunToCompletion, RunOutcome.Interrupted)]
     [InlineData(StopReason.Shutdown, ProcessKind.Service, RunOutcome.Interrupted)]
     public void AbortLaunch_AfterStopRequest_MapsOutcomeFromReason(StopReason reason, ProcessKind kind, RunOutcome expected)
@@ -295,7 +307,6 @@ public class RunStateMachineTests
     [InlineData(StopReason.UserCancel, ProcessKind.RunToCompletion, RunOutcome.Cancelled)]
     [InlineData(StopReason.UserCancel, ProcessKind.Service, RunOutcome.Stopped)]
     [InlineData(StopReason.TimeLimit, ProcessKind.RunToCompletion, RunOutcome.TimedOut)]
-    [InlineData(StopReason.TimeLimit, ProcessKind.Service, RunOutcome.TimedOut)]
     [InlineData(StopReason.Shutdown, ProcessKind.RunToCompletion, RunOutcome.Interrupted)]
     [InlineData(StopReason.Shutdown, ProcessKind.Service, RunOutcome.Interrupted)]
     public void Exit_AfterStopRequest_MapsOutcomeFromReason(StopReason reason, ProcessKind kind, RunOutcome expected)

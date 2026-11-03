@@ -186,6 +186,15 @@ public sealed partial record RecurrenceRule
             throw new DomainException("A BYDAY ordinal is only allowed with FREQ=MONTHLY or YEARLY.");
         }
 
+        // RFC 5545: with FREQ=YEARLY and BYWEEKNO, a BYDAY ordinal is not allowed.
+        if (frequency == "YEARLY"
+            && parts.ContainsKey("BYWEEKNO")
+            && parts.TryGetValue("BYDAY", out var weekDays)
+            && weekDays.Split(',').Any(token => token.Length > 2))
+        {
+            throw new DomainException("A BYDAY ordinal is not allowed together with BYWEEKNO.");
+        }
+
         if (parts.ContainsKey("BYSETPOS") && !OtherByParts.Any(parts.ContainsKey))
         {
             throw new DomainException("BYSETPOS requires at least one other BY* part.");

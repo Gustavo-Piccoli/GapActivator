@@ -27,6 +27,8 @@ public static class RecurrenceRuleSamples
     public static IReadOnlyList<string> AllowedCombinations { get; } =
     [
         "FREQ=YEARLY;BYWEEKNO=20",
+        "FREQ=YEARLY;BYWEEKNO=20;BYDAY=MO,FR",
+        "FREQ=YEARLY;BYMONTH=3;BYDAY=2MO",
         "FREQ=HOURLY;BYYEARDAY=100",
         "FREQ=YEARLY;BYYEARDAY=100",
         "FREQ=DAILY;BYMONTHDAY=1",

@@ -70,6 +70,12 @@ public class ValueObjectTests
     [InlineData("C:\\Tools\\a|b.exe")]
     [InlineData("C:\\Tools\\a\"b.exe")]
     [InlineData("C:\\Tools\\a.exe\"")]
+    [InlineData("C:\\")]
+    [InlineData("C:\\Tools\\")]
+    [InlineData("\\\\server\\share\\")]
+    [InlineData("C:\\Tools\\*.exe")]
+    [InlineData("C:\\Tools\\backup?.exe")]
+    [InlineData("C:\\T*ols\\backup.exe")]
     public void ExecutablePath_Create_InvalidValue_Throws(string value)
     {
         Should.Throw<DomainException>(() => ExecutablePath.Create(value));
@@ -250,6 +256,42 @@ public class ValueObjectTests
             EnvironmentVariables.Create([EnvironmentVariable.Plain("MODE", "1")]));
 
         Build().ShouldBe(Build());
+    }
+
+    [Theory]
+    [InlineData("work")]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("\"D:\\Work\"")]
+    [InlineData("D:\\Wo\"rk")]
+    [InlineData("D:\\Wo|rk")]
+    [InlineData("D:\\Wor*")]
+    [InlineData("D:\\Work?")]
+    public void LaunchOptions_InvalidWorkingDirectory_Throws(string workingDirectory)
+    {
+        Should.Throw<DomainException>(() => new LaunchOptions(
+            ExecutablePath.Create(@"C:\Tools\backup.exe"), "", workingDirectory, EnvironmentVariables.Empty));
+    }
+
+    [Fact]
+    public void LaunchOptions_WorkingDirectoryWithSurroundingWhitespace_IsTrimmed()
+    {
+        var options = new LaunchOptions(
+            ExecutablePath.Create(@"C:\Tools\backup.exe"), "", @"  D:\Work  ", EnvironmentVariables.Empty);
+
+        options.WorkingDirectory.ShouldBe(@"D:\Work");
+        options.EffectiveWorkingDirectory.ShouldBe(@"D:\Work");
+    }
+
+    [Fact]
+    public void LaunchOptions_WorkingDirectoryAtMaxLength_SucceedsAndOneOverThrows()
+    {
+        var atLimit = @"D:\" + new string('a', ExecutablePath.MaxLength - 3);
+
+        new LaunchOptions(ExecutablePath.Create(@"C:\Tools\backup.exe"), "", atLimit, EnvironmentVariables.Empty)
+            .WorkingDirectory.ShouldBe(atLimit);
+        Should.Throw<DomainException>(() => new LaunchOptions(
+            ExecutablePath.Create(@"C:\Tools\backup.exe"), "", atLimit + "a", EnvironmentVariables.Empty));
     }
 
     [Fact]

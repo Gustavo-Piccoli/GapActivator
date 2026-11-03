@@ -22,14 +22,15 @@ public sealed record LaunchOptions
             throw new DomainException($"Arguments must not exceed {MaxArgumentsLength} characters.");
         }
 
-        if (workingDirectory is not null && !Path.IsPathFullyQualified(workingDirectory))
+        var directory = workingDirectory?.Trim();
+        if (directory is not null)
         {
-            throw new DomainException("Working directory must be fully qualified.");
+            ValidateWorkingDirectory(directory);
         }
 
         Executable = executable;
         Arguments = arguments;
-        WorkingDirectory = workingDirectory;
+        WorkingDirectory = directory;
         Environment = environment;
     }
 
@@ -40,7 +41,27 @@ public sealed record LaunchOptions
     public string? WorkingDirectory { get; }
 
     /// <summary>The configured working directory, or the executable's folder when none is set.</summary>
-    public string EffectiveWorkingDirectory => WorkingDirectory ?? Path.GetDirectoryName(Executable.Value)!;
+    public string EffectiveWorkingDirectory => WorkingDirectory ?? Path.GetDirectoryName(Executable.Value.AsSpan()).ToString();
 
     public EnvironmentVariables Environment { get; }
+
+    private static void ValidateWorkingDirectory(string directory)
+    {
+        if (directory.Length > ExecutablePath.MaxLength)
+        {
+            throw new DomainException($"Working directory must not exceed {ExecutablePath.MaxLength} characters.");
+        }
+
+        if (directory.Contains('"')
+            || directory.IndexOfAny(Path.GetInvalidPathChars()) >= 0
+            || directory.IndexOfAny(ExecutablePath.Wildcards) >= 0)
+        {
+            throw new DomainException("Working directory contains invalid characters.");
+        }
+
+        if (!Path.IsPathFullyQualified(directory))
+        {
+            throw new DomainException("Working directory must be fully qualified.");
+        }
+    }
 }
