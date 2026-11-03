@@ -207,6 +207,8 @@ Disable and delete (builder's call, confirmed in design review):
 - Missed occurrences (machine off, service stopped): run **once**, then jump to the next future occurrence (legacy behavior). The run is flagged **late** in history.
 - An exhausted recurrence (COUNT reached, UNTIL passed) simply finishes: no next occurrence, no error.
 - A manual run (run now) consumes the occurrences that are due at its start, like a scheduled run (owner decision).
+- Occurrences that came due while a process was **Disabled** or **Blocked** are **discarded** when it is enabled or unblocked: no catch-up run; the process waits for its next future occurrence (owner decision). "Unblock and run" still runs at once because the run is manual.
+- Time-zone semantics: rules expand on the zone's wall clock; a nonexistent local time (spring forward) uses the pre-gap offset; an ambiguous local time (fall back) resolves to its first pass, so sub-daily rules run the repeated hour once.
 - RRULE frequency SECONDLY is rejected; MINUTELY and coarser are accepted; UNTIL has no artificial year range (owner decision).
 - **Known legacy bug, not to be reproduced:** an occurrence exactly equal to the reference instant was neither advanced nor considered (`<` in one place, `>` in the other), so the schedule could silently drop out. GapActivator must have a test for the equality case.
 
