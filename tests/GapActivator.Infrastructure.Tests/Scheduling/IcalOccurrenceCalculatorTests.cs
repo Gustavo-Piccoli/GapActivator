@@ -1,5 +1,6 @@
 using GapActivator.Domain.Scheduling;
 using GapActivator.Infrastructure.Scheduling;
+using GapActivator.Testing;
 
 namespace GapActivator.Infrastructure.Tests.Scheduling;
 
@@ -15,6 +16,8 @@ public sealed class IcalOccurrenceCalculatorTests
         "01:23", "01:27", "01:30", "01:34", "01:37", "01:41", "01:44", "01:48", "01:51", "01:55", "01:58",
         "02:05", "02:12", "02:19", "02:26",
     ];
+
+    public static TheoryData<string> AcceptedRules => [.. RecurrenceRuleSamples.Accepted];
 
     private static DateTimeOffset At(string value) => DateTimeOffset.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
 
@@ -51,6 +54,19 @@ public sealed class IcalOccurrenceCalculatorTests
 
         return [.. instants];
     }
+
+    // Contract with the domain: every rule RecurrenceRule accepts must be expandable. Null (no occurrence) is allowed.
+    [Theory(Timeout = 30000)]
+    [MemberData(nameof(AcceptedRules))]
+    public Task Occurrences_AnyDomainAcceptedRule_AreExpandedWithoutThrowing(string value) =>
+        Bounded(() =>
+        {
+            var rule = Rule(value);
+            var anchor = At("2027-03-01T08:00:00+01:00");
+
+            var first = Should.NotThrow(() => Calculator.FirstOccurrence(rule, anchor));
+            Should.NotThrow(() => Calculator.NextOccurrence(rule, anchor, first ?? anchor));
+        }, TestContext.Current.CancellationToken);
 
     [Fact]
     public void FirstOccurrence_AnchorMatchesRule_ReturnsAnchor()

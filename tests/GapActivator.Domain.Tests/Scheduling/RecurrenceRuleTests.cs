@@ -1,5 +1,6 @@
 using GapActivator.Domain.Common;
 using GapActivator.Domain.Scheduling;
+using GapActivator.Testing;
 
 namespace GapActivator.Domain.Tests.Scheduling;
 
@@ -18,6 +19,16 @@ public class RecurrenceRuleTests
     {
         RecurrenceRule.Parse("  FREQ=DAILY;  ").Value.ShouldBe("FREQ=DAILY");
     }
+
+    public static TheoryData<string> Frequencies => [.. RecurrenceRuleSamples.Frequencies];
+
+    public static TheoryData<string> RangeBoundaries => [.. RecurrenceRuleSamples.RangeBoundaries];
+
+    public static TheoryData<string> AllowedCombinations => [.. RecurrenceRuleSamples.AllowedCombinations];
+
+    public static TheoryData<string> ReachableMonthAndDay => [.. RecurrenceRuleSamples.ReachableMonthAndDay];
+
+    public static TheoryData<string> UntilForms => [.. RecurrenceRuleSamples.UntilForms];
 
     [Fact]
     public void Parse_OrdinalWeekdays_AreAccepted()
@@ -49,10 +60,7 @@ public class RecurrenceRuleTests
     }
 
     [Theory]
-    [InlineData("FREQ=DAILY;UNTIL=20270301")]
-    [InlineData("FREQ=DAILY;UNTIL=20270301T000000Z")]
-    [InlineData("FREQ=DAILY;UNTIL=21501231T235959Z")]
-    [InlineData("FREQ=DAILY;UNTIL=18991231")]
+    [MemberData(nameof(UntilForms))]
     public void Parse_UntilDateOrUtcDateTimeWithoutYearRange_IsAccepted(string value)
     {
         RecurrenceRule.Parse(value).Value.ShouldBe(value);
@@ -76,15 +84,10 @@ public class RecurrenceRuleTests
     }
 
     [Theory]
-    [InlineData("MINUTELY")]
-    [InlineData("HOURLY")]
-    [InlineData("DAILY")]
-    [InlineData("WEEKLY")]
-    [InlineData("MONTHLY")]
-    [InlineData("YEARLY")]
-    public void Parse_SupportedFrequency_IsAccepted(string frequency)
+    [MemberData(nameof(Frequencies))]
+    public void Parse_SupportedFrequency_IsAccepted(string value)
     {
-        RecurrenceRule.Parse($"FREQ={frequency}").Value.ShouldBe($"FREQ={frequency}");
+        RecurrenceRule.Parse(value).Value.ShouldBe(value);
     }
 
     [Fact]
@@ -94,15 +97,7 @@ public class RecurrenceRuleTests
     }
 
     [Theory]
-    [InlineData("FREQ=YEARLY;BYMONTH=1,12")]
-    [InlineData("FREQ=YEARLY;BYMONTHDAY=1,31,-1,-31,+5")]
-    [InlineData("FREQ=YEARLY;BYYEARDAY=1,366,-1,-366")]
-    [InlineData("FREQ=YEARLY;BYWEEKNO=1,53,-1,-53")]
-    [InlineData("FREQ=MONTHLY;BYHOUR=8;BYSETPOS=1,366,-1,-366")]
-    [InlineData("FREQ=DAILY;BYSECOND=0,60")]
-    [InlineData("FREQ=DAILY;BYMINUTE=0,59")]
-    [InlineData("FREQ=DAILY;BYHOUR=0,23")]
-    [InlineData("FREQ=MONTHLY;BYDAY=1MO,+53SU,-53SA,TU,-1FR")]
+    [MemberData(nameof(RangeBoundaries))]
     public void Parse_ValuesOnRangeBoundaries_AreAccepted(string value)
     {
         RecurrenceRule.Parse(value).Value.ShouldBe(value);
@@ -128,6 +123,7 @@ public class RecurrenceRuleTests
     [InlineData("FREQ=YEARLY;BYWEEKNO=0")]
     [InlineData("FREQ=MONTHLY;BYHOUR=8;BYSETPOS=367")]
     [InlineData("FREQ=MONTHLY;BYHOUR=8;BYSETPOS=0")]
+    [InlineData("FREQ=DAILY;BYSECOND=60")]
     [InlineData("FREQ=DAILY;BYSECOND=61")]
     [InlineData("FREQ=DAILY;BYSECOND=-1")]
     [InlineData("FREQ=DAILY;BYMINUTE=60")]
@@ -157,9 +153,7 @@ public class RecurrenceRuleTests
     }
 
     [Theory]
-    [InlineData("FREQ=DAILY;UNTIL=20280229")]
-    [InlineData("FREQ=DAILY;UNTIL=20271231T235959Z")]
-    [InlineData("FREQ=DAILY;UNTIL=20270301T000000Z")]
+    [MemberData(nameof(UntilForms))]
     public void Parse_UntilRealDateOrUtcDateTime_IsAccepted(string value)
     {
         RecurrenceRule.Parse(value).Value.ShouldBe(value);
@@ -183,16 +177,7 @@ public class RecurrenceRuleTests
     }
 
     [Theory]
-    [InlineData("FREQ=YEARLY;BYWEEKNO=20")]
-    [InlineData("FREQ=HOURLY;BYYEARDAY=100")]
-    [InlineData("FREQ=YEARLY;BYYEARDAY=100")]
-    [InlineData("FREQ=DAILY;BYMONTHDAY=1")]
-    [InlineData("FREQ=MONTHLY;BYMONTHDAY=1")]
-    [InlineData("FREQ=WEEKLY;BYDAY=MO,FR")]
-    [InlineData("FREQ=MONTHLY;BYDAY=2TU")]
-    [InlineData("FREQ=YEARLY;BYDAY=-1SU")]
-    [InlineData("FREQ=MONTHLY;BYDAY=MO;BYSETPOS=-1")]
-    [InlineData("FREQ=MONTHLY;BYMONTHDAY=1,15;BYSETPOS=1")]
+    [MemberData(nameof(AllowedCombinations))]
     public void Parse_AllowedCombinations_AreAccepted(string value)
     {
         RecurrenceRule.Parse(value).Value.ShouldBe(value);
@@ -217,13 +202,7 @@ public class RecurrenceRuleTests
     }
 
     [Theory]
-    [InlineData("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29")]
-    [InlineData("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-29")]
-    [InlineData("FREQ=YEARLY;BYMONTH=4;BYMONTHDAY=30")]
-    [InlineData("FREQ=YEARLY;BYMONTH=1;BYMONTHDAY=31")]
-    [InlineData("FREQ=YEARLY;BYMONTH=2,3;BYMONTHDAY=31")]
-    [InlineData("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30,15")]
-    [InlineData("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-30,-1")]
+    [MemberData(nameof(ReachableMonthAndDay))]
     public void Parse_ReachableMonthAndDay_IsAccepted(string value)
     {
         RecurrenceRule.Parse(value).Value.ShouldBe(value);

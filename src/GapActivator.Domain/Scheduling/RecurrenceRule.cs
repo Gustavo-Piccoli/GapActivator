@@ -124,7 +124,8 @@ public sealed partial record RecurrenceRule
         ValidateNumbers(parts, "BYYEARDAY", 1, 366, signed: true);
         ValidateNumbers(parts, "BYWEEKNO", 1, 53, signed: true);
         ValidateNumbers(parts, "BYSETPOS", 1, 366, signed: true);
-        ValidateNumbers(parts, "BYSECOND", 0, 60, signed: false);
+        // 0..59 only: a leap second (60) cannot be expanded by the occurrence calculator.
+        ValidateNumbers(parts, "BYSECOND", 0, 59, signed: false);
         ValidateNumbers(parts, "BYMINUTE", 0, 59, signed: false);
         ValidateNumbers(parts, "BYHOUR", 0, 23, signed: false);
 
