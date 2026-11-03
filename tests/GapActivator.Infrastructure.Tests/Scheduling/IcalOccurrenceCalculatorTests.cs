@@ -108,9 +108,11 @@ public sealed class IcalOccurrenceCalculatorTests
             Calculator.NextOccurrence(rule, anchor, after).ShouldBe(expected);
         }, TestContext.Current.CancellationToken);
 
+    // Rules with no occurrence within the 8-year horizon of the 2027-03-01 start: a Feb 29 on a Thursday.
+    // Feb 29 falls on Tue 2028 and Sun 2032 inside the horizon (ends 2035-03-07); the first Thursday one is 2052-02-29.
     [Theory(Timeout = 5000)]
-    [InlineData("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30")]
-    [InlineData("FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30")]
+    [InlineData("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
+    [InlineData("FREQ=DAILY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
     public Task FirstOccurrence_NeverMatchingRule_ReturnsNull(string value) =>
         Bounded(() =>
         {
@@ -118,8 +120,8 @@ public sealed class IcalOccurrenceCalculatorTests
         }, TestContext.Current.CancellationToken);
 
     [Theory(Timeout = 5000)]
-    [InlineData("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30")]
-    [InlineData("FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30")]
+    [InlineData("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
+    [InlineData("FREQ=DAILY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
     public Task NextOccurrence_NeverMatchingRule_ReturnsNull(string value) =>
         Bounded(() =>
         {
@@ -130,8 +132,8 @@ public sealed class IcalOccurrenceCalculatorTests
 
     // Without a search limit Ical.Net steps every minute or hour to year 9999 (probe: HOURLY 20 s, MINUTELY > 40 s).
     [Theory(Timeout = 15000)]
-    [InlineData("FREQ=MINUTELY;BYMONTH=2;BYMONTHDAY=30")]
-    [InlineData("FREQ=HOURLY;BYMONTH=2;BYMONTHDAY=30")]
+    [InlineData("FREQ=MINUTELY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
+    [InlineData("FREQ=HOURLY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
     public Task Occurrences_NeverMatchingSubDailyRule_ReturnNullForBothMethods(string value) =>
         Bounded(() =>
         {
@@ -166,7 +168,7 @@ public sealed class IcalOccurrenceCalculatorTests
     public Task FirstOccurrence_RuleMatchingOnceThenNever_ReturnsMatchPromptly() =>
         Bounded(() =>
         {
-            var rule = Rule("FREQ=MINUTELY;BYMONTH=1;BYMONTHDAY=1;BYHOUR=0;BYMINUTE=0;UNTIL=20280101T000000");
+            var rule = Rule("FREQ=MINUTELY;BYMONTH=1;BYMONTHDAY=1;BYHOUR=0;BYMINUTE=0;UNTIL=20280101T000000Z");
 
             Calculator.FirstOccurrence(rule, At("2027-12-31T00:00:00+01:00")).ShouldBe(At("2028-01-01T00:00:00+01:00"));
         }, TestContext.Current.CancellationToken);
