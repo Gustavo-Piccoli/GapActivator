@@ -8,6 +8,14 @@ public sealed class IcalOccurrenceCalculatorTests
     private static readonly TimeZoneInfo Zone = TimeZoneInfo.FindSystemTimeZoneById("Central European Standard Time");
     private static readonly IcalOccurrenceCalculator Calculator = new(Zone);
 
+    // FREQ=MINUTELY;INTERVAL=7 from 2027-03-28 00:00 CET, instants in (00:30Z, 02:30Z); derivation in the task report.
+    private static readonly string[] SpringForwardMinutelyUtcTimes =
+    [
+        "00:31", "00:38", "00:45", "00:52", "00:59", "01:02", "01:06", "01:09", "01:13", "01:16", "01:20",
+        "01:23", "01:27", "01:30", "01:34", "01:37", "01:41", "01:44", "01:48", "01:51", "01:55", "01:58",
+        "02:05", "02:12", "02:19", "02:26",
+    ];
+
     private static DateTimeOffset At(string value) => DateTimeOffset.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
 
     private static RecurrenceRule Rule(string value) => RecurrenceRule.Parse(value);
@@ -26,6 +34,22 @@ public sealed class IcalOccurrenceCalculatorTests
         }
 
         return instants;
+    }
+
+    // Brute-force reference independent of Ical.Net: every wall-clock slot of FREQ=MINUTELY;INTERVAL=n from DTSTART,
+    // mapped as documented (ambiguous -> first pass, nonexistent -> pre-gap offset), deduplicated and ordered by instant.
+    private static List<DateTimeOffset> MinutelyReference(DateTime dtStart, int interval, DateTime lastWallClock)
+    {
+        var instants = new SortedSet<DateTimeOffset>();
+        for (var wallClock = dtStart; wallClock <= lastWallClock; wallClock = wallClock.AddMinutes(interval))
+        {
+            var offset = Zone.IsAmbiguousTime(wallClock) ? Zone.GetAmbiguousTimeOffsets(wallClock).Max()
+                : Zone.IsInvalidTime(wallClock) ? Zone.GetUtcOffset(wallClock.AddHours(-1)) // CET gaps last one hour.
+                : Zone.GetUtcOffset(wallClock);
+            instants.Add(new DateTimeOffset(wallClock, offset));
+        }
+
+        return [.. instants];
     }
 
     [Fact]
@@ -144,6 +168,39 @@ public sealed class IcalOccurrenceCalculatorTests
                 At("2027-03-28T02:30:00Z").UtcDateTime,
                 At("2027-03-28T03:30:00Z").UtcDateTime,
             ]);
+        }, TestContext.Current.CancellationToken);
+
+    [Fact(Timeout = 5000)]
+    public Task NextOccurrence_MinutelyAcrossSpringForward_IsFirstInstantAfter() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=MINUTELY;INTERVAL=7");
+            var anchor = At("2027-03-27T23:00:00Z");
+
+            var instants = Walk(rule, anchor, At("2027-03-28T00:30:00Z"), At("2027-03-28T02:30:00Z"));
+
+            // Gap wall clocks 02:06..02:55 (pre-gap +01:00) interleave with real CEST occurrences 03:02..03:58 (+02:00).
+            instants.ShouldBeUnique();
+            instants.Select(i => i.UtcDateTime).ShouldBe(
+                SpringForwardMinutelyUtcTimes.Select(time => At($"2027-03-28T{time}:00Z").UtcDateTime));
+        }, TestContext.Current.CancellationToken);
+
+    [Fact(Timeout = 5000)]
+    public Task NextOccurrence_MinutelyWalkAcrossSpringForward_MatchesBruteForceMinimum() =>
+        Bounded(() =>
+        {
+            var rule = Rule("FREQ=MINUTELY;INTERVAL=7");
+            var anchor = At("2027-03-27T23:00:00Z");
+            var reference = MinutelyReference(new DateTime(2027, 3, 28, 0, 0, 0), 7, new DateTime(2027, 3, 28, 10, 0, 0));
+
+            var previous = anchor;
+            while (previous < At("2027-03-28T06:00:00Z"))
+            {
+                var next = Calculator.NextOccurrence(rule, anchor, previous);
+                next.ShouldNotBeNull();
+                next.Value.UtcDateTime.ShouldBe(reference.First(r => r > previous).UtcDateTime);
+                previous = next.Value;
+            }
         }, TestContext.Current.CancellationToken);
 
     [Fact(Timeout = 5000)]
