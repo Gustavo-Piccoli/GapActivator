@@ -180,6 +180,43 @@ public class ProcessLifecycleTests
     }
 
     [Fact]
+    public void Update_DescriptionTooLongOnlyBecauseOfWhitespace_IsAcceptedTrimmed()
+    {
+        var process = new ProcessBuilder().Build();
+
+        process.Update(
+            process.Name,
+            "  " + new string('d', 1_000) + "  ",
+            process.Kind,
+            process.Launch,
+            process.Limits,
+            [],
+            Later);
+
+        process.Description.Length.ShouldBe(1_000);
+    }
+
+    [Fact]
+    public void Update_KindChangedButInvalid_KeepsCounterAndRetry()
+    {
+        var process = new ProcessBuilder().Build();
+        process.ApplyRunOutcome(RunOutcome.Failed, failureLimit: 3, Now.AddMinutes(1));
+
+        Should.Throw<DomainException>(() => process.Update(
+            process.Name,
+            process.Description,
+            ProcessKind.Service,
+            process.Launch,
+            process.Limits,
+            [OneTimeSchedule.Create(Now.AddHours(8))],
+            Later));
+
+        process.Kind.ShouldBe(ProcessKind.RunToCompletion);
+        process.ConsecutiveFailures.ShouldBe(1);
+        process.RetryPending.ShouldBeTrue();
+    }
+
+    [Fact]
     public void Update_KindChanged_ResetsFailuresAndRetry()
     {
         var process = new ProcessBuilder().Build();
