@@ -140,4 +140,58 @@ public class InstallationSettingsTests
     [Fact]
     public void ChangeEmail_Null_Throws() =>
         Should.Throw<ArgumentNullException>(() => InstallationSettings.Default().ChangeEmail(null!));
+
+    private static readonly DateTimeOffset Now = new(2026, 1, 1, 12, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void Default_IsNotPaused() => InstallationSettings.Default().IsPaused.ShouldBeFalse();
+
+    [Fact]
+    public void Pause_WhenRunning_PausesAndRaisesEvent()
+    {
+        var s = InstallationSettings.Default();
+
+        s.Pause(Now);
+
+        s.IsPaused.ShouldBeTrue();
+        s.DomainEvents.ShouldHaveSingleItem().ShouldBe(new InstallationPaused(Now));
+    }
+
+    [Fact]
+    public void Pause_WhenPaused_Throws()
+    {
+        var s = InstallationSettings.Default();
+        s.Pause(Now);
+
+        Should.Throw<DomainException>(() => s.Pause(Now));
+    }
+
+    [Fact]
+    public void Resume_WhenPaused_ResumesAndRaisesEvent()
+    {
+        var s = InstallationSettings.Default();
+        s.Pause(Now);
+        s.ClearDomainEvents();
+
+        s.Resume(Now.AddMinutes(5));
+
+        s.IsPaused.ShouldBeFalse();
+        s.DomainEvents.ShouldHaveSingleItem().ShouldBe(new InstallationResumed(Now.AddMinutes(5)));
+    }
+
+    [Fact]
+    public void Resume_WhenNotPaused_Throws() =>
+        Should.Throw<DomainException>(() => InstallationSettings.Default().Resume(Now));
+
+    [Fact]
+    public void Change_DoesNotAlterPause()
+    {
+        var s = InstallationSettings.Default();
+        s.Pause(Now);
+
+        Apply(s, failureLimit: 5);
+        s.ChangeEmail(EmailAlertSettings.Disabled);
+
+        s.IsPaused.ShouldBeTrue();
+    }
 }

@@ -30,6 +30,8 @@ public sealed class InstallationSettings : AggregateRoot<int>
 
     public bool CheckForUpdates { get; private set; }
 
+    public bool IsPaused { get; private set; }
+
     public static InstallationSettings Default() => new()
     {
         CycleInterval = TimeSpan.FromSeconds(60),
@@ -78,6 +80,20 @@ public sealed class InstallationSettings : AggregateRoot<int>
     {
         ArgumentNullException.ThrowIfNull(email);
         Email = email;
+    }
+
+    public void Pause(DateTimeOffset now)
+    {
+        Require(!IsPaused, "The installation is already paused.");
+        IsPaused = true;
+        Raise(new InstallationPaused(now));
+    }
+
+    public void Resume(DateTimeOffset now)
+    {
+        Require(IsPaused, "The installation is not paused.");
+        IsPaused = false;
+        Raise(new InstallationResumed(now));
     }
 
     private static void Require(bool condition, string message)
