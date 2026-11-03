@@ -1,6 +1,7 @@
 using GapActivator.Domain.Common;
 using GapActivator.Domain.Processes;
 using GapActivator.Domain.Runs;
+using GapActivator.Domain.Scheduling;
 using GapActivator.Testing;
 
 namespace GapActivator.Domain.Tests.Processes;
@@ -319,12 +320,21 @@ public class ProcessFailureTests
     [Fact]
     public void ApplyRunOutcome_CancelledOnFreshProcess_DoesNotScheduleRetry()
     {
-        var process = new ProcessBuilder().Build();
+        var anchor = Now.AddMinutes(1);
+        var schedule = RecurringSchedule.Create(RecurrenceRule.Parse("FREQ=HOURLY"), anchor, Calculator);
+        var process = new ProcessBuilder().WithSchedule(schedule).Build();
 
         process.ApplyRunOutcome(RunOutcome.Cancelled, FailureLimit, Now.AddMinutes(1));
 
         process.RetryPending.ShouldBeFalse();
-        process.EvaluateDue(Now.AddMinutes(2), TimeSpan.FromMinutes(2), Calculator).ShouldBe(DueDecision.NotDue);
+        process.NextScheduledAt.ShouldBe(anchor);
+
+        // Due at the schedule's own occurrence: the decision is the schedule's, not a retry.
+        var decision = process.EvaluateDue(Now.AddMinutes(2), TimeSpan.FromMinutes(2), Calculator);
+
+        decision.ShouldBe(new DueDecision(true, RunTrigger.Schedule, anchor, false));
+        process.NextScheduledAt.ShouldBe(anchor.AddHours(1));
+        process.RetryPending.ShouldBeFalse();
     }
 
     public static TheoryData<RunOutcome> AllOutcomes() => [.. Enum.GetValues<RunOutcome>()];

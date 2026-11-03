@@ -29,10 +29,13 @@ public class RunStateMachineTests
     public void Begin_Late_RaisesRunLate()
     {
         var scheduled = T0.AddMinutes(-10);
-        var run = Run.Begin(ProcessId.New(), Name, ProcessKind.RunToCompletion, RunTrigger.Schedule, scheduled, true, T0);
+        var processId = ProcessId.New();
+        var run = Run.Begin(processId, Name, ProcessKind.RunToCompletion, RunTrigger.Schedule, scheduled, true, T0);
 
         run.IsLate.ShouldBeTrue();
         var e = run.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<RunLate>();
+        e.RunId.ShouldBe(run.Id);
+        e.ProcessId.ShouldBe(processId);
         e.ScheduledFor.ShouldBe(scheduled);
         e.OccurredAt.ShouldBe(T0);
     }
@@ -45,12 +48,19 @@ public class RunStateMachineTests
     [Fact]
     public void Skip_IsCompletedImmediately_WithSkippedOutcome()
     {
-        var run = Run.Skip(ProcessId.New(), Name, ProcessKind.RunToCompletion, T0, T1);
+        var processId = ProcessId.New();
+        var run = Run.Skip(processId, Name, ProcessKind.RunToCompletion, T0, T1);
 
         run.State.ShouldBe(RunState.Completed);
         run.Outcome.ShouldBe(RunOutcome.Skipped);
+        run.Trigger.ShouldBe(RunTrigger.Schedule);
+        run.ScheduledFor.ShouldBe(T0);
+        run.IsLate.ShouldBeFalse();
         run.EndedAt.ShouldBe(T1);
-        run.DomainEvents.OfType<RunSkipped>().ShouldHaveSingleItem();
+        var skipped = run.DomainEvents.OfType<RunSkipped>().ShouldHaveSingleItem();
+        skipped.RunId.ShouldBe(run.Id);
+        skipped.ProcessId.ShouldBe(processId);
+        skipped.ScheduledFor.ShouldBe(T0);
         run.DomainEvents.OfType<RunCompleted>().ShouldHaveSingleItem().Outcome.ShouldBe(RunOutcome.Skipped);
     }
 
@@ -87,6 +97,25 @@ public class RunStateMachineTests
 
         run.MarkRunning(5, T0, T1);
         run.State.ShouldBe(RunState.Stopping);
+        var started = run.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<RunStarted>();
+        started.RunId.ShouldBe(run.Id);
+        started.ProcessId.ShouldBe(run.ProcessId);
+        started.Pid.ShouldBe(5);
+        started.OccurredAt.ShouldBe(T1);
+    }
+
+    [Fact]
+    public void RequestStop_TwiceDuringLaunching_KeepsFirstReasonAndStaysLaunching()
+    {
+        var run = Build(RunState.Launching);
+        run.RequestStop(StopReason.TimeLimit, T0);
+
+        run.RequestStop(StopReason.UserCancel, T1);
+
+        run.State.ShouldBe(RunState.Launching);
+        run.StopReason.ShouldBe(StopReason.TimeLimit);
+        run.AbortLaunch(T1);
+        run.Outcome.ShouldBe(RunOutcome.TimedOut);
     }
 
     [Fact]
@@ -116,8 +145,7 @@ public class RunStateMachineTests
     [Fact]
     public void RequestStop_WhenCompleted_Throws()
     {
-        var run = Build(RunState.Running);
-        run.Exit(0, false, T1);
+        var run = Build(RunState.Completed);
 
         Should.Throw<DomainException>(() => run.RequestStop(StopReason.UserCancel, T1));
     }
@@ -134,6 +162,30 @@ public class RunStateMachineTests
         run.Outcome.ShouldBe(RunOutcome.Cancelled);
         run.EndedAt.ShouldBe(T1);
         run.ExitCode.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(StopReason.UserCancel, ProcessKind.RunToCompletion, RunOutcome.Cancelled)]
+    [InlineData(StopReason.UserCancel, ProcessKind.Service, RunOutcome.Stopped)]
+    [InlineData(StopReason.TimeLimit, ProcessKind.RunToCompletion, RunOutcome.TimedOut)]
+    [InlineData(StopReason.TimeLimit, ProcessKind.Service, RunOutcome.TimedOut)]
+    [InlineData(StopReason.Shutdown, ProcessKind.RunToCompletion, RunOutcome.Interrupted)]
+    [InlineData(StopReason.Shutdown, ProcessKind.Service, RunOutcome.Interrupted)]
+    public void AbortLaunch_AfterStopRequest_MapsOutcomeFromReason(StopReason reason, ProcessKind kind, RunOutcome expected)
+    {
+        var run = Build(RunState.Launching, kind);
+        run.RequestStop(reason, T0);
+
+        run.AbortLaunch(T1);
+
+        run.State.ShouldBe(RunState.Completed);
+        run.Outcome.ShouldBe(expected);
+        run.StartedAt.ShouldBeNull();
+        run.Killed.ShouldBeFalse();
+        var completed = run.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<RunCompleted>();
+        completed.Outcome.ShouldBe(expected);
+        completed.RunId.ShouldBe(run.Id);
+        completed.ProcessId.ShouldBe(run.ProcessId);
     }
 
     [Fact]
@@ -185,8 +237,7 @@ public class RunStateMachineTests
     [Fact]
     public void Exit_WhenCompleted_Throws()
     {
-        var run = Build(RunState.Running);
-        run.Exit(0, false, T1);
+        var run = Build(RunState.Completed);
 
         Should.Throw<DomainException>(() => run.Exit(0, false, T1));
     }
@@ -205,8 +256,28 @@ public class RunStateMachineTests
         run.EndedAt.ShouldBe(T1);
         run.StartedAt.ShouldBe(T0.AddSeconds(1));
         var e = run.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<RunCompleted>();
+        e.RunId.ShouldBe(run.Id);
+        e.ProcessId.ShouldBe(run.ProcessId);
         e.Outcome.ShouldBe(RunOutcome.Succeeded);
         e.ExitCode.ShouldBe(0);
+        e.OccurredAt.ShouldBe(T1);
+    }
+
+    [Fact]
+    public void RunBuilder_CompletedState_BuildsACompletedRunWithoutPendingEvents()
+    {
+        var run = Build(RunState.Completed);
+
+        run.State.ShouldBe(RunState.Completed);
+        run.Outcome.ShouldBe(RunOutcome.Succeeded);
+        run.DomainEvents.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void RunBuilder_UndefinedState_ThrowsWithTheParameterName()
+    {
+        Should.Throw<ArgumentOutOfRangeException>(() => new RunBuilder().InState((RunState)99))
+            .ParamName.ShouldBe("state");
     }
 
     [Fact]
@@ -296,8 +367,7 @@ public class RunStateMachineTests
     [Fact]
     public void Abandon_WhenCompleted_Throws()
     {
-        var run = Build(RunState.Running);
-        run.Exit(0, false, T1);
+        var run = Build(RunState.Completed);
 
         Should.Throw<DomainException>(() => run.Abandon(T1));
     }

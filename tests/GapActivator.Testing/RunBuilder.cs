@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using GapActivator.Domain.Processes;
 using GapActivator.Domain.Runs;
 
@@ -24,8 +25,14 @@ public sealed class RunBuilder
         return this;
     }
 
+    /// <summary>Completed builds a run that exited with code 0 (Succeeded; Crashed for a Service kind).</summary>
     public RunBuilder InState(RunState state)
     {
+        if (!Enum.IsDefined(state))
+        {
+            throw new ArgumentOutOfRangeException(nameof(state), state, "Not a defined run state.");
+        }
+
         _state = state;
         return this;
     }
@@ -52,8 +59,12 @@ public sealed class RunBuilder
                 run.MarkRunning(4242, BaseTime.AddSeconds(1), BaseTime.AddSeconds(1));
                 run.RequestStop(StopReason.UserCancel, BaseTime.AddSeconds(2));
                 break;
+            case RunState.Completed:
+                run.MarkRunning(4242, BaseTime.AddSeconds(1), BaseTime.AddSeconds(1));
+                run.Exit(0, false, BaseTime.AddSeconds(2));
+                break;
             default:
-                throw new ArgumentOutOfRangeException(nameof(_state), _state, "Build supports Launching, Running or Stopping.");
+                throw new UnreachableException();
         }
 
         run.ClearDomainEvents();
