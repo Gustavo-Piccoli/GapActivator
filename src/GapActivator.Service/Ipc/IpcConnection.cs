@@ -280,28 +280,42 @@ internal sealed partial class IpcConnection(
     {
         string type = request.Type!;
         ServerEnvelope response;
+        IDisposable? deferral = null;
         try
         {
-            IpcRoute route = router.Find(type);
-            JsonElement payload = await router.DispatchAsync(route, request.Payload, _caller!, _stopping).ConfigureAwait(false);
-            response = ServerEnvelope.Response(request.Id, payload);
-        }
-        catch (Exception ex)
-        {
-            bool stopping = _stopping.IsCancellationRequested;
-            if (IpcErrorMapper.IsUnexpected(ex, stopping))
+            try
             {
-                LogRequestFailed(ex, request.Id, type, CallerName);
+                IpcRoute route = router.Find(type);
+                if (route.DefersRestart)
+                {
+                    // Held until the response is on the wire: the dispatcher ends the restart request's scope before then.
+                    deferral = _restart.Defer();
+                }
+
+                JsonElement payload = await router.DispatchAsync(route, request.Payload, _caller!, _stopping).ConfigureAwait(false);
+                response = ServerEnvelope.Response(request.Id, payload);
+            }
+            catch (Exception ex)
+            {
+                bool stopping = _stopping.IsCancellationRequested;
+                if (IpcErrorMapper.IsUnexpected(ex, stopping))
+                {
+                    LogRequestFailed(ex, request.Id, type, CallerName);
+                }
+
+                response = ServerEnvelope.Failure(request.Id, IpcErrorMapper.Map(ex, type, stopping));
             }
 
-            response = ServerEnvelope.Failure(request.Id, IpcErrorMapper.Map(ex, type, stopping));
+            // The order matters to whoever defers something until the response is on the wire: write the frame, log it, and
+            // only then release what was held back for it (also when the write failed).
+            if (await WriteAsync(response).ConfigureAwait(false))
+            {
+                LogResponseWritten(request.Id, type);
+            }
         }
-
-        // The order matters to whoever defers something until the response is on the wire: write the frame, log it, and
-        // only then release what was held back for it.
-        if (await WriteAsync(response).ConfigureAwait(false))
+        finally
         {
-            LogResponseWritten(request.Id, type);
+            deferral?.Dispose();
         }
     }
 

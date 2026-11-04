@@ -33,6 +33,7 @@ public sealed class ServiceExeSmokeTests
             RedirectStandardError = true,
         };
         startInfo.ArgumentList.Add("--GapActivator:DataRoot=" + root.Path);
+        startInfo.ArgumentList.Add($"--GapActivator:Ipc:PipeName=GapActivator.Tests.{Guid.NewGuid():N}");
         var console = new StringBuilder();
         DateOnly startDay = DateOnly.FromDateTime(DateTime.Now);
 

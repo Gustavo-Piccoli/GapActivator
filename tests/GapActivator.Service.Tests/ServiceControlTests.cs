@@ -3,9 +3,13 @@ using GapActivator.Application.Messaging;
 using GapActivator.Application.Ports;
 using GapActivator.Application.Settings;
 using GapActivator.Domain.Common;
+using GapActivator.Ipc;
+using GapActivator.Service.Tests.Support;
 using GapActivator.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace GapActivator.Service.Tests;
 
@@ -79,6 +83,80 @@ public sealed class ServiceControlTests
         exitCodes.ShouldBeEmpty();
     }
 
+    [Fact]
+    public void HostRestart_Deferred_BeginsOnlyWhenTheLastDeferralEnds()
+    {
+        var lifetime = new RecordingLifetime();
+        var exitCodes = new List<int>();
+        var restart = new HostRestart(lifetime, new ExitCodeSink(exitCodes.Add));
+
+        IDisposable first = restart.Defer();
+        IDisposable second = restart.Defer();
+        restart.Begin();
+        lifetime.StopCount.ShouldBe(0);
+
+        first.Dispose();
+        lifetime.StopCount.ShouldBe(0);
+        exitCodes.ShouldBeEmpty();
+
+        second.Dispose();
+        second.Dispose();
+        lifetime.StopCount.ShouldBe(1);
+        exitCodes.ShouldBe([ServiceExitCodes.Restart]);
+    }
+
+    [Fact]
+    public void HostRestart_NotDeferred_BeginsAtOnce()
+    {
+        var lifetime = new RecordingLifetime();
+        var exitCodes = new List<int>();
+        var restart = new HostRestart(lifetime, new ExitCodeSink(exitCodes.Add));
+
+        restart.Begin();
+        restart.Begin();
+
+        lifetime.StopCount.ShouldBe(1);
+        exitCodes.ShouldBe([ServiceExitCodes.Restart]);
+    }
+
+    [Fact]
+    public void HostRestart_DeferralEndsWithoutBegin_DoesNotStop()
+    {
+        var lifetime = new RecordingLifetime();
+        var restart = new HostRestart(lifetime, new ExitCodeSink(_ => { }));
+
+        restart.Defer().Dispose();
+
+        lifetime.StopCount.ShouldBe(0);
+    }
+
+    // The restart route's response is on the wire before the stop begins.
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task RestartService_StopBeginsOnlyAfterTheResponseIsWritten()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        await using IpcTestServer server = await IpcTestServer.StartAsync(
+            services => services.Replace(ServiceDescriptor.Scoped<IServiceControl, ScopedServiceControl>()));
+        bool? responseWrittenFirst = null;
+        server.Lifetime.OnStop = () =>
+        {
+            responseWrittenFirst = server.Host.Log.Entries.Any(
+                e => e.Level == LogLevel.Debug && e.Message == "Response 2 to RestartService was written.");
+            _ = server.StopAsync();
+        };
+        await using GapActivatorClient client = await server.ConnectAsync();
+        var disconnected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.Disconnected += (_, _) => disconnected.TrySetResult();
+
+        await client.RestartServiceAsync(ct);
+
+        await disconnected.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+        server.Lifetime.StopCount.ShouldBe(1);
+        responseWrittenFirst.ShouldBe(true);
+        server.ExitCodes.ShouldBe([ServiceExitCodes.Restart]);
+    }
+
     private static ApplicationTestHost CreateHost(RecordingLifetime lifetime, List<int> exitCodes) =>
         new(services =>
         {
@@ -89,21 +167,6 @@ public sealed class ServiceControlTests
             services.AddSingleton(new StopProbe(lifetime));
             services.AddScoped<INotificationHandler>(sp => sp.GetRequiredService<StopProbe>());
         });
-
-    private sealed class RecordingLifetime : IHostApplicationLifetime
-    {
-        private int _stopCount;
-
-        public int StopCount => Volatile.Read(ref _stopCount);
-
-        public CancellationToken ApplicationStarted => CancellationToken.None;
-
-        public CancellationToken ApplicationStopping => CancellationToken.None;
-
-        public CancellationToken ApplicationStopped => CancellationToken.None;
-
-        public void StopApplication() => Interlocked.Increment(ref _stopCount);
-    }
 
     /// <summary>Records how many stops had been requested each time a <see cref="GapActivatorRestarted"/> arrived.</summary>
     private sealed class StopProbe(RecordingLifetime lifetime) : INotificationHandler

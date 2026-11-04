@@ -1,4 +1,5 @@
 using GapActivator.Infrastructure.Logging;
+using GapActivator.Service.Ipc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -8,14 +9,15 @@ using Microsoft.Extensions.Logging.Console;
 namespace GapActivator.Service.Tests.Support;
 
 /// <summary>
-/// The real host builder on a test data root. The exit-code sink is replaced, so the test process's exit code is never
+/// The real host builder on a test data root and a unique pipe name (exposed as <c>builder.Configuration[IpcOptions.PipeNameKey]</c>). The exit-code sink is replaced, so the test process's exit code is never
 /// set; the Event Log is switched off, so a test never writes to the machine's Event Log, and so is the console.
 /// </summary>
 internal static class ServiceHostFactory
 {
     public static HostApplicationBuilder CreateBuilder(string dataRoot, List<int> exitCodes, LogCapture? logs = null)
     {
-        HostApplicationBuilder builder = GapActivatorHost.CreateBuilder(["--GapActivator:DataRoot=" + dataRoot]);
+        HostApplicationBuilder builder = GapActivatorHost.CreateBuilder(
+            ["--GapActivator:DataRoot=" + dataRoot, $"--{IpcOptions.PipeNameKey}=GapActivator.Tests.{Guid.NewGuid():N}"]);
 
         builder.Services.Replace(ServiceDescriptor.Singleton(new ExitCodeSink(code =>
         {

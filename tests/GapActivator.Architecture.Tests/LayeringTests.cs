@@ -71,6 +71,26 @@ public class LayeringTests
         referencing.ShouldBe([Path.GetRelativePath(root, service)]);
     }
 
+    // Carry-over: ScopedServiceControl is only IAsyncDisposable, so a synchronous scope would never run its disposal.
+    [Fact]
+    public void ServiceSource_NeverCreatesASynchronousScope()
+    {
+        string root = FindSolutionRoot();
+        string source = Path.Combine(root, "src", "GapActivator.Service");
+        Directory.Exists(source).ShouldBeTrue($"Service source folder not found at '{source}'.");
+
+        string[] files = [.. Directory.EnumerateFiles(source, "*.cs", SearchOption.AllDirectories)
+            .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                        && !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))];
+        files.ShouldNotBeEmpty($"No Service source files found under '{source}'.");
+
+        string[] offenders = [.. files
+            .Where(file => File.ReadAllText(file).Contains(".CreateScope(", StringComparison.Ordinal))
+            .Select(file => Path.GetRelativePath(root, file))];
+
+        offenders.ShouldBeEmpty("Use CreateAsyncScope: a scope that is only IAsyncDisposable is not disposed by Dispose.");
+    }
+
     [Fact]
     public void Domain_HasNoPackageOrProjectReferences()
     {

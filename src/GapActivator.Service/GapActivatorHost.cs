@@ -2,6 +2,7 @@ using GapActivator.Application;
 using GapActivator.Application.Ports;
 using GapActivator.Infrastructure;
 using GapActivator.Infrastructure.Logging;
+using GapActivator.Service.Ipc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -62,6 +63,14 @@ public static class GapActivatorHost
         builder.Services.AddSingleton<HostRestart>();
         builder.Services.AddScoped<IServiceControl, ScopedServiceControl>();
         builder.Services.AddHostedService<GapActivatorWorker>();
+
+        // Invalid pipe or authorization settings throw here, so the entry point reports them and exits with code 1. The
+        // IPC service comes after the worker: the host stops hosted services in reverse order, so the connections close
+        // before the scheduler's shutdown begins.
+        builder.Services.AddGapActivatorIpc(
+            IpcOptions.FromConfiguration(builder.Configuration),
+            AuthorizationOptions.FromConfiguration(builder.Configuration));
+        builder.Services.AddHostedService<IpcHostedService>();
         return builder;
     }
 
