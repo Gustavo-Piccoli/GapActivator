@@ -552,6 +552,46 @@ public sealed class IpcServerTests
         server.Host.Log.Entries.ShouldNotContain(e => e.Level == LogLevel.Error);
     }
 
+    // Final review I-3: a client cannot stack handlers by leaving and coming back.
+    [Fact]
+    public async Task ClientDisconnectsWhileItsHandlerRuns_KeepsItsSlotUntilTheHandlerEnds()
+    {
+        var handler = new BlockingCommandHandler<PauseInstallation>();
+        await using IpcTestServer server = await IpcTestServer.StartAsync(
+            s => s.AddScoped<ICommandHandler<PauseInstallation, Unit>>(_ => handler));
+        var clients = new List<GapActivatorClient>();
+        try
+        {
+            GapActivatorClient leaver = await server.ConnectAsync();
+            Task pending = leaver.PauseInstallationAsync(TestContext.Current.CancellationToken);
+            await handler.Reached.WaitAsync(Long, TestContext.Current.CancellationToken);
+            for (int i = 0; i < 15; i++)
+            {
+                clients.Add(await server.ConnectAsync());
+            }
+
+            await leaver.DisposeAsync();
+            await Should.ThrowAsync<GapActivatorRequestException>(() => pending);
+            await Task.Delay(300, TestContext.Current.CancellationToken);
+
+            server.Registry.Count.ShouldBe(16);
+            GapActivatorRequestException busy =
+                await Should.ThrowAsync<GapActivatorRequestException>(() => server.ConnectAsync());
+            busy.Code.ShouldBe(IpcErrorCodes.Busy);
+
+            handler.Release();
+            (await BecomesTrueAsync(() => server.Registry.Count == 15, Long)).ShouldBeTrue();
+            clients.Add(await server.ConnectAsync());
+        }
+        finally
+        {
+            foreach (GapActivatorClient client in clients)
+            {
+                await client.DisposeAsync();
+            }
+        }
+    }
+
     [Fact]
     public async Task Shutdown_InFlightCommandGetsServiceStoppingThenTheConnectionCloses()
     {

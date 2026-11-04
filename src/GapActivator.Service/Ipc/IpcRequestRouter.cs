@@ -18,11 +18,21 @@ internal sealed record IpcRoute(string Name, Type ApplicationType, bool IsComman
 /// Maps each request DTO to its public Application command or query, sends it as the resolved caller and maps the
 /// result back. Only the routes registered here are reachable, so an internal command never is.
 /// </summary>
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Design",
+    "CA1001:Types that own disposable fields should be disposable",
+    Justification = "The semaphore holds no wait handle, and a request that outlives the shutdown still releases it.")]
 internal sealed class IpcRequestRouter
 {
+    private const int MaxConcurrentPreviews = 2;
+
     private readonly ICommandDispatcher _commands;
     private readonly IQueryDispatcher _queries;
     private readonly Dictionary<string, Registered> _routes = new(StringComparer.Ordinal);
+
+    // A sub-daily rule with no match costs seconds of CPU and PreviewSchedule is open to viewers, so the whole service
+    // runs at most this many expansions at once.
+    private readonly SemaphoreSlim _previews = new(MaxConcurrentPreviews, MaxConcurrentPreviews);
 
     public IpcRequestRouter(ICommandDispatcher commands, IQueryDispatcher queries)
     {
@@ -71,7 +81,7 @@ internal sealed class IpcRequestRouter
         Query<GetSettingsRequest, GetSettings, SettingsView, SettingsViewDto>(
             IpcMessages.GetSettings, _ => new GetSettings(), v => v.ToWire());
         Query<PreviewScheduleRequest, PreviewSchedule, IReadOnlyList<DateTimeOffset>, PreviewScheduleResponse>(
-            IpcMessages.PreviewSchedule, r => new PreviewSchedule(r.Rule, r.Anchor, r.Count), o => o.ToPreviewResponse());
+            IpcMessages.PreviewSchedule, r => new PreviewSchedule(r.Rule, r.Anchor, r.Count), o => o.ToPreviewResponse(), _previews);
     }
 
     private delegate Task<JsonElement> Handler(JsonElement? payload, Caller caller, CancellationToken ct);
@@ -110,13 +120,28 @@ internal sealed class IpcRequestRouter
     private void Query<TRequest, TQuery, TResult, TResponse>(
         IpcMessage<TRequest, TResponse> message,
         Func<TRequest, TQuery> toQuery,
-        Func<TResult, TResponse> toResponse)
+        Func<TResult, TResponse> toResponse,
+        SemaphoreSlim? limiter = null)
         where TQuery : IQuery<TResult> =>
         Add(new IpcRoute(message.Name, typeof(TQuery), false, false), async (payload, caller, ct) =>
         {
             TRequest request = IpcCodec.ReadPayload(payload, message.RequestType);
-            TResult result = await _queries.QueryAsync<TQuery, TResult>(toQuery(request), caller, ct);
-            return IpcCodec.ToElement(toResponse(result), message.ResponseType);
+
+            // Waits on the stopping token: a shutdown ends the wait with service-stopping.
+            if (limiter is not null)
+            {
+                await limiter.WaitAsync(ct);
+            }
+
+            try
+            {
+                TResult result = await _queries.QueryAsync<TQuery, TResult>(toQuery(request), caller, ct);
+                return IpcCodec.ToElement(toResponse(result), message.ResponseType);
+            }
+            finally
+            {
+                limiter?.Release();
+            }
         });
 
     private void Add(IpcRoute route, Handler handler) => _routes.Add(route.Name, new Registered(route, handler));

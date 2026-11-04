@@ -102,6 +102,11 @@ internal sealed partial class IpcConnection(
         finally
         {
             End();
+
+            // The slot is the cap on running handlers too: a client that leaves keeps it until its requests have ended, so
+            // leaving and coming back cannot stack handlers.
+            await Task.WhenAll(_running.Values.Select(r => r.Done)).ConfigureAwait(false);
+            registry.Remove(this);
         }
     }
 
@@ -473,7 +478,6 @@ internal sealed partial class IpcConnection(
         _pushes.Writer.TryComplete();
         _coalescer?.Dispose();
         pipe.Dispose();
-        registry.Remove(this);
         if (_caller is not null)
         {
             LogDisconnected(_caller.Name);

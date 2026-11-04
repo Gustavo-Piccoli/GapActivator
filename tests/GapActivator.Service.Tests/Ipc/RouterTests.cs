@@ -21,7 +21,7 @@ public sealed class RouterTests
     private static IpcRequestRouter RouterFor(ApplicationTestHost host) =>
         new(host.Services.GetRequiredService<ICommandDispatcher>(), host.Services.GetRequiredService<IQueryDispatcher>());
 
-    private static IpcRequestRouter InertRouter(CapturingQueryDispatcher? queries = null) =>
+    private static IpcRequestRouter InertRouter(IQueryDispatcher? queries = null) =>
         new(new NullCommandDispatcher(), queries ?? new CapturingQueryDispatcher());
 
     private static JsonElement Element<T>(T value, JsonTypeInfo<T> type) => IpcCodec.ToElement(value, type);
@@ -207,6 +207,54 @@ public sealed class RouterTests
         host.Store.Runs.Keys.Select(k => k.Value).ShouldBe([response.RunId]);
     }
 
+    // Final review I-3: a sub-daily rule with no match is seconds of CPU, so only two expansions run at once.
+    [Fact]
+    public async Task PreviewSchedule_ThirdConcurrentCall_WaitsForOneOfTheFirstTwo()
+    {
+        var queries = new GatedQueryDispatcher();
+        IpcRequestRouter router = InertRouter(queries);
+        Task Call() => CallAsync(
+            router, IpcMessages.PreviewSchedule, new PreviewScheduleRequest("FREQ=HOURLY", ApplicationTestHost.StartTime, 1), Operator);
+
+        Task first = Call();
+        Task second = Call();
+        Task third = Call();
+        await queries.WaitForEntriesAsync(2).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await Task.Delay(300, TestContext.Current.CancellationToken);
+
+        queries.Entered.ShouldBe(2);
+        third.IsCompleted.ShouldBeFalse();
+
+        queries.ReleaseOne();
+        await queries.WaitForEntriesAsync(3).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        queries.ReleaseAll();
+        await Task.WhenAll(first, second, third).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task PreviewSchedule_WaitingForASlot_EndsWhenTheStoppingTokenFires()
+    {
+        var queries = new GatedQueryDispatcher();
+        IpcRequestRouter router = InertRouter(queries);
+        Task First() => CallAsync(
+            router, IpcMessages.PreviewSchedule, new PreviewScheduleRequest("FREQ=HOURLY", ApplicationTestHost.StartTime, 1), Operator);
+        Task a = First();
+        Task b = First();
+        await queries.WaitForEntriesAsync(2).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        using var stopping = new CancellationTokenSource();
+
+        Task<JsonElement> waiting = router.DispatchAsync(
+            router.Find(IpcMessages.PreviewSchedule.Name),
+            Element(new PreviewScheduleRequest("FREQ=HOURLY", ApplicationTestHost.StartTime, 1), IpcMessages.PreviewSchedule.RequestType),
+            Operator,
+            stopping.Token);
+        await stopping.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(() => waiting.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+        queries.ReleaseAll();
+        await Task.WhenAll(a, b);
+    }
+
     [Fact]
     public async Task GetProcess_AsViewer_HidesArgumentsAndEnvironmentValues()
     {
@@ -291,6 +339,69 @@ public sealed class RouterTests
     {
         public Task<TResult> SendAsync<TCommand, TResult>(TCommand command, Caller caller, CancellationToken ct)
             where TCommand : ICommand<TResult> => throw new NotSupportedException();
+    }
+
+    private sealed class GatedQueryDispatcher : IQueryDispatcher
+    {
+        private readonly Lock _sync = new();
+        private readonly List<TaskCompletionSource> _gates = [];
+        private int _entered;
+        private bool _all;
+
+        public int Entered
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    return _entered;
+                }
+            }
+        }
+
+        public async Task WaitForEntriesAsync(int count)
+        {
+            while (Entered < count)
+            {
+                await Task.Delay(10);
+            }
+        }
+
+        public void ReleaseOne()
+        {
+            lock (_sync)
+            {
+                _gates.FirstOrDefault(g => !g.Task.IsCompleted)?.TrySetResult();
+            }
+        }
+
+        public void ReleaseAll()
+        {
+            lock (_sync)
+            {
+                _all = true;
+                _gates.ForEach(g => g.TrySetResult());
+            }
+        }
+
+        public async Task<TResult> QueryAsync<TQuery, TResult>(TQuery query, Caller caller, CancellationToken ct)
+            where TQuery : IQuery<TResult>
+        {
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (_sync)
+            {
+                _entered++;
+                _gates.Add(gate);
+                if (_all)
+                {
+                    gate.TrySetResult();
+                }
+            }
+
+            await gate.Task.WaitAsync(ct);
+            object result = (IReadOnlyList<DateTimeOffset>)[];
+            return (TResult)result;
+        }
     }
 
     private sealed class CapturingQueryDispatcher : IQueryDispatcher
