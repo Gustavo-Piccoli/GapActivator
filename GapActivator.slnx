@@ -9,6 +9,7 @@
     <Project Path="tests/GapActivator.Architecture.Tests/GapActivator.Architecture.Tests.csproj" />
     <Project Path="tests/GapActivator.Domain.Tests/GapActivator.Domain.Tests.csproj" />
     <Project Path="tests/GapActivator.Infrastructure.Tests/GapActivator.Infrastructure.Tests.csproj" />
+    <Project Path="tests/GapActivator.TestChild/GapActivator.TestChild.csproj" />
     <Project Path="tests/GapActivator.Testing/GapActivator.Testing.csproj" />
   </Folder>
 </Solution>

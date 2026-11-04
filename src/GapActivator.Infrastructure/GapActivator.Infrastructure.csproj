@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="GapActivator.Infrastructure.Tests" />
+    <InternalsVisibleTo Include="GapActivator.Service.Tests" />
   </ItemGroup>
 
 </Project>
