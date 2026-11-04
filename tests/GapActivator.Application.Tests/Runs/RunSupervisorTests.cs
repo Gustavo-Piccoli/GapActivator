@@ -462,6 +462,31 @@ public class RunSupervisorTests
         run.Killed.ShouldBeTrue();
     }
 
+    // A system timer can fire up to one tick early; the grace period is still waited in full, by the clock.
+    [Fact]
+    public async Task Stop_GraceTimerFiresEarly_KillsOnlyAfterTheFullGrace()
+    {
+        TimeSpan early = TimeSpan.FromSeconds(5);
+        await using ApplicationTestHost host = RunTestHost.Create(services => services.AddSingleton<TimeProvider>(
+            sp => new EarlyTimerTimeProvider(sp.GetRequiredService<TrackingTimeProvider>(), early)));
+        Process process = host.AddProcess(gracePeriod: Grace);
+        FakeRunningProcess child = host.Launcher.QueueSucceed(Exe);
+
+        Run run = await host.StartRunAsync(process);
+        await host.Dispatcher().WaitForHandledAsync<RecordRunLaunched>().Within();
+        await host.Run<StopRun, Unit>(new StopRun(run.Id, StopReason.UserCancel));
+        await host.AdvanceAfterTimerAsync(1, Grace - early);
+        Task ended = host.Supervisor().WaitForEndAsync(run.Id, TestContext.Current.CancellationToken);
+        await Task.WhenAny(host.Time.WaitForTimersAsync(2), ended).Within();
+
+        child.Killed.ShouldBeFalse();
+
+        host.Time.Advance(early);
+        await host.EndOf(run.Id);
+        child.Killed.ShouldBeTrue();
+        run.Outcome.ShouldBe(RunOutcome.Cancelled);
+    }
+
     [Fact]
     public async Task Stop_SignalThrows_LoggedAndChildKilledAfterGrace()
     {
@@ -1513,5 +1538,20 @@ public class RunSupervisorTests
         }
 
         public IRunningProcess? TryAttach(RunId runId, int pid, DateTimeOffset processStartTime) => null;
+    }
+
+    /// <summary>The fake clock, with every timer due <paramref name="early"/> before its time, as a coarse system timer can be.</summary>
+    private sealed class EarlyTimerTimeProvider(TrackingTimeProvider inner, TimeSpan early) : TimeProvider
+    {
+        public override TimeZoneInfo LocalTimeZone => inner.LocalTimeZone;
+
+        public override long TimestampFrequency => inner.TimestampFrequency;
+
+        public override DateTimeOffset GetUtcNow() => inner.GetUtcNow();
+
+        public override long GetTimestamp() => inner.GetTimestamp();
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period) =>
+            inner.CreateTimer(callback, state, dueTime > early ? dueTime - early : dueTime, period);
     }
 }
