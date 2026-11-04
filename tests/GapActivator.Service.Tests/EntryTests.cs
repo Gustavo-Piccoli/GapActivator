@@ -36,6 +36,29 @@ public sealed class EntryTests
     }
 
     [Fact]
+    public async Task Run_BuildThrows_WritesOneLineToStandardError()
+    {
+        var lines = new List<string>();
+
+        await ServiceEntry.RunAsync(
+            () => throw new InvalidOperationException("build failed"), _ => { }, lines.Add, TestContext.Current.CancellationToken);
+
+        lines.ShouldBe(["GapActivator failed to start: build failed"]);
+    }
+
+    [Fact]
+    public async Task Run_StandardErrorWriterThrows_StillReturns1()
+    {
+        int code = await ServiceEntry.RunAsync(
+            () => throw new InvalidOperationException("build failed"),
+            _ => { },
+            _ => throw new IOException("stderr closed"),
+            TestContext.Current.CancellationToken);
+
+        code.ShouldBe(ServiceExitCodes.Fatal);
+    }
+
+    [Fact]
     [Trait("Category", "Integration")]
     public async Task Run_WorkerFailsAfterStart_ReturnsTheWorkerExitCodeWithoutReporting()
     {
