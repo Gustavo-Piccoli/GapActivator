@@ -3,6 +3,7 @@ using GapActivator.Application;
 using GapActivator.Application.Messaging;
 using GapActivator.Domain;
 using GapActivator.Infrastructure;
+using GapActivator.Ipc;
 using Microsoft.Extensions.DependencyInjection;
 using NetArchTest.Rules;
 
@@ -14,7 +15,7 @@ public class LayeringTests
     public void Domain_DependsOnNoOtherLayer() =>
         Types.InAssembly(DomainAssembly.Reference).ShouldNot()
             .HaveDependencyOnAny("GapActivator.Application", "GapActivator.Infrastructure",
-                                 "GapActivator.Service", "GapActivator.App")
+                                 "GapActivator.Service", "GapActivator.Ipc", "GapActivator.App")
             .GetResult().IsSuccessful.ShouldBeTrue();
 
     [Fact]
@@ -29,7 +30,7 @@ public class LayeringTests
     [Fact]
     public void Infrastructure_DoesNotDependOnOuterLayers() =>
         Types.InAssembly(InfrastructureAssembly.Reference).ShouldNot()
-            .HaveDependencyOnAny("GapActivator.Service", "GapActivator.App")
+            .HaveDependencyOnAny("GapActivator.Service", "GapActivator.Ipc", "GapActivator.App")
             .GetResult().IsSuccessful.ShouldBeTrue();
 
     [Fact]
@@ -109,7 +110,7 @@ public class LayeringTests
     [Fact]
     public void Application_DependsOnlyOnDomain() =>
         Types.InAssembly(ApplicationAssembly.Reference).ShouldNot()
-            .HaveDependencyOnAny("GapActivator.Infrastructure", "GapActivator.Service", "GapActivator.App",
+            .HaveDependencyOnAny("GapActivator.Infrastructure", "GapActivator.Service", "GapActivator.Ipc", "GapActivator.App",
                                  "Ical.Net", "Microsoft.EntityFrameworkCore", "System.Diagnostics.Process",
                                  "System.IO.File", "System.IO.Directory", "System.Net.Http",
                                  "Microsoft.Win32", "MailKit")
@@ -186,6 +187,34 @@ public class LayeringTests
 
         problems.ShouldBeEmpty();
     }
+
+    [Fact]
+    public void Ipc_DependsOnNoGapActivatorLayer() =>
+        Types.InAssembly(IpcAssembly.Reference).ShouldNot()
+            .HaveDependencyOnAny("GapActivator.Domain", "GapActivator.Application",
+                                 "GapActivator.Infrastructure", "GapActivator.Service")
+            .GetResult().IsSuccessful.ShouldBeTrue();
+
+    [Fact]
+    public void Ipc_HasNoProjectOrPackageReferences()
+    {
+        XDocument project = XDocument.Load(IpcCsproj());
+
+        project.Descendants("PackageReference").ShouldBeEmpty();
+        project.Descendants("ProjectReference").ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Ipc_IsAotCompatibleAndWindowsOnly()
+    {
+        XDocument project = XDocument.Load(IpcCsproj());
+
+        project.Descendants("IsAotCompatible").Select(e => e.Value).ShouldBe(["true"]);
+        project.Descendants("TargetFramework").Select(e => e.Value).ShouldBe(["net10.0-windows"]);
+    }
+
+    private static string IpcCsproj() =>
+        Path.Combine(FindSolutionRoot(), "src", "GapActivator.Ipc", "GapActivator.Ipc.csproj");
 
     private static string FindSolutionRoot()
     {
