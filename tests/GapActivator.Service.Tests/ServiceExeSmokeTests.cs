@@ -37,6 +37,7 @@ public sealed class ServiceExeSmokeTests
         DateOnly startDay = DateOnly.FromDateTime(DateTime.Now);
 
         using DiagnosticsProcess exe = DiagnosticsProcess.Start(startInfo).ShouldNotBeNull();
+        string? cleanupFailure = null;
         try
         {
             exe.OutputDataReceived += (_, e) => Append(console, e.Data);
@@ -70,12 +71,29 @@ public sealed class ServiceExeSmokeTests
         }
         finally
         {
+            // Never throws, so a failure of the test above is never replaced by a cleanup failure.
+            cleanupFailure = await StopTreeAsync(exe);
+        }
+
+        cleanupFailure.ShouldBeNull();
+    }
+
+    /// <summary>Kills the executable's process tree and waits for it to exit; returns why that failed, or null.</summary>
+    private static async Task<string?> StopTreeAsync(DiagnosticsProcess exe)
+    {
+        try
+        {
             if (!exe.HasExited)
             {
                 exe.Kill(entireProcessTree: true);
             }
 
             await exe.WaitForExitAsync(CancellationToken.None).WaitAsync(ExitWait, CancellationToken.None);
+            return null;
+        }
+        catch (Exception e)
+        {
+            return $"The service executable (PID {exe.Id}) was not stopped: {e.GetType().Name}: {e.Message}";
         }
     }
 
