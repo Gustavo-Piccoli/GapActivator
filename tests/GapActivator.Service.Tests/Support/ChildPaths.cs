@@ -4,4 +4,6 @@ namespace GapActivator.Service.Tests.Support;
 internal static class ChildPaths
 {
     public static string TestChild => Path.Combine(AppContext.BaseDirectory, "GapActivator.TestChild.exe");
+
+    public static string SampleChild => Path.Combine(AppContext.BaseDirectory, "GapActivator.SampleChild.exe");
 }
