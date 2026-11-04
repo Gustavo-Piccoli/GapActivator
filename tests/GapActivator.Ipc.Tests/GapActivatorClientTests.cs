@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO.Pipes;
 using GapActivator.Ipc.Contracts;
 using GapActivator.Ipc.Tests.Support;
 
@@ -84,6 +85,91 @@ public class GapActivatorClientTests
 
         ex.Code.ShouldBe("busy");
         ex.Retryable.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Connect_ServerAcceptsButNeverReads_TimesOutWithinConnectTimeout()
+    {
+        string name = $"GapActivator.Tests.{Guid.NewGuid():N}";
+        await using var server = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0);
+        Task accepted = server.WaitForConnectionAsync(TestContext.Current.CancellationToken);
+        var options = new GapActivatorClientOptions
+        {
+            PipeName = name,
+            ConnectTimeout = TimeSpan.FromMilliseconds(500),
+            LookupService = _ => new ServiceLookup.NotInstalled(),
+        };
+        var watch = Stopwatch.StartNew();
+
+        await Should.ThrowAsync<TimeoutException>(() => GapActivatorClient.ConnectAsync(options, TestContext.Current.CancellationToken));
+
+        watch.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(2));
+        await accepted.WaitAsync(Wait, TestContext.Current.CancellationToken);
+    }
+
+    // Pre-flight C3: a failed Hello write does not end the handshake.
+    [Fact]
+    public async Task Connect_ServerWritesBusyAndClosesWithoutReading_ThrowsRetryableBusy()
+    {
+        string name = $"GapActivator.Tests.{Guid.NewGuid():N}";
+        var server = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 65536, 65536);
+        Task serving = Task.Run(async () =>
+        {
+            await server.WaitForConnectionAsync();
+            byte[] busy = IpcCodec.Serialize(
+                ServerEnvelope.Failure(0, new IpcError(IpcErrorCodes.Busy, "Too many connections.", true)),
+                IpcJsonContext.Default.ServerEnvelope);
+            await IpcFrame.WriteAsync(server, busy, CancellationToken.None);
+            await server.DisposeAsync();
+        }, TestContext.Current.CancellationToken);
+        var options = new GapActivatorClientOptions
+        {
+            PipeName = name,
+            ConnectTimeout = Wait,
+            LookupService = _ => new ServiceLookup.NotInstalled(),
+        };
+
+        var ex = await Should.ThrowAsync<GapActivatorRequestException>(() => GapActivatorClient.ConnectAsync(options, TestContext.Current.CancellationToken));
+
+        ex.Code.ShouldBe("busy");
+        ex.Retryable.ShouldBeTrue();
+        await serving.WaitAsync(Wait, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task Connect_FirstFrameIsAPush_ThrowsProtocolMismatch()
+    {
+        await using var server = new ScriptedPipeServer(
+            helloReply: ServerEnvelope.Push(IpcEvents.StateChanged, IpcCodec.ToElement(new StateChangedDto(null, null), IpcJsonContext.Default.StateChangedDto)));
+
+        var ex = await Should.ThrowAsync<GapActivatorRequestException>(() => ConnectAsync(server));
+
+        ex.Code.ShouldBe("protocol-mismatch");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task Connect_NonPositiveConnectTimeout_IsRejected(int milliseconds)
+    {
+        var options = new GapActivatorClientOptions { ConnectTimeout = TimeSpan.FromMilliseconds(milliseconds) };
+
+        await Should.ThrowAsync<ArgumentOutOfRangeException>(() => GapActivatorClient.ConnectAsync(options, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task ParallelSends_FramesNeverInterleave()
+    {
+        await using var server = new ScriptedPipeServer((s, request) =>
+            s.RespondAsync(request.Id, new EmptyResponse(), IpcJsonContext.Default.EmptyResponse));
+        await using GapActivatorClient client = await ConnectAsync(server);
+
+        await Task.WhenAll(Enumerable.Range(0, 50).Select(_ => client.PauseInstallationAsync(TestContext.Current.CancellationToken)))
+            .WaitAsync(Wait, TestContext.Current.CancellationToken);
+
+        server.Received.Count.ShouldBe(51);
+        server.Received.Skip(1).Select(r => r.Id).Distinct().Count().ShouldBe(50);
+        server.Received.Skip(1).ShouldAllBe(r => r.Type == "PauseInstallation");
     }
 
     [Fact]
@@ -230,7 +316,12 @@ public class GapActivatorClientTests
         await using var server = new ScriptedPipeServer((_, _) => Task.CompletedTask);
         await using GapActivatorClient client = await ConnectAsync(server);
         int raised = 0;
-        client.Disconnected += (_, _) => Interlocked.Increment(ref raised);
+        var signal = new TaskCompletionSource();
+        client.Disconnected += (_, _) =>
+        {
+            Interlocked.Increment(ref raised);
+            signal.TrySetResult();
+        };
 
         Task<Guid> pending = client.RunNowAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
         await server.WaitForRequestsAsync(2);
@@ -239,7 +330,7 @@ public class GapActivatorClientTests
         var ex = await Should.ThrowAsync<GapActivatorRequestException>(() => pending.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
         ex.Code.ShouldBe("disconnected");
         ex.Retryable.ShouldBeTrue();
-        await Task.Delay(100, TestContext.Current.CancellationToken);
+        await signal.Task.WaitAsync(Wait, TestContext.Current.CancellationToken);
         raised.ShouldBe(1);
         await client.DisposeAsync();
         raised.ShouldBe(1);
