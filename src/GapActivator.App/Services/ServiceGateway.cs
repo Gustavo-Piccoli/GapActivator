@@ -22,7 +22,7 @@ public sealed partial class ServiceGateway : IServiceGateway
     private readonly object _gate = new();
 
     private GatewayStatus _status = GatewayStatus.Initial;
-    private GapActivatorClient? _client;
+    private GatewayConnection? _connection;
     private Task? _loop;
     private bool _disposed;
 
@@ -117,66 +117,96 @@ public sealed partial class ServiceGateway : IServiceGateway
     }
 
     public Task<ProcessSavedDto> RegisterProcessAsync(ProcessDefinitionDto definition, CancellationToken ct = default) =>
-        Connected().RegisterProcessAsync(definition, ct);
+        Forward(c => c.RegisterProcessAsync(definition, ct));
 
     public Task<ProcessSavedDto> UpdateProcessAsync(Guid id, ProcessDefinitionDto definition, CancellationToken ct = default) =>
-        Connected().UpdateProcessAsync(id, definition, ct);
+        Forward(c => c.UpdateProcessAsync(id, definition, ct));
 
-    public Task DeleteProcessAsync(Guid id, CancellationToken ct = default) => Connected().DeleteProcessAsync(id, ct);
+    public Task DeleteProcessAsync(Guid id, CancellationToken ct = default) => Forward(c => c.DeleteProcessAsync(id, ct));
 
-    public Task EnableProcessAsync(Guid id, CancellationToken ct = default) => Connected().EnableProcessAsync(id, ct);
+    public Task EnableProcessAsync(Guid id, CancellationToken ct = default) => Forward(c => c.EnableProcessAsync(id, ct));
 
     public Task DisableProcessAsync(Guid id, bool cancelActiveRun, CancellationToken ct = default) =>
-        Connected().DisableProcessAsync(id, cancelActiveRun, ct);
+        Forward(c => c.DisableProcessAsync(id, cancelActiveRun, ct));
 
     public Task UnblockProcessAsync(Guid id, bool runNow, CancellationToken ct = default) =>
-        Connected().UnblockProcessAsync(id, runNow, ct);
+        Forward(c => c.UnblockProcessAsync(id, runNow, ct));
 
-    public Task<Guid> RunNowAsync(Guid processId, CancellationToken ct = default) => Connected().RunNowAsync(processId, ct);
+    public Task<Guid> RunNowAsync(Guid processId, CancellationToken ct = default) => Forward(c => c.RunNowAsync(processId, ct));
 
-    public Task CancelRunAsync(Guid runId, CancellationToken ct = default) => Connected().CancelRunAsync(runId, ct);
+    public Task CancelRunAsync(Guid runId, CancellationToken ct = default) => Forward(c => c.CancelRunAsync(runId, ct));
 
-    public Task RestartRunAsync(Guid processId, CancellationToken ct = default) => Connected().RestartRunAsync(processId, ct);
+    public Task RestartRunAsync(Guid processId, CancellationToken ct = default) => Forward(c => c.RestartRunAsync(processId, ct));
 
-    public Task PauseInstallationAsync(CancellationToken ct = default) => Connected().PauseInstallationAsync(ct);
+    public Task PauseInstallationAsync(CancellationToken ct = default) => Forward(c => c.PauseInstallationAsync(ct));
 
-    public Task ResumeInstallationAsync(CancellationToken ct = default) => Connected().ResumeInstallationAsync(ct);
+    public Task ResumeInstallationAsync(CancellationToken ct = default) => Forward(c => c.ResumeInstallationAsync(ct));
 
     public Task UpdateSettingsAsync(SettingsInputDto settings, CancellationToken ct = default) =>
-        Connected().UpdateSettingsAsync(settings, ct);
+        Forward(c => c.UpdateSettingsAsync(settings, ct));
 
-    public Task SendTestEmailAsync(EmailInputDto email, CancellationToken ct = default) => Connected().SendTestEmailAsync(email, ct);
+    public Task SendTestEmailAsync(EmailInputDto email, CancellationToken ct = default) => Forward(c => c.SendTestEmailAsync(email, ct));
 
-    public Task RestartServiceAsync(CancellationToken ct = default) => Connected().RestartServiceAsync(ct);
+    public Task RestartServiceAsync(CancellationToken ct = default) => Forward(c => c.RestartServiceAsync(ct));
 
-    public Task<DashboardDto> GetDashboardAsync(CancellationToken ct = default) => Connected().GetDashboardAsync(ct);
+    public Task<DashboardDto> GetDashboardAsync(CancellationToken ct = default) => Forward(c => c.GetDashboardAsync(ct));
 
     public Task<IReadOnlyList<ProcessSummaryDto>> ListProcessesAsync(CancellationToken ct = default) =>
-        Connected().ListProcessesAsync(ct);
+        Forward(c => c.ListProcessesAsync(ct));
 
-    public Task<ProcessDetailsDto> GetProcessAsync(Guid id, CancellationToken ct = default) => Connected().GetProcessAsync(id, ct);
+    public Task<ProcessDetailsDto> GetProcessAsync(Guid id, CancellationToken ct = default) => Forward(c => c.GetProcessAsync(id, ct));
 
-    public Task<RunRowPageDto> ListRunsAsync(RunFilterDto filter, CancellationToken ct = default) => Connected().ListRunsAsync(filter, ct);
+    public Task<RunRowPageDto> ListRunsAsync(RunFilterDto filter, CancellationToken ct = default) => Forward(c => c.ListRunsAsync(filter, ct));
 
-    public Task<RunDetailsDto> GetRunAsync(Guid id, CancellationToken ct = default) => Connected().GetRunAsync(id, ct);
+    public Task<RunDetailsDto> GetRunAsync(Guid id, CancellationToken ct = default) => Forward(c => c.GetRunAsync(id, ct));
 
-    public Task<SettingsViewDto> GetSettingsAsync(CancellationToken ct = default) => Connected().GetSettingsAsync(ct);
+    public Task<SettingsViewDto> GetSettingsAsync(CancellationToken ct = default) => Forward(c => c.GetSettingsAsync(ct));
 
     public Task<IReadOnlyList<DateTimeOffset>> PreviewScheduleAsync(string rule, DateTimeOffset anchor, int count, CancellationToken ct = default) =>
-        Connected().PreviewScheduleAsync(rule, anchor, count, ct);
+        Forward(c => c.PreviewScheduleAsync(rule, anchor, count, ct));
 
     [LoggerMessage(Level = Microsoft.Extensions.Logging.LogLevel.Warning, Message = "Connecting to the service failed.")]
     private partial void LogConnectFailed(Exception exception);
 
-    private GapActivatorClient Connected()
+    private GatewayConnection Connected()
     {
-        GapActivatorClient? client;
+        GatewayConnection? connection;
         lock (_gate)
         {
-            client = _client;
+            connection = _connection;
         }
 
-        return client ?? throw new GapActivatorRequestException(IpcErrorCodes.Disconnected, "Not connected to the service.", retryable: true);
+        return connection ?? throw new GapActivatorRequestException(IpcErrorCodes.Disconnected, "Not connected to the service.", retryable: true);
+    }
+
+    private Task<T> Forward<T>(Func<GapActivatorClient, Task<T>> call) => Guard(Connected(), call);
+
+    private async Task Forward(Func<GapActivatorClient, Task> call)
+    {
+        GatewayConnection connection = Connected();
+        await Guard(connection, async c =>
+        {
+            await call(c).ConfigureAwait(false);
+            return true;
+        }).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs a call on the held client. When that client reports a lost connection, its own signal is completed so the loop
+    /// disposes it and reconnects (a Disconnected event can be missed before the subscription); the exception is rethrown
+    /// unchanged. A stale connection only ever completes its own signal, never a newer one.
+    /// </summary>
+    internal static async Task<T> Guard<T>(GatewayConnection connection, Func<GapActivatorClient, Task<T>> call)
+    {
+        try
+        {
+            return await call(connection.Client).ConfigureAwait(false);
+        }
+        catch (GapActivatorRequestException ex) when (ex.Code == IpcErrorCodes.Disconnected)
+        {
+            connection.Gone.TrySetResult();
+            throw;
+        }
     }
 
     private async Task RunAsync(CancellationToken ct)
@@ -230,7 +260,8 @@ public sealed partial class ServiceGateway : IServiceGateway
     /// <summary>Publishes the connected state and holds the client until it disconnects or the gateway stops.</summary>
     private async Task HoldAsync(GapActivatorClient client, CancellationToken ct)
     {
-        var gone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var connection = new GatewayConnection(client);
+        TaskCompletionSource gone = connection.Gone;
         EventHandler<NotificationDto> onNotification = (_, n) => _ui.Post(() => NotificationReceived?.Invoke(this, n));
         EventHandler<StateChangedDto> onState = (_, s) => _ui.Post(() => StateChanged?.Invoke(this, s));
         EventHandler<DisconnectedEventArgs> onDisconnected = (_, _) => gone.TrySetResult();
@@ -242,7 +273,7 @@ public sealed partial class ServiceGateway : IServiceGateway
         {
             lock (_gate)
             {
-                _client = client;
+                _connection = connection;
             }
 
             SetStatus(new GatewayStatus(
@@ -259,7 +290,7 @@ public sealed partial class ServiceGateway : IServiceGateway
         {
             lock (_gate)
             {
-                _client = null;
+                _connection = null;
             }
 
             client.NotificationReceived -= onNotification;
@@ -306,4 +337,12 @@ public sealed partial class ServiceGateway : IServiceGateway
 
         _ui.Post(() => ConnectionChanged?.Invoke(this, status));
     }
+}
+
+/// <summary>A held client with the signal that ends its connection; one per successful connect.</summary>
+internal sealed class GatewayConnection(GapActivatorClient client)
+{
+    public GapActivatorClient Client { get; } = client;
+
+    public TaskCompletionSource Gone { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 }

@@ -199,6 +199,45 @@ public class ServiceGatewayTests
         h.Attempts.Count.ShouldBe(1);
     }
 
+    [Fact]
+    public async Task Guard_DisconnectedFromTheHeldClient_CompletesThatConnectionsSignalAndRethrows()
+    {
+        var connection = new GatewayConnection(null!);
+        var failure = new GapActivatorRequestException(IpcErrorCodes.Disconnected, "gone", retryable: true);
+
+        var ex = await Should.ThrowAsync<GapActivatorRequestException>(
+            () => ServiceGateway.Guard<int>(connection, _ => Task.FromException<int>(failure)));
+
+        ex.ShouldBeSameAs(failure);
+        connection.Gone.Task.IsCompletedSuccessfully.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Guard_OtherFailures_LeaveTheConnectionAlone()
+    {
+        var connection = new GatewayConnection(null!);
+
+        await Should.ThrowAsync<GapActivatorRequestException>(
+            () => ServiceGateway.Guard<int>(connection, _ => Task.FromException<int>(new GapActivatorRequestException(IpcErrorCodes.NotFound, "x", retryable: false))));
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => ServiceGateway.Guard<int>(connection, _ => Task.FromException<int>(new InvalidOperationException())));
+
+        connection.Gone.Task.IsCompleted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Guard_StaleConnection_DoesNotEndTheNewerOne()
+    {
+        var stale = new GatewayConnection(null!);
+        var current = new GatewayConnection(null!);
+
+        await Should.ThrowAsync<GapActivatorRequestException>(
+            () => ServiceGateway.Guard<int>(stale, _ => Task.FromException<int>(new GapActivatorRequestException(IpcErrorCodes.Disconnected, "gone", retryable: true))));
+
+        stale.Gone.Task.IsCompleted.ShouldBeTrue();
+        current.Gone.Task.IsCompleted.ShouldBeFalse();
+    }
+
     /// <summary>A fake clock that counts the timers created, so a test advances only once the loop is waiting.</summary>
     private sealed class SpyTimeProvider : FakeTimeProvider
     {
