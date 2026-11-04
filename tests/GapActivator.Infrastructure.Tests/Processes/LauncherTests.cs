@@ -9,6 +9,7 @@ using GapActivator.Infrastructure.Processes;
 using GapActivator.Infrastructure.Tests.Support;
 using GapActivator.Testing;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32.SafeHandles;
 
 namespace GapActivator.Infrastructure.Tests.Processes;
 
@@ -142,6 +143,41 @@ public sealed partial class LauncherTests : IAsyncLifetime
 
         (await run.Process.Exited.WaitAsync(ExitWait, Ct)).ShouldBe(0);
         ReadOutput(run.OutputFile).ShouldBe("console-window:none\r\n");
+    }
+
+    [Fact]
+    public async Task Launch_Child_IsInTheJobNamedWithItsPidAndStartTime()
+    {
+        Launched run = await LaunchAsync("sleep 30000");
+        using Process child = Process.GetProcessById(run.Process.Pid);
+
+        using SafeJobHandle job = NativeMethods.OpenJobObject(
+            NativeMethods.JOB_OBJECT_QUERY, false, KernelObjectNames.Job(run.Process.Pid, run.Process.StartTime));
+
+        job.IsInvalid.ShouldBeFalse();
+        IsInJob(child.SafeHandle, job).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task CreateJob_JobsNamedWithoutOrWithAnotherStartTime_AreNeverJoined()
+    {
+        Launched run = await LaunchAsync("sleep 30000");
+        int pid = run.Process.Pid;
+        DateTimeOffset startTime = run.Process.StartTime;
+        using Process child = Process.GetProcessById(pid);
+
+        // Jobs left behind for the same PID: one with the old name and one of an earlier process that had this PID.
+        using SafeJobHandle oldStyle = NativeMethods.CreateJobObject(0, $@"Local\GapActivator.Job.{pid}");
+        using SafeJobHandle otherStartTime = NativeMethods.CreateJobObject(0, KernelObjectNames.Job(pid, startTime.AddSeconds(-1)));
+        oldStyle.IsInvalid.ShouldBeFalse();
+        otherStartTime.IsInvalid.ShouldBeFalse();
+        await run.Process.DisposeAsync();
+
+        using SafeJobHandle job = WindowsProcessLauncher.CreateJob(child.SafeHandle, pid, startTime);
+
+        IsInJob(child.SafeHandle, oldStyle).ShouldBeFalse();
+        IsInJob(child.SafeHandle, otherStartTime).ShouldBeFalse();
+        IsInJob(child.SafeHandle, job).ShouldBeTrue();
     }
 
     [Fact]
@@ -331,6 +367,12 @@ public sealed partial class LauncherTests : IAsyncLifetime
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using var reader = new StreamReader(stream, Encoding.UTF8);
         return reader.ReadToEnd();
+    }
+
+    private static bool IsInJob(SafeProcessHandle process, SafeJobHandle job)
+    {
+        NativeMethods.IsProcessInJob(process, job, out bool result).ShouldBeTrue();
+        return result;
     }
 
     private static string[] Lines(string output) => output.Split("\r\n", StringSplitOptions.RemoveEmptyEntries);

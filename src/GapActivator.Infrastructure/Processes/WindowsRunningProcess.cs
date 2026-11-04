@@ -75,6 +75,9 @@ internal sealed partial class WindowsRunningProcess : IRunningProcess
     /// <summary>Completes when the output pump stopped reading; already complete when the output is not captured.</summary>
     internal Task OutputDrained => _pump?.Drained ?? Task.CompletedTask;
 
+    /// <summary>Whether the tree kill goes through a job object rather than the process tree walk.</summary>
+    internal bool HasJob => _job is not null;
+
     public void SignalCancel()
     {
         lock (_gate)
