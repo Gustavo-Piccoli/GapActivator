@@ -444,7 +444,7 @@ The server certificate is validated with MailKit's default callback.
 ```csharp
 internal static class KernelObjectNames
 { public static string CancelEvent(int pid) => $@"Local\GapActivator.Cancel.{pid}";
-  public static string Job(int pid, DateTime startTime) =>
+  public static string Job(int pid, DateTimeOffset startTime) =>
     string.Create(CultureInfo.InvariantCulture, $@"Local\GapActivator.Job.{pid}.{startTime.UtcTicks}"); }
 internal sealed record ParentIdentity(int Pid, DateTime StartTimeUtc)
 { public static ParentIdentity Current { get; }             // Environment.ProcessId, Process.GetCurrentProcess().StartTime.ToUniversalTime()
@@ -993,4 +993,4 @@ Expected: no matches.
 33. **MailKit 4.18.1 and ProtectedData 10.0.0 are the pins; System.Security.Cryptography.Pkcs is pinned to 10.0.14.** Why: MailKit 4.13.0 was flagged by the package audit, so the newest stable 4.x that passed was used; Pkcs 10.0.0, a transitive dependency of MailKit, was audit-flagged too, so it is pinned as a transitive security pin. Cost if wrong: one version bump.
 34. **`RecordRunLaunched` carries one `LaunchedAt` instant, used as both `StartedAt` and the base of the time-limit deadline.** Why: a run must never be recorded shorter than its time limit. Cost if wrong: none known.
 35. **The grace period and the kill-retry wait are measured with the monotonic `TimeProvider` timestamp, not the wall clock.** Why: a clock step must not lengthen or cut the grace period, and a timer firing one tick early must not cut it short. Cost if wrong: none known.
-36. **An invalid configuration that fails while the host is being built is reported best-effort to the Event Log, and the service exits with code 1.** Why: an unhandled crash leaves no diagnosable trace. Cost if wrong: none.
+36. **A failure while the host is being built (such as an invalid configuration), or a `host.RunAsync` failure before the worker owns the exit code, is reported best-effort to the Event Log, and the service exits with code 1.** Why: an unhandled crash leaves no diagnosable trace. Cost if wrong: none.
