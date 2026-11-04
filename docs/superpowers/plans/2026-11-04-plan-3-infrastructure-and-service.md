@@ -6,7 +6,7 @@
 
 **Architecture:** `GapActivator.Infrastructure` references Application and Domain and holds every OS and storage adapter. Persistence is scoped: one `DbContext` per command or query scope, and singletons never hold one. The launcher, secret protector, retention, e-mail sender, notifier and output reader are singletons, because the singleton `RunSupervisor`, `CycleRunner` and `SchedulerLoop` capture them. The new `GapActivator.Service` executable is the composition root. It runs `DatabaseInitializer`, then `SchedulerLoop.RunAsync`, which reconciles first, inside a `BackgroundService` hosted by `Microsoft.Extensions.Hosting.WindowsServices`. Children are created suspended, so the cancel event and the job object exist before the child runs its first instruction.
 
-**Tech Stack:** .NET 10 / C# 14, `net10.0-windows` for every project that touches Win32. Microsoft.EntityFrameworkCore.Sqlite 10.0.14 (+ .Design 10.0.14, tooling only), Microsoft.Extensions.Hosting.WindowsServices 10.0.14, Microsoft.Extensions.Logging.EventLog 10.0.14, System.Security.Cryptography.ProtectedData 10.0.0, MailKit 4.13.0. Hand-written `[LibraryImport]` P/Invoke. Tests use xUnit v3 on Microsoft.Testing.Platform and Shouldly.
+**Tech Stack:** .NET 10 / C# 14, `net10.0-windows` for every project that touches Win32. Microsoft.EntityFrameworkCore.Sqlite 10.0.14 (+ .Design 10.0.14, tooling only), Microsoft.Extensions.Hosting.WindowsServices 10.0.14, Microsoft.Extensions.Logging.EventLog 10.0.14, System.Security.Cryptography.ProtectedData 10.0.0, MailKit 4.18.1 (System.Security.Cryptography.Pkcs pinned to 10.0.14 as a transitive security pin). Hand-written `[LibraryImport]` P/Invoke. Tests use xUnit v3 on Microsoft.Testing.Platform and Shouldly.
 
 **Spec:** `docs/superpowers/specs/2026-11-03-gapactivator-design.md` (mainly §3, §6.3, §7, §9, §12, §14 row 3, §16). Also read `docs/behavior-inventory.md`: every row whose *Plan* column is 3 lands here, plus the "(persistence: Plan 3)" remainder in BI-076/Q-1 and the "(launching in that folder: Plan 3)" remainder in Q-5.
 
@@ -40,7 +40,7 @@
   - `GAPACTIVATOR_PARENT_PID` is the service's PID in decimal.
   - `GAPACTIVATOR_PARENT_START_TIME` is the service's process start time as UTC `DateTime.ToString("O", CultureInfo.InvariantCulture)`, for example `2030-01-01T12:00:00.1234567Z`.
   - Cancel event: `Local\GapActivator.Cancel.{childPid}`. It is a manual-reset event, created while the child is still suspended.
-  - Job object: `Local\GapActivator.Job.{childPid}`, without `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`.
+  - Job object: `Local\GapActivator.Job.{childPid}.{startTimeUtcTicks}`, without `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`.
   - Exit code 0 = success; GapActivator decides Cancelled and TimedOut.
 - Event Log source and service name: `GapActivator`. Service exit codes: `0` = normal stop, `1` = fatal startup or run failure, `3` = restart requested.
 - Shutdown (addition a): `HostOptions.ShutdownTimeout` and the SCM stop wait hint are both `ServiceTimeouts.Shutdown = ExecutionLimits.MaxGracePeriod + 15 s + 30 s = 10 min 45 s`. This covers the largest possible grace period plus the 15 s `SchedulerLoop` waits on shutdown.
@@ -444,7 +444,8 @@ The server certificate is validated with MailKit's default callback.
 ```csharp
 internal static class KernelObjectNames
 { public static string CancelEvent(int pid) => $@"Local\GapActivator.Cancel.{pid}";
-  public static string Job(int pid) => $@"Local\GapActivator.Job.{pid}"; }
+  public static string Job(int pid, DateTime startTime) =>
+    string.Create(CultureInfo.InvariantCulture, $@"Local\GapActivator.Job.{pid}.{startTime.UtcTicks}"); }
 internal sealed record ParentIdentity(int Pid, DateTime StartTimeUtc)
 { public static ParentIdentity Current { get; }             // Environment.ProcessId, Process.GetCurrentProcess().StartTime.ToUniversalTime()
   public string FormattedStartTime => StartTimeUtc.ToString("O", CultureInfo.InvariantCulture); }
@@ -971,7 +972,7 @@ Expected: no matches.
 12. **The output pipe is an overlapped named pipe (server) plus an inheritable client handle; child handles are inherited inside a static lock.** Why: it gives truly cancellable async reads, so a grandchild holding stdout cannot pin a thread, and the lock is the same approach .NET's `Process.Start` uses. Cost if wrong: switch to `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` if something else in the service ever creates inheritable handles.
 13. **stdout and stderr share one pipe; no stderr prefix; bytes are copied verbatim; the reader decodes UTF-8.** Why: this keeps the child's real write order, like a console, and the child's encoding cannot be known. Cost if wrong: stderr cannot be told apart in the app; adding a second pipe later is local to the launcher.
 14. **The run output cap is 50 MiB, with a marker, and the pipe keeps draining.** Why: the spec is silent, and a runaway child must not fill the disk or block (Review Focus 3). Cost if wrong: a constant in `InfrastructureOptions`.
-15. **The job is named `Local\GapActivator.Job.{pid}`, so a re-adopted child is still killed as a tree; the fallback is `Process.Kill(entireProcessTree: true)`.** Why: an unnamed job dies with the crashed service's handle table. Cost if wrong: if Windows does not keep the name alive, the fallback misses grandchildren whose parent already exited.
+15. **The job is named `Local\GapActivator.Job.{pid}.{startTimeUtcTicks}`, so a re-adopted child is still killed as a tree; the fallback is `Process.Kill(entireProcessTree: true)`.** Why: an unnamed job dies with the crashed service's handle table. Cost if wrong: if Windows does not keep the name alive, the fallback misses grandchildren whose parent already exited. Known limitation: after a service crash, the kill falls back to a parent-link tree walk, so descendants whose parent already exited are not reached; the spec lists durable job ownership across service crashes as future work.
 16. **The kill exit code is `uint.MaxValue` (reported as -1), and the kill wait is bounded at 10 s, then `TimeoutException`.** Why: it matches the fake, and it keeps `KillTreeAsync` from hanging. Cost if wrong: cosmetic.
 17. **`.cmd` and `.bat` run through `cmd.exe /d /s /c`.** Why: `CreateProcess` does not officially support batch files, and users will register scripts (Review Focus 1). Cost if wrong: one branch in `CommandLineBuilder`.
 18. **The child environment is the service's environment, then the registration's variables overriding it ignoring case, then `GAPACTIVATOR_*`.** Why: this matches how Windows treats names; a child without `SystemRoot` or `PATH` breaks. Cost if wrong: secret values from the service's own environment are visible to children; documented.
@@ -989,4 +990,7 @@ Expected: no matches.
 30. **A separate `tests/GapActivator.TestChild` drives launcher tests; the sample stays minimal (`[seconds]`) and does not exit when its parent dies.** Why: ruling 4 keeps the sample to the ~20 lines a child needs, while tests need many modes; re-adoption makes exiting on parent death unnecessary. Cost if wrong: one more project.
 31. **The end-to-end test runs the host in-process, after seeding the database in a separate provider, plus one smoke test of the real `GapActivator.Service.exe`.** Why: there is no pipe yet to send commands, and the 5 s cycle minimum needs settings that exist before the first wait. Cost if wrong: about 1 minute of CI time.
 32. **stdin is `NUL`.** Why: there is no console in session 0 (BI-045). Cost if wrong: none.
-33. **MailKit 4.13.0 and ProtectedData 10.0.0 are the starting pins.** Why: they are the newest versions known to be at least two weeks old; the implementer verifies restore and audit. Cost if wrong: one version bump.
+33. **MailKit 4.18.1 and ProtectedData 10.0.0 are the pins; System.Security.Cryptography.Pkcs is pinned to 10.0.14.** Why: MailKit 4.13.0 was flagged by the package audit, so the newest stable 4.x that passed was used; Pkcs 10.0.0, a transitive dependency of MailKit, was audit-flagged too, so it is pinned as a transitive security pin. Cost if wrong: one version bump.
+34. **`RecordRunLaunched` carries one `LaunchedAt` instant, used as both `StartedAt` and the base of the time-limit deadline.** Why: a run must never be recorded shorter than its time limit. Cost if wrong: none known.
+35. **The grace period and the kill-retry wait are measured with the monotonic `TimeProvider` timestamp, not the wall clock.** Why: a clock step must not lengthen or cut the grace period, and a timer firing one tick early must not cut it short. Cost if wrong: none known.
+36. **An invalid configuration that fails while the host is being built is reported best-effort to the Event Log, and the service exits with code 1.** Why: an unhandled crash leaves no diagnosable trace. Cost if wrong: none.
