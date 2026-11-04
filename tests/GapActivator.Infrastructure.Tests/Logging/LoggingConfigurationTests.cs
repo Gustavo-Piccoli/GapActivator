@@ -59,6 +59,30 @@ public sealed class LoggingConfigurationTests
         captured.Entries.ShouldBe(["Sample.Category|Error", "Sample.Category|Critical"]);
     }
 
+    // Each container owns (and disposes) its own Event Log provider; two containers never share one.
+    [Fact]
+    public void Logging_TwoContainers_EachCreatesItsOwnEventLogProvider()
+    {
+        var created = new List<CapturingProvider>();
+        var paths = new GapActivatorPaths(Path.Combine(Path.GetTempPath(), "GapActivator.Tests", "rules-only"));
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.AddGapActivatorLogging(paths, new LogLevelSwitch(), new FakeTimeProvider(), () =>
+        {
+            var provider = new CapturingProvider();
+            created.Add(provider);
+            return provider;
+        }));
+
+        using ServiceProvider first = services.BuildServiceProvider();
+        using ServiceProvider second = services.BuildServiceProvider();
+        first.GetRequiredService<ILoggerFactory>().CreateLogger("First").Log(LogLevel.Error, "one");
+        second.GetRequiredService<ILoggerFactory>().CreateLogger("Second").Log(LogLevel.Error, "two");
+
+        created.Count.ShouldBe(2);
+        created[0].Entries.ShouldBe(["First|Error"]);
+        created[1].Entries.ShouldBe(["Second|Error"]);
+    }
+
     private sealed class CapturingProvider : ILoggerProvider
     {
         public List<string> Entries { get; } = [];

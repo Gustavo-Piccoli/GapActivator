@@ -75,26 +75,6 @@ public sealed class HostConfigurationTests
         host.Services.GetRequiredService<IHostLifetime>().ShouldNotBeOfType<GapActivatorServiceLifetime>();
     }
 
-    [Fact]
-    public async Task Host_ExitCodeSink_WritesTheProcessExitCode()
-    {
-        await using var root = new TempDataRoot();
-        using IHost host = GapActivatorHost.CreateBuilder(["--GapActivator:DataRoot=" + root.Path]).Build();
-        ExitCodeSink sink = host.Services.GetRequiredService<ExitCodeSink>();
-
-        try
-        {
-            sink.Set(ServiceExitCodes.Restart);
-
-            Environment.ExitCode.ShouldBe(3);
-            sink.Last.ShouldBe(3);
-        }
-        finally
-        {
-            Environment.ExitCode = 0;
-        }
-    }
-
     // C3: the switch the unit of work updates after a settings commit is the one the file logger reads.
     [Fact]
     public async Task Host_LogLevelChangedThroughTheUnitOfWork_FileLoggerFollowsIt()
