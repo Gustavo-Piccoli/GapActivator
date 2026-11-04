@@ -564,14 +564,32 @@ public sealed partial class RunSupervisor(
     }
 
     /// <summary>
-    /// Waits for the exit or until <paramref name="delay"/> has passed by the clock. A single timer can fire up to one
-    /// tick early, which would cut the grace period short, so the wait is measured against a deadline.
+    /// Waits for the exit or until <paramref name="delay"/> has elapsed. The elapsed time is measured monotonically
+    /// (timestamps, not the wall clock), so a clock step neither stretches nor cuts the grace period; and it is checked
+    /// after every timer, because a single timer can fire up to one tick early.
     /// </summary>
     private async Task WaitForExitOrDelayAsync(Task exited, TimeSpan delay)
     {
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
-        await Task.WhenAny(exited, WaitUntilAsync(time.GetUtcNow() + delay, cancellation.Token));
+        await Task.WhenAny(exited, WaitElapsedAsync(time.GetTimestamp(), delay, cancellation.Token));
         await cancellation.CancelAsync();
+    }
+
+    private async Task WaitElapsedAsync(long start, TimeSpan delay, CancellationToken ct)
+    {
+        try
+        {
+            for (TimeSpan left = delay - time.GetElapsedTime(start); left > TimeSpan.Zero; left = delay - time.GetElapsedTime(start))
+            {
+                // Rounded up: a delay under one millisecond would create no timer and this would spin.
+                TimeSpan step = TimeSpan.FromMilliseconds(Math.Ceiling(left.TotalMilliseconds));
+                await Task.Delay(step < MaxTimerDelay ? step : MaxTimerDelay, time, ct);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The child exited or the supervisor's lifetime ended first.
+        }
     }
 
     private void MarkEnding(TrackedRun run)
