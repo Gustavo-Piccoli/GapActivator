@@ -1,7 +1,10 @@
+using GapActivator.Application.Cycle;
 using GapActivator.Application.Events;
 using GapActivator.Application.Messaging;
 using GapActivator.Application.Processes;
+using GapActivator.Application.Queries;
 using GapActivator.Application.Runs;
+using GapActivator.Domain.Processes;
 using GapActivator.Domain.Runs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -45,6 +48,14 @@ public static class DependencyInjection
         services.AddScoped<ICommandHandler<EnableProcess, Unit>, EnableProcessHandler>();
         services.AddScoped<ICommandHandler<DisableProcess, Unit>, DisableProcessHandler>();
         services.AddScoped<ICommandHandler<UnblockProcess, Unit>, UnblockProcessHandler>();
+
+        services.AddSingleton<CycleRunner>();
+        services.AddSingleton<SchedulerLoop>();
+        services.AddScoped<ICommandHandler<EvaluateProcess, Unit>, EvaluateProcessHandler>();
+        services.AddScoped<ICommandHandler<PurgeHistory, int>, PurgeHistoryHandler>();
+        services.AddScoped<ICommandHandler<RecordCycleFailure, Unit>, RecordCycleFailureHandler>();
+        services.AddScoped<IQueryHandler<GetCycleSettings, CycleSettings>, GetCycleSettingsHandler>();
+        services.AddScoped<IQueryHandler<ListProcessIds, IReadOnlyList<ProcessId>>, ListProcessIdsHandler>();
         return services;
     }
 }
