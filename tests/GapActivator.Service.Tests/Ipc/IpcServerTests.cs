@@ -105,11 +105,15 @@ public sealed class IpcServerTests
         client.Server.OperatorsGroupMode.ShouldBe(OperatorsGroupMode.Disabled);
     }
 
-    [Fact]
-    public async Task Hello_ResolverThrows_IsUnauthorizedAndCloses()
+    [Theory]
+    [InlineData(true, LogLevel.Warning)]
+    [InlineData(false, LogLevel.Error)]
+    public async Task Hello_ResolverThrows_IsUnauthorizedClosesAndLogsWithoutLeaking(bool notIdentifiable, LogLevel expected)
     {
         await using IpcTestServer server = await IpcTestServer.StartAsync();
-        server.Callers.Failure = new UnauthorizedAccessException("The client could not be identified.");
+        server.Callers.Failure = notIdentifiable
+            ? new UnauthorizedAccessException("secret detail")
+            : new InvalidOperationException("secret detail");
         await using RawPipeClient raw = await server.ConnectRawAsync();
 
         await raw.SendHelloAsync();
@@ -118,7 +122,13 @@ public sealed class IpcServerTests
         reply.ShouldNotBeNull();
         reply.Ok.ShouldBe(false);
         reply.Error!.Code.ShouldBe(IpcErrorCodes.Unauthorized);
+        reply.Error.Message.ShouldBe("The client could not be identified.");
+        reply.Error.Message.ShouldNotContain("secret detail");
         (await raw.WaitForEndAsync(Short)).ShouldBeTrue();
+        LogEntry entry = server.Host.Log.Entries.Single(e => e.Category == "IpcConnection" && e.Level >= LogLevel.Warning);
+        entry.Level.ShouldBe(expected);
+        entry.Message.ShouldNotContain("secret detail");
+        (entry.Exception is null).ShouldBe(notIdentifiable);
     }
 
     [Fact]

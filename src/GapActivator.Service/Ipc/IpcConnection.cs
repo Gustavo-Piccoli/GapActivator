@@ -173,9 +173,18 @@ internal sealed partial class IpcConnection(
         {
             caller = callers.Resolve(pipe);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Whatever went wrong, the client is not identified and gets nothing else.
+            // Whatever went wrong, the client is not identified and gets nothing else; the log tells the two causes apart.
+            if (ex is UnauthorizedAccessException)
+            {
+                LogClientNotIdentified();
+            }
+            else
+            {
+                LogResolverFailed(ex);
+            }
+
             return await RejectHelloAsync(request.Id, IpcErrorCodes.Unauthorized, "The client could not be identified.").ConfigureAwait(false);
         }
 
@@ -365,6 +374,12 @@ internal sealed partial class IpcConnection(
             LogDisconnected(_caller.Name);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "A pipe client could not be identified; the connection is refused.")]
+    private partial void LogClientNotIdentified();
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Resolving a pipe client failed; the connection is refused.")]
+    private partial void LogResolverFailed(Exception exception);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Pipe client {Caller} connected (client {ClientVersion}).")]
     private partial void LogConnected(string caller, string clientVersion);
