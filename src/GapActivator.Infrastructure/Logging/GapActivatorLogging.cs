@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging.EventLog;
 
 namespace GapActivator.Infrastructure.Logging;
@@ -42,11 +43,10 @@ public static class GapActivatorLogging
         // instance passed to AddProvider is disposed by neither the container nor the logger factory.
         logging.Services.AddSingleton<ILoggerProvider>(_ => new DailyFileLoggerProvider(paths, level, time));
 
-        ILoggerProvider? eventLog = createEventLog();
-        if (eventLog is not null)
-        {
-            logging.Services.AddSingleton<ILoggerProvider>(_ => new SafeEventLogLoggerProvider(eventLog));
-        }
+        // The inner provider is created inside the factory, so each container gets (and disposes) its own. When it
+        // cannot be created, the wrapper logs nowhere.
+        logging.Services.AddSingleton<ILoggerProvider>(_ =>
+            new SafeEventLogLoggerProvider(createEventLog() ?? NullLoggerProvider.Instance));
 
         // The rules are added in every case, so the policy is the same everywhere (BI-090, spec section 9).
         logging.AddFilter<SafeEventLogLoggerProvider>(null, LogLevel.Error);

@@ -27,6 +27,10 @@ public static class GapActivatorHost
         GapActivatorPaths paths = dataRoot is null ? GapActivatorPaths.Default : new GapActivatorPaths(dataRoot);
 
         bool isService = WindowsServiceHelpers.IsWindowsService();
+
+        // Under SCM this also registers the raw EventLogLoggerProvider, as the host defaults already did with the
+        // console, debug, event-source and Event Log providers. AddGapActivatorLogging below clears every provider, so it
+        // must come after this line: then only the safe, filtered Event Log provider remains.
         builder.Services.AddWindowsService(o => o.ServiceName = "GapActivator");
         if (isService)
         {

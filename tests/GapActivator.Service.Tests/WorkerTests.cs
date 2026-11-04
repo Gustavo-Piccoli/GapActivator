@@ -10,6 +10,9 @@ using Microsoft.Extensions.Logging;
 
 namespace GapActivator.Service.Tests;
 
+/// <summary>
+/// The exit-code sink is replaced (C17), so the test process's exit code must stay as it was: each test asserts it.
+/// </summary>
 [Trait("Category", "Integration")]
 public sealed class WorkerTests
 {
@@ -21,27 +24,30 @@ public sealed class WorkerTests
     public async Task Worker_DataRootIsAFile_LogsCriticalSetsExitCode1AndStopsHost()
     {
         CancellationToken ct = TestContext.Current.CancellationToken;
+        int exitCodeBefore = Environment.ExitCode;
         await using var root = new TempDataRoot();
         string file = Path.Combine(root.Path, "not-a-folder");
         await File.WriteAllTextAsync(file, "x", ct);
         var exitCodes = new List<int>();
         var logs = new LogCapture();
-        try
-        {
-            using IHost host = ServiceHostFactory.CreateBuilder(file, exitCodes, logs).Build();
 
-            await host.StartAsync(ct);
-            await ServiceHostFactory.WaitForStoppingAsync(host, Timeout, ct);
-            await host.StopAsync(ct);
-
-            exitCodes.ShouldBe([ServiceExitCodes.Fatal]);
-            CapturedLog critical = logs.Entries.Where(e => e.Category == WorkerCategory && e.Level == LogLevel.Critical).ShouldHaveSingleItem();
-            critical.Exception.ShouldBeOfType<IOException>();
-        }
-        finally
+        using (IHost host = ServiceHostFactory.CreateBuilder(file, exitCodes, logs).Build())
         {
-            Environment.ExitCode = 0;
+            try
+            {
+                await host.StartAsync(ct);
+                await ServiceHostFactory.WaitForStoppingAsync(host, Timeout, ct);
+            }
+            finally
+            {
+                await ServiceHostFactory.StopAsync(host);
+            }
         }
+
+        exitCodes.ShouldBe([ServiceExitCodes.Fatal]);
+        CapturedLog critical = logs.Entries.Where(e => e.Category == WorkerCategory && e.Level == LogLevel.Critical).ShouldHaveSingleItem();
+        critical.Exception.ShouldBeOfType<IOException>();
+        Environment.ExitCode.ShouldBe(exitCodeBefore);
     }
 
     // C18: SchedulerLoop already logged the failed reconciliation at Critical; the worker does not log it again.
@@ -49,6 +55,7 @@ public sealed class WorkerTests
     public async Task Worker_ReconcileFails_SetsExitCode1WithoutASecondCriticalAndStopsHost()
     {
         CancellationToken ct = TestContext.Current.CancellationToken;
+        int exitCodeBefore = Environment.ExitCode;
         await using var root = new TempDataRoot();
         var exitCodes = new List<int>();
         var logs = new LogCapture();
@@ -58,21 +65,27 @@ public sealed class WorkerTests
             builder.Services.AddScoped<ICommandHandler<ReconcileOnStartup, Unit>, FailingReconcile>();
             using IHost host = builder.Build();
             SchedulerLoop loop = host.Services.GetRequiredService<SchedulerLoop>();
+            try
+            {
+                await host.StartAsync(ct);
+                await ServiceHostFactory.WaitForStoppingAsync(host, Timeout, ct);
+            }
+            finally
+            {
+                await ServiceHostFactory.StopAsync(host);
+            }
 
-            await host.StartAsync(ct);
-            await ServiceHostFactory.WaitForStoppingAsync(host, Timeout, ct);
-            await host.StopAsync(ct);
-
-            exitCodes.ShouldBe([ServiceExitCodes.Fatal]);
             loop.Reconciled.IsFaulted.ShouldBeTrue();
-            logs.Entries.Where(e => e.Category == LoopCategory && e.Level == LogLevel.Critical).ShouldHaveSingleItem();
-            logs.Entries.ShouldNotContain(e => e.Category == WorkerCategory && e.Level == LogLevel.Critical);
         }
         finally
         {
-            Environment.ExitCode = 0;
             SqliteConnection.ClearAllPools();
         }
+
+        exitCodes.ShouldBe([ServiceExitCodes.Fatal]);
+        logs.Entries.Where(e => e.Category == LoopCategory && e.Level == LogLevel.Critical).ShouldHaveSingleItem();
+        logs.Entries.ShouldNotContain(e => e.Category == WorkerCategory && e.Level == LogLevel.Critical);
+        Environment.ExitCode.ShouldBe(exitCodeBefore);
     }
 
     // BI-073, BI-091
@@ -80,6 +93,7 @@ public sealed class WorkerTests
     public async Task Worker_Started_InitializesDatabaseThenReconcilesBeforeTheFirstCycle()
     {
         CancellationToken ct = TestContext.Current.CancellationToken;
+        int exitCodeBefore = Environment.ExitCode;
         await using var root = new TempDataRoot();
         var exitCodes = new List<int>();
         var logs = new LogCapture();
@@ -87,22 +101,26 @@ public sealed class WorkerTests
         {
             using IHost host = ServiceHostFactory.CreateBuilder(root.Path, exitCodes, logs).Build();
             SchedulerLoop loop = host.Services.GetRequiredService<SchedulerLoop>();
+            try
+            {
+                await host.StartAsync(ct);
+                await loop.Reconciled.WaitAsync(Timeout, ct);
 
-            await host.StartAsync(ct);
-            await loop.Reconciled.WaitAsync(Timeout, ct);
-
-            File.Exists(new GapActivatorPaths(root.Path).DatabaseFile).ShouldBeTrue();
-
-            await host.StopAsync(ct);
-
-            exitCodes.ShouldBeEmpty();
-            logs.Entries.ShouldNotContain(e => e.Level == LogLevel.Critical);
+                File.Exists(new GapActivatorPaths(root.Path).DatabaseFile).ShouldBeTrue();
+            }
+            finally
+            {
+                await ServiceHostFactory.StopAsync(host);
+            }
         }
         finally
         {
-            Environment.ExitCode = 0;
             SqliteConnection.ClearAllPools();
         }
+
+        exitCodes.ShouldBeEmpty();
+        logs.Entries.ShouldNotContain(e => e.Level == LogLevel.Critical);
+        Environment.ExitCode.ShouldBe(exitCodeBefore);
     }
 
     private sealed class FailingReconcile : ICommandHandler<ReconcileOnStartup, Unit>

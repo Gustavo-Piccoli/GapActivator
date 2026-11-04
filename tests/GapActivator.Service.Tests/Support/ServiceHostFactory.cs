@@ -37,6 +37,16 @@ internal static class ServiceHostFactory
         return builder;
     }
 
+    /// <summary>
+    /// Stops a started host, bounded to 30 seconds whatever the test's token, so a failed or timed-out test never
+    /// leaves the host (and its scheduler loop) running. Safe to call more than once.
+    /// </summary>
+    public static async Task StopAsync(IHost host)
+    {
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await host.StopAsync(deadline.Token);
+    }
+
     /// <summary>Completes when the host begins to stop; fails after <paramref name="timeout"/>.</summary>
     public static async Task WaitForStoppingAsync(IHost host, TimeSpan timeout, CancellationToken ct)
     {
