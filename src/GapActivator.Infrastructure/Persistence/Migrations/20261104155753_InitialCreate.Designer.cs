@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace GapActivator.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(GapActivatorDbContext))]
-    [Migration("20261104053135_InitialCreate")]
+    [Migration("20261104155753_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -228,6 +228,8 @@ namespace GapActivator.Infrastructure.Persistence.Migrations
                         .HasFilter("\"State\" <> 'Completed'");
 
                     b.HasIndex("ProcessId", "CreatedAt");
+
+                    b.HasIndex("ProcessId", "EndedAt");
 
                     b.ToTable("Runs", (string)null);
                 });
