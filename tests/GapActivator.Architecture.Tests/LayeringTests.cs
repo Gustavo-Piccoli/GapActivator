@@ -33,6 +33,27 @@ public class LayeringTests
             .GetResult().IsSuccessful.ShouldBeTrue();
 
     [Fact]
+    public void Infrastructure_PackageReferencesAreTheJustifiedOnes()
+    {
+        string root = FindSolutionRoot();
+        string csproj = Path.Combine(root, "src", "GapActivator.Infrastructure", "GapActivator.Infrastructure.csproj");
+
+        XDocument project = XDocument.Load(csproj);
+
+        string[] packages = [.. project.Descendants("PackageReference").Select(p => (string)p.Attribute("Include")!)];
+        packages.Order().ShouldBe(
+        [
+            "Ical.Net",
+            "MailKit",
+            "Microsoft.EntityFrameworkCore.Design",
+            "Microsoft.EntityFrameworkCore.Sqlite",
+            "Microsoft.Extensions.Logging.EventLog",
+            "System.Security.Cryptography.Pkcs",
+            "System.Security.Cryptography.ProtectedData",
+        ]);
+    }
+
+    [Fact]
     public void Domain_HasNoPackageOrProjectReferences()
     {
         string root = FindSolutionRoot();
