@@ -36,6 +36,9 @@ internal sealed partial class WindowsProcessLauncher(InfrastructureOptions optio
     /// </summary>
     private static readonly Lock CreateProcessGate = new();
 
+    /// <summary>Test seam: called with the child PID right after the child is resumed. DI never sets it.</summary>
+    internal Action<int>? AfterResume { get; init; }
+
     public async Task<IRunningProcess> LaunchAsync(LaunchRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -120,13 +123,18 @@ internal sealed partial class WindowsProcessLauncher(InfrastructureOptions optio
         RunOutputPump? pump = null;
         try
         {
+            AfterResume?.Invoke(pid);
             pump = new RunOutputPump(pipe, output, options.RunOutputMaxBytes, request.RunId, logger);
             return new WindowsRunningProcess(pid, startTime, process, job, cancelEvent, pump, options.KillWaitTimeout, logger);
         }
         catch (Exception ex)
         {
-            // The child is already running: never leave it untracked.
-            NativeMethods.TerminateProcess(process, 1);
+            // The child is already running: never leave it untracked. The job also holds its descendants.
+            if (!NativeMethods.TerminateJobObject(job, 1))
+            {
+                NativeMethods.TerminateProcess(process, 1);
+            }
+
             if (pump is not null)
             {
                 await pump.DisposeAsync().ConfigureAwait(false);

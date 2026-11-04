@@ -88,6 +88,19 @@ switch (args)
 
         return 0;
 
+    case ["spawn-grandchild-file", var path]:
+        var fileStart = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, ArgumentList = { "sleep", "600000" } };
+        using (Process grandchild = Process.Start(fileStart)!)
+        {
+            // Written through a temporary name, so a reader never sees a partial number.
+            string temporary = path + ".tmp";
+            File.WriteAllText(temporary, grandchild.Id.ToString(CultureInfo.InvariantCulture));
+            File.Move(temporary, path, overwrite: true);
+        }
+
+        Thread.Sleep(TimeSpan.FromMinutes(10));
+        return 0;
+
     case ["flood", var bytes]:
         Commands.Flood(Commands.Parse(bytes));
         return 0;

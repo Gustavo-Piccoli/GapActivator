@@ -315,6 +315,36 @@ public sealed partial class LauncherTests : IAsyncLifetime
         Should.NotThrow(run.Process.SignalCancel);
     }
 
+    [Fact]
+    public async Task Launch_FailureAfterResume_KillsTheChildAndItsGrandchildThroughTheJob()
+    {
+        string file = Path.Combine(_root.Path, "gc.txt");
+        int childPid = 0;
+        var launcher = new WindowsProcessLauncher(new InfrastructureOptions(Paths), new RecordingLogger<WindowsProcessLauncher>(_logs))
+        {
+            AfterResume = pid =>
+            {
+                childPid = pid;
+                var deadline = Stopwatch.StartNew();
+                while (!File.Exists(file) && deadline.Elapsed < TimeSpan.FromSeconds(10))
+                {
+                    Thread.Sleep(25);
+                }
+
+                throw new InvalidOperationException("Simulated tracking failure.");
+            },
+        };
+
+        LaunchFailedException error = await Should.ThrowAsync<LaunchFailedException>(
+            () => LaunchAsync("spawn-grandchild-file \"" + file + "\"", launcher: launcher));
+
+        error.Message.ShouldStartWith("The process could not be tracked:");
+        File.Exists(file).ShouldBeTrue();
+        int grandchildPid = int.Parse(File.ReadAllText(file), CultureInfo.InvariantCulture);
+        (await WaitUntilGoneAsync(childPid)).ShouldBeTrue("the child survived");
+        (await WaitUntilGoneAsync(grandchildPid)).ShouldBeTrue("the grandchild survived");
+    }
+
     // BI-057
     [Fact]
     public async Task KillTree_ChildIgnoringCancelWithGrandchild_KillsBoth()
@@ -395,6 +425,30 @@ public sealed partial class LauncherTests : IAsyncLifetime
 
             await Task.Delay(TimeSpan.FromMilliseconds(25), Ct);
         }
+    }
+
+    private static async Task<bool> WaitUntilGoneAsync(int pid)
+    {
+        var deadline = Stopwatch.StartNew();
+        while (deadline.Elapsed < TimeSpan.FromSeconds(5))
+        {
+            try
+            {
+                using Process process = Process.GetProcessById(pid);
+                if (process.HasExited)
+                {
+                    return true;
+                }
+            }
+            catch (ArgumentException)
+            {
+                return true;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(25), Ct);
+        }
+
+        return false;
     }
 
     private static void Kill(Process? process)

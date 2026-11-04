@@ -55,7 +55,7 @@ A child that wants to stop gracefully opens the event with `EventWaitHandle.TryO
 
 GapActivator then waits for the grace period. It is configured per process and defaults to 30 seconds. If the child has not exited when the grace period ends, GapActivator kills the whole process tree. It does this through a job object, `Local\GapActivator.Job.{childPid}.{startTimeUtcTicks}`, that holds the child and the processes it starts. The job object does not kill anything when GapActivator closes it.
 
-A service stop or restart sets the cancel event of every running child. Each child gets its grace period, and GapActivator kills the ones still running when it ends. The run ends Interrupted. Re-adoption happens only after a crash (or when the shutdown time limit cuts a stop short).
+A service stop or restart sets the cancel event of every running child. Each child gets its grace period, and GapActivator kills the ones still running when it ends. The run ends Interrupted, unless an earlier stop reason was recorded (a user cancel or a time limit), which wins. Re-adoption happens only after a crash, when the shutdown time limit cuts a stop short, or when sending a run's shutdown stop fails: such a run stays active and is re-adopted at the next start.
 
 ## Output
 
