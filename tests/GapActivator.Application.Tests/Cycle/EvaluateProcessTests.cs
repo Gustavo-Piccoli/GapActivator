@@ -188,6 +188,37 @@ public class EvaluateProcessTests
         host.Supervisor().IsTracking(process.Id).ShouldBeFalse();
     }
 
+    // BI-064, BI-044
+    [Fact]
+    public async Task Evaluate_ServiceRunningWithCounterAboveLoweredLimit_ResetsAndIsNotBlocked()
+    {
+        await using ApplicationTestHost host = CycleTestHost.Create();
+        DateTimeOffset now = host.Time.GetUtcNow();
+        Process process = host.AddProcess(ProcessKind.Service);
+        for (int i = 0; i < 3; i++)
+        {
+            process.ApplyRunOutcome(RunOutcome.Crashed, 10, now);
+        }
+
+        Run running = host.AddRunningRun(process);
+        host.Store.Settings.Change(
+            Interval,
+            2,
+            host.Store.Settings.DefaultTimeLimit,
+            host.Store.Settings.DefaultGracePeriod,
+            host.Store.Settings.LogRetentionDays,
+            host.Store.Settings.HistoryRetentionDays,
+            host.Store.Settings.LogLevel,
+            host.Store.Settings.CheckForUpdates);
+
+        await host.EvaluateAsync(process);
+
+        process.Lifecycle.ShouldBe(ProcessLifecycle.Enabled);
+        process.ConsecutiveFailures.ShouldBe(0);
+        host.Store.Runs.Keys.ShouldBe([running.Id]);
+        running.State.ShouldBe(RunState.Running);
+    }
+
     // BI-067
     [Fact]
     public async Task Evaluate_ServiceNotRunning_StartsKeepAlive()
