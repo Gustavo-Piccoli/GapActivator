@@ -2,12 +2,14 @@ using GapActivator.Application.Events;
 using GapActivator.Application.Ports;
 using GapActivator.Domain.Common;
 using GapActivator.Domain.Processes;
+using GapActivator.Domain.Runs;
 
 namespace GapActivator.Application.Notifications;
 
 /// <summary>Notifies the app of every alerting event, whatever the e-mail settings are.</summary>
 public sealed class AppNotificationHandler(
     IProcessRepository processes,
+    IRunRepository runs,
     IAppNotifier notifier,
     TimeProvider time) : INotificationHandler
 {
@@ -20,7 +22,7 @@ public sealed class AppNotificationHandler(
             return;
         }
 
-        AlertContent content = await AlertFormatter.BuildAsync(kind, domainEvent, processes, time, ct);
+        AlertContent content = await AlertFormatter.BuildAsync(kind, domainEvent, processes, runs, time, ct);
         await notifier.NotifyAsync(
             new AppNotification(
                 AlertFormatter.SeverityOf(kind),
