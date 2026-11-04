@@ -177,6 +177,11 @@ namespace GapActivator.Infrastructure.Persistence.Migrations
                 columns: new[] { "ProcessId", "CreatedAt" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_Runs_ProcessId_EndedAt",
+                table: "Runs",
+                columns: new[] { "ProcessId", "EndedAt" });
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Schedules_ProcessId",
                 table: "Schedules",
                 column: "ProcessId");

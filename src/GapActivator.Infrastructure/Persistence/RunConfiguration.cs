@@ -40,5 +40,6 @@ internal sealed class RunConfiguration : IEntityTypeConfiguration<Run>
         builder.HasIndex(r => r.CreatedAt);
         builder.HasIndex(r => new { r.ProcessId, r.CreatedAt });
         builder.HasIndex(r => r.EndedAt);
+        builder.HasIndex(r => new { r.ProcessId, r.EndedAt });
     }
 }

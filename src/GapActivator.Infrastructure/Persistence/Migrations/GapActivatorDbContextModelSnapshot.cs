@@ -226,6 +226,8 @@ namespace GapActivator.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ProcessId", "CreatedAt");
 
+                    b.HasIndex("ProcessId", "EndedAt");
+
                     b.ToTable("Runs", (string)null);
                 });
 
