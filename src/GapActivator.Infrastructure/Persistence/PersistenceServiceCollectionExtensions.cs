@@ -13,7 +13,7 @@ public static class PersistenceServiceCollectionExtensions
 {
     /// <summary>
     /// Registers the SQLite persistence under <paramref name="paths"/>: the context, the unit of work, the repositories,
-    /// the history writer and the <see cref="DatabaseInitializer"/>, all scoped. The paths and the
+    /// the history writer, reader and retention, and the <see cref="DatabaseInitializer"/>, all scoped. The paths and the
     /// <see cref="LogLevelSwitch"/> are added only if the host has not registered its own.
     /// </summary>
     /// <param name="services">The services.</param>
@@ -42,6 +42,8 @@ public static class PersistenceServiceCollectionExtensions
         services.AddScoped<IRunRepository, EfRunRepository>();
         services.AddScoped<ISettingsRepository, EfSettingsRepository>();
         services.AddScoped<IHistoryWriter, EfHistoryWriter>();
+        services.AddScoped<IRunHistoryReader, EfRunHistoryReader>();
+        services.AddScoped<IHistoryRetention, EfHistoryRetention>();
         services.AddScoped<DatabaseInitializer>();
         return services;
     }
