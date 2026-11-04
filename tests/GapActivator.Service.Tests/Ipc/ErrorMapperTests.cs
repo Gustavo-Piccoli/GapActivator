@@ -46,6 +46,29 @@ public sealed class ErrorMapperTests
         }
     }
 
+    [Fact]
+    public void Map_DomainMessageWithLineBreaksAndBidi_IsOneSanitizedLine()
+    {
+        IpcError error = IpcErrorMapper.Map(new DomainException("Name 'a\r\nFAKE\u202Eb' is bad."), "RunNow", false);
+
+        error.Message.ShouldBe("Name 'a  FAKE b' is bad.");
+    }
+
+    [Fact]
+    public void Map_RejectionAndInvalidPayloadMessages_AreSanitizedAndCut()
+    {
+        string raw = "x\r\n" + new string('y', 500);
+
+        IpcError rejected = IpcErrorMapper.Map(new CommandRejectedException(RejectionCodes.NameTaken, raw), "RunNow", false);
+        IpcError invalid = IpcErrorMapper.Map(new IpcInvalidPayloadException(raw), "RunNow", false);
+
+        foreach (IpcError error in new[] { rejected, invalid })
+        {
+            error.Message.ShouldNotContain("\n");
+            error.Message.Length.ShouldBe(200);
+        }
+    }
+
     private static (Exception Exception, bool Stopping, string Code, bool Retryable, string Message, bool Unexpected) Row(string row) =>
         row switch
         {

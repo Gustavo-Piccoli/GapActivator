@@ -17,19 +17,22 @@ internal static class IpcErrorMapper
 
         return exception switch
         {
-            CommandRejectedException rejected => new IpcError(rejected.Code, rejected.Message, false),
+            CommandRejectedException rejected => new IpcError(rejected.Code, Clean(rejected.Message), false),
             DbUpdateConcurrencyException =>
                 new IpcError(IpcErrorCodes.Conflict, "The data changed while the request ran. Try again.", true),
             IpcUnknownMessageException unknown => new IpcError(IpcErrorCodes.UnknownMessage, unknown.Message, false),
             JsonException json => new IpcError(
                 IpcErrorCodes.Invalid, $"The payload of {type} is not valid: {NotificationText.Sanitize(json.Message)}", false),
             IpcInvalidPayloadException or DomainException or ArgumentException =>
-                new IpcError(IpcErrorCodes.Invalid, exception.Message, false),
+                new IpcError(IpcErrorCodes.Invalid, Clean(exception.Message), false),
             OperationCanceledException when stopping => new IpcError(
                 IpcErrorCodes.ServiceStopping, "GapActivator is stopping. Try again when it is running.", true),
             _ => new IpcError(IpcErrorCodes.Internal, UnexpectedMessage, false),
         };
     }
+
+    // Messages can embed client text (a process name, a rule), so they reach the client one-line and bounded.
+    private static string Clean(string message) => NotificationText.Sanitize(message, NotificationText.MaxReasonLength);
 
     /// <summary>Whether <see cref="Map"/> gives the generic <c>internal</c> error, so the caller logs the exception at Error.</summary>
     public static bool IsUnexpected(Exception exception, bool stopping = false)
