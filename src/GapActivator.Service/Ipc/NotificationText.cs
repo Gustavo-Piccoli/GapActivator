@@ -5,6 +5,9 @@ namespace GapActivator.Service.Ipc;
 /// <summary>Cleans the text of a notification before it reaches the log or a client.</summary>
 internal static class NotificationText
 {
+    /// <summary>The longest client-influenced reason (a protocol violation, an unknown type, an error message) that is logged or echoed.</summary>
+    public const int MaxReasonLength = 200;
+
     /// <summary>
     /// Replaces every control character (CR, LF, ESC and the rest) and every line separator or bidirectional control
     /// (U+2028, U+2029, U+061C, U+200E, U+200F, U+202A..U+202E, U+2066..U+2069) with a space, so a message can neither forge a log

@@ -34,7 +34,7 @@ internal sealed partial class IpcConnection(
 
     // Client-controlled text is cut and cleaned before it reaches the line-oriented log.
     private const int MaxLoggedClientVersion = 64;
-    private const int MaxLoggedReason = 200;
+    private const int MaxLoggedReason = NotificationText.MaxReasonLength;
 
     // Before Hello the client is unauthenticated, so a frame may not claim more than a Hello (and a refused client) needs.
     private const int MaxPreHelloPayload = 64 * 1024;
