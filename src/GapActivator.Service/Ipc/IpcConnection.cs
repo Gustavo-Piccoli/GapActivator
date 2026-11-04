@@ -452,11 +452,16 @@ internal sealed partial class IpcConnection(
                 _writeLock.Release();
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
         {
             // A half-written frame would corrupt the stream, so the connection goes.
             LogStoppedReading(CallerName);
             End();
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            // The pipe was closed under the write (End or Abort): not the client's doing.
             return false;
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException)
