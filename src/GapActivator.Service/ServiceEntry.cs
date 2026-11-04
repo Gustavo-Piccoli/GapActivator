@@ -12,13 +12,22 @@ namespace GapActivator.Service;
 internal static class ServiceEntry
 {
     public static Task<int> RunAsync(string[] args, Action<Exception> reportFatal, CancellationToken ct = default) =>
-        RunAsync(() => GapActivatorHost.Build(args), reportFatal, ct);
+        RunAsync(() => GapActivatorHost.Build(args), reportFatal, Console.Error.WriteLine, ct);
 
-    /// <summary>The seam for tests: <paramref name="build"/> supplies the host.</summary>
-    public static async Task<int> RunAsync(Func<IHost> build, Action<Exception> reportFatal, CancellationToken ct = default)
+    public static Task<int> RunAsync(
+        Func<IHost> build, Action<Exception> reportFatal, CancellationToken ct = default) =>
+        RunAsync(build, reportFatal, Console.Error.WriteLine, ct);
+
+    /// <summary>
+    /// The seam for tests: <paramref name="build"/> supplies the host and <paramref name="writeError"/> (standard error
+    /// by default) receives the one-line fatal message, so a console run is never silent when no event source exists.
+    /// </summary>
+    public static async Task<int> RunAsync(
+        Func<IHost> build, Action<Exception> reportFatal, Action<string> writeError, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(build);
         ArgumentNullException.ThrowIfNull(reportFatal);
+        ArgumentNullException.ThrowIfNull(writeError);
 
         try
         {
@@ -32,7 +41,21 @@ internal static class ServiceEntry
         catch (Exception ex)
         {
             reportFatal(ex);
+            WriteStderrLine(writeError, ex);
             return ServiceExitCodes.Fatal;
+        }
+    }
+
+    // Best effort: a broken or closed standard error must not replace the fatal exit code.
+    private static void WriteStderrLine(Action<string> writeError, Exception exception)
+    {
+        try
+        {
+            writeError($"GapActivator failed to start: {exception.Message}");
+        }
+        catch (Exception)
+        {
+            // Nothing more can be done.
         }
     }
 }
