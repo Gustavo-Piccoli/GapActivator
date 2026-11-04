@@ -21,6 +21,9 @@ public sealed class IpcServerTests
     private static readonly TimeSpan Short = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan Long = TimeSpan.FromSeconds(5);
 
+    // A connect that is expected to succeed; generous so a loaded machine does not fail it.
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
+
     private static ProcessDefinitionDto Definition() => new(
         "Nightly export",
         "Exports data",
@@ -66,7 +69,7 @@ public sealed class IpcServerTests
         await Should.ThrowAsync<TimeoutException>(() => server.ConnectAsync(TimeSpan.FromMilliseconds(500)));
 
         ready.TrySetResult();
-        await using GapActivatorClient client = await server.ConnectAsync(Long).WaitAsync(Long, TestContext.Current.CancellationToken);
+        await using GapActivatorClient client = await server.ConnectAsync(ConnectTimeout).WaitAsync(ConnectTimeout, TestContext.Current.CancellationToken);
         client.Server.ProtocolVersion.ShouldBe(1);
     }
 

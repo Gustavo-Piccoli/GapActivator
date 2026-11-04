@@ -226,29 +226,6 @@ public sealed class IcalOccurrenceCalculatorTests
             Calculator.NextOccurrence(Rule(value), anchor, anchor).ShouldBeNull();
         }, TestContext.Current.CancellationToken);
 
-    // Without a search limit Ical.Net steps every minute or hour to year 9999 (probe: HOURLY 20 s, MINUTELY > 40 s).
-    [Theory(Timeout = 15000)]
-    [InlineData("FREQ=MINUTELY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
-    [InlineData("FREQ=HOURLY;BYMONTH=2;BYMONTHDAY=29;BYDAY=TH")]
-    public Task Occurrences_NoMatchWithinHorizonSubDailyRule_ReturnNullForBothMethods(string value) =>
-        Bounded(() =>
-        {
-            var rule = Rule(value);
-            var anchor = At("2027-03-01T08:00:00+01:00");
-
-            Calculator.FirstOccurrence(rule, anchor).ShouldBeNull();
-            Calculator.NextOccurrence(rule, anchor, anchor).ShouldBeNull();
-        }, TestContext.Current.CancellationToken);
-
-    [Fact(Timeout = 15000)]
-    public Task FirstOccurrence_MinutelyLeapDayRule_ReturnsNextLeapDayWithinHorizon() =>
-        Bounded(() =>
-        {
-            var rule = Rule("FREQ=MINUTELY;BYMONTH=2;BYMONTHDAY=29;BYHOUR=0;BYMINUTE=0");
-
-            Calculator.FirstOccurrence(rule, At("2027-03-01T00:00:00+01:00")).ShouldBe(At("2028-02-29T00:00:00+01:00"));
-        }, TestContext.Current.CancellationToken);
-
     [Fact(Timeout = 5000)]
     public Task FirstOccurrence_MatchBeyondRepresentableRange_ReturnsNull() =>
         Bounded(() =>

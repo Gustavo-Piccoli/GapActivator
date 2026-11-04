@@ -19,6 +19,9 @@ namespace GapActivator.Service.Tests.Ipc;
 public sealed class IpcPushTests
 {
     private static readonly TimeSpan Short = TimeSpan.FromSeconds(2);
+
+    // A connect that is expected to succeed; generous so a loaded machine does not fail it.
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan Quiet = TimeSpan.FromMilliseconds(600);
 
     private static readonly EmailInputDto TestEmail = new(
@@ -67,7 +70,7 @@ public sealed class IpcPushTests
     public async Task UngatedCommand_PushesNoStateChanged()
     {
         await using IpcTestServer server = await IpcTestServer.StartAsync();
-        await using GapActivatorClient client = await server.ConnectAsync();
+        await using GapActivatorClient client = await server.ConnectAsync(ConnectTimeout);
         using var pushes = new PushRecorder(client);
 
         await client.SendTestEmailAsync(TestEmail, TestContext.Current.CancellationToken);

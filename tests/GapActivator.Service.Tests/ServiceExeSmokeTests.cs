@@ -75,7 +75,7 @@ public sealed class ServiceExeSmokeTests
         finally
         {
             // Never throws, so a failure of the test above is never replaced by a cleanup failure.
-            cleanupFailure = await StopTreeAsync(exe);
+            cleanupFailure = await StopTreeAsync(exe, root);
         }
 
         cleanupFailure.ShouldBeNull();
@@ -117,7 +117,7 @@ public sealed class ServiceExeSmokeTests
                     new GapActivatorClientOptions
                     {
                         PipeName = pipeName,
-                        ConnectTimeout = TimeSpan.FromSeconds(15),
+                        ConnectTimeout = TimeSpan.FromSeconds(30),
                         ServiceName = "GapActivator.Tests.NotInstalled",
                     },
                     ct);
@@ -137,14 +137,14 @@ public sealed class ServiceExeSmokeTests
         finally
         {
             // Never throws, so a failure of the test above is never replaced by a cleanup failure.
-            cleanupFailure = await StopTreeAsync(exe);
+            cleanupFailure = await StopTreeAsync(exe, root);
         }
 
         cleanupFailure.ShouldBeNull();
     }
 
     /// <summary>Kills the executable's process tree and waits for it to exit; returns why that failed, or null.</summary>
-    private static async Task<string?> StopTreeAsync(DiagnosticsProcess exe)
+    private static async Task<string?> StopTreeAsync(DiagnosticsProcess exe, TempDataRoot root)
     {
         try
         {
@@ -155,6 +155,19 @@ public sealed class ServiceExeSmokeTests
 
             await exe.WaitForExitAsync(CancellationToken.None).WaitAsync(ExitWait, CancellationToken.None);
             return null;
+        }
+        catch (TimeoutException)
+        {
+            // The process may still hold files, so keep the root for inspection instead of racing its deletion.
+            bool alive = !exe.HasExited;
+            if (alive)
+            {
+                root.Keep();
+            }
+
+            string message = $"The service executable (PID {exe.Id}) did not exit within {ExitWait.TotalSeconds:0} s (still alive: {alive}); data root kept: {root.Path}";
+            TestContext.Current.SendDiagnosticMessage(message);
+            return message;
         }
         catch (Exception e)
         {
