@@ -189,6 +189,29 @@ public class ReconcileOnStartupTests
         run.Outcome.ShouldBe(RunOutcome.Succeeded);
     }
 
+    /// <summary>A clock moved back since the run started must not stretch the limit beyond the configured one.</summary>
+    [Fact]
+    public async Task Reconcile_StartedAtInTheFuture_WaitsNoLongerThanTheConfiguredLimit()
+    {
+        await using ApplicationTestHost host = CycleTestHost.Create();
+        Process process = host.AddProcess(timeLimit: Limit, gracePeriod: Grace);
+        DateTimeOffset now = host.Time.GetUtcNow();
+        DateTimeOffset future = now + TimeSpan.FromMinutes(10);
+        Run run = Run.Begin(process.Id, process.Name, process.Kind, RunTrigger.Manual, null, false, now);
+        run.MarkRunning(4242, future, future);
+        run.ClearDomainEvents();
+        host.Store.Runs[run.Id] = run;
+        FakeRunningProcess child = host.AttachAlive(run);
+
+        await ReconcileAsync(host);
+        await host.Time.WaitForTimersAsync(1).Within();
+
+        host.Time.TimerDelays.ShouldBe([Limit]);
+
+        child.Exit(0);
+        await host.EndOf(run.Id);
+    }
+
     [Fact]
     public async Task Reconcile_RecordsGapActivatorStartedWithCounts()
     {
