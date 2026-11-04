@@ -164,7 +164,7 @@ public sealed partial class RunSupervisor(
             }
         }
 
-        _ = Task.Run(() => SendAsync(new StartPendingRun(processId), processId.ToString()));
+        _ = Task.Run(() => SendRestartAsync(processId));
     }
 
     /// <summary>
@@ -182,8 +182,11 @@ public sealed partial class RunSupervisor(
         return run is null ? Task.CompletedTask : run.Ended.WaitAsync(ct);
     }
 
-    /// <summary>Ends the supervisor's lifetime: every background task finishes and no child is touched.</summary>
-    public void Dispose() => _lifetime.Dispose();
+    /// <summary>
+    /// Ends the supervisor's lifetime: every background task finishes and no child is touched. The lifetime has ended when
+    /// this returns; the cancellation callbacks run away from the caller.
+    /// </summary>
+    public void Dispose() => _ = EndLifetimeAsync();
 
     /// <summary>Must be called holding <see cref="_sync"/>.</summary>
     private TrackedRun Track(RunId runId, ProcessId processId, TimeSpan gracePeriod)
@@ -417,6 +420,7 @@ public sealed partial class RunSupervisor(
         }
 
         await WaitForExitOrDelayAsync(exited, run.GracePeriod);
+        bool killFailureLogged = false;
         while (!exited.IsCompleted && !_lifetime.HasEnded)
         {
             try
@@ -427,9 +431,14 @@ public sealed partial class RunSupervisor(
             }
             catch (Exception ex)
             {
-                if (!exited.IsCompleted)
+                if (!exited.IsCompleted && killFailureLogged)
+                {
+                    LogKillStillFailing(ex, run.RunId);
+                }
+                else if (!exited.IsCompleted)
                 {
                     LogKillFailed(ex, run.RunId);
+                    killFailureLogged = true;
                 }
             }
 
@@ -475,7 +484,7 @@ public sealed partial class RunSupervisor(
 
         if (restart && !_lifetime.HasEnded)
         {
-            await SendAsync(new StartPendingRun(run.ProcessId), run.ProcessId.ToString());
+            await SendRestartAsync(run.ProcessId);
         }
     }
 
@@ -495,6 +504,18 @@ public sealed partial class RunSupervisor(
         }
     }
 
+    private async Task EndLifetimeAsync()
+    {
+        try
+        {
+            await _lifetime.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            LogLifetimeCallbackFailed(ex);
+        }
+    }
+
     private async Task DisposeIgnoredAsync(IRunningProcess process, RunId runId)
     {
         try
@@ -504,6 +525,51 @@ public sealed partial class RunSupervisor(
         catch (Exception ex)
         {
             LogRunTaskFailed(ex, runId);
+        }
+    }
+
+    /// <summary>
+    /// Sends <see cref="StartPendingRun"/> with 3 retries, 1 second apart, then logs Error and drops it. A restart is a
+    /// momentary intent: retrying for longer could start an extra run after a later cycle's run ended, and the operator
+    /// can ask again. Never throws.
+    /// </summary>
+    private async Task SendRestartAsync(ProcessId processId)
+    {
+        var command = new StartPendingRun(processId);
+        string name = nameof(StartPendingRun);
+        string subject = processId.ToString();
+        for (int failures = 1; ; failures++)
+        {
+            try
+            {
+                await dispatcher.SendAsync<StartPendingRun, Unit>(command, Caller.System, CancellationToken.None);
+                return;
+            }
+            catch (Exception ex) when (ex is CommandRejectedException or DomainException)
+            {
+                LogRuleViolation(ex, name, subject);
+                return;
+            }
+            catch (Exception ex)
+            {
+                if (failures > FastRetries)
+                {
+                    LogRestartDropped(ex, processId);
+                    return;
+                }
+
+                LogRetrying(ex, name, subject, failures);
+            }
+
+            try
+            {
+                await Task.Delay(FastRetryDelay, time, _lifetime.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                LogAbandoned(name, subject);
+                return;
+            }
         }
     }
 
@@ -598,6 +664,15 @@ public sealed partial class RunSupervisor(
     [LoggerMessage(Level = LogLevel.Error, Message = "Killing the child of run {RunId} failed; trying again until it exits.")]
     private partial void LogKillFailed(Exception exception, RunId runId);
 
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Killing the child of run {RunId} is still failing.")]
+    private partial void LogKillStillFailing(Exception exception, RunId runId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "The restart of process {ProcessId} was dropped after repeated failures; it can be requested again.")]
+    private partial void LogRestartDropped(Exception exception, ProcessId processId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "A cancellation callback failed when the supervisor's lifetime ended.")]
+    private partial void LogLifetimeCallbackFailed(Exception exception);
+
     [LoggerMessage(Level = LogLevel.Error, Message = "Aborting the launch of run {RunId} failed.")]
     private partial void LogCancelFailed(Exception exception, RunId runId);
 
@@ -616,7 +691,7 @@ public sealed partial class RunSupervisor(
     [LoggerMessage(Level = LogLevel.Information, Message = "{Command} for {Subject} succeeded after failing repeatedly.")]
     private partial void LogRecovered(string command, string subject);
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "The supervisor is stopping; {Command} for {Subject} was not recorded.")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The supervisor is stopping; {Command} for {Subject} was abandoned.")]
     private partial void LogAbandoned(string command, string subject);
 
     /// <summary>The state of one run. <see cref="RestartAfterEnd"/> and <see cref="IsEnding"/> are guarded by the supervisor's lock.</summary>
@@ -656,10 +731,10 @@ public sealed partial class RunSupervisor(
     }
 
     /// <summary>The token and the task stay usable after disposal, when background tasks may still look at them.</summary>
-    private sealed class Lifetime : IDisposable
+    private sealed class Lifetime : IAsyncDisposable
     {
         private readonly CancellationTokenSource _source = new();
-        private int _disposed;
+        private int _ending;
 
         public Lifetime()
         {
@@ -674,11 +749,23 @@ public sealed partial class RunSupervisor(
 
         public bool HasEnded => Token.IsCancellationRequested;
 
-        public void Dispose()
+        /// <summary>
+        /// Idempotent. <see cref="HasEnded"/> is true before this first yields, and the source is disposed after the
+        /// callbacks ran, even when one of them throws: this task then rethrows it.
+        /// </summary>
+        public async ValueTask DisposeAsync()
         {
-            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+            if (Interlocked.Exchange(ref _ending, 1) != 0)
             {
-                _source.Cancel();
+                return;
+            }
+
+            try
+            {
+                await _source.CancelAsync();
+            }
+            finally
+            {
                 _source.Dispose();
             }
         }
