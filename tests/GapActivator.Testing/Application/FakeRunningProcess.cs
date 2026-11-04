@@ -6,8 +6,10 @@ namespace GapActivator.Testing;
 public sealed class FakeRunningProcess(int pid, DateTimeOffset startTime) : IRunningProcess
 {
     private readonly TaskCompletionSource<int> _exited = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _signalled = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _killAttempted = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _signalCancelCount;
+    private int _killAttempts;
     private int _disposeCount;
 
     public int Pid { get; } = pid;
@@ -17,6 +19,11 @@ public sealed class FakeRunningProcess(int pid, DateTimeOffset startTime) : IRun
     public Task<int> Exited => _exited.Task;
 
     public int SignalCancelCount => Volatile.Read(ref _signalCancelCount);
+
+    /// <summary>Completes on the first call of <see cref="SignalCancel"/>.</summary>
+    public Task Signalled => _signalled.Task;
+
+    public int KillAttempts => Volatile.Read(ref _killAttempts);
 
     public int DisposeCount => Volatile.Read(ref _disposeCount);
 
@@ -31,6 +38,9 @@ public sealed class FakeRunningProcess(int pid, DateTimeOffset startTime) : IRun
     /// <summary>When set, <see cref="KillTreeAsync"/> throws this and the process keeps running.</summary>
     public Exception? KillFailure { get; set; }
 
+    /// <summary>When set, a kill failing with <see cref="KillFailure"/> happens as the child exits with this code.</summary>
+    public int? ExitCodeOnFailedKill { get; set; }
+
     /// <summary>When set, <see cref="DisposeAsync"/> counts the call and then throws this.</summary>
     public Exception? DisposeFailure { get; set; }
 
@@ -43,6 +53,7 @@ public sealed class FakeRunningProcess(int pid, DateTimeOffset startTime) : IRun
     public void SignalCancel()
     {
         Interlocked.Increment(ref _signalCancelCount);
+        _signalled.TrySetResult();
         if (SignalFailure is not null)
         {
             throw SignalFailure;
@@ -51,9 +62,15 @@ public sealed class FakeRunningProcess(int pid, DateTimeOffset startTime) : IRun
 
     public Task KillTreeAsync()
     {
+        Interlocked.Increment(ref _killAttempts);
         _killAttempted.TrySetResult();
         if (KillFailure is not null)
         {
+            if (ExitCodeOnFailedKill is { } code)
+            {
+                Exit(code);
+            }
+
             return Task.FromException(KillFailure);
         }
 

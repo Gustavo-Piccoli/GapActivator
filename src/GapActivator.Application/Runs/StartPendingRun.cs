@@ -55,7 +55,7 @@ internal sealed partial class StartPendingRunHandler(
         }
 
         process.ConsumeDueOccurrences(now, calculator);
-        starter.Begin(process, current, RunTrigger.Restart, null, false);
+        starter.Begin(process, current, RunTrigger.Restart, null, false, now);
         return Unit.Value;
     }
 

@@ -1,13 +1,18 @@
-using GapActivator.Application.Ports;
 using GapActivator.Domain.Processes;
 using GapActivator.Domain.Runs;
 
 namespace GapActivator.Application.Runs;
 
-/// <summary>What the supervisor needs to launch a committed run. The request holds unprotected secrets: never log it.</summary>
+/// <summary>
+/// What the supervisor needs to launch a committed run. It holds no plaintext: secrets stay protected in
+/// <paramref name="Environment"/> until the supervisor builds the launch request.
+/// </summary>
 public sealed record RunStartTicket(
     RunId RunId,
     ProcessId ProcessId,
-    LaunchRequest Request,
+    string Executable,
+    string Arguments,
+    string WorkingDirectory,
+    EnvironmentVariables Environment,
     TimeSpan? TimeLimit,
     TimeSpan GracePeriod);
