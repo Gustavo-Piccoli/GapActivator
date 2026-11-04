@@ -1,6 +1,7 @@
 using GapActivator.Application.Cycle;
 using GapActivator.Application.Events;
 using GapActivator.Application.Messaging;
+using GapActivator.Application.Notifications;
 using GapActivator.Application.Processes;
 using GapActivator.Application.Queries;
 using GapActivator.Application.Runs;
@@ -65,6 +66,8 @@ public static class DependencyInjection
         services.AddScoped<ICommandHandler<RecordCycleFailure, Unit>, RecordCycleFailureHandler>();
         services.AddScoped<IQueryHandler<GetCycleSettings, CycleSettings>, GetCycleSettingsHandler>();
         services.AddScoped<IQueryHandler<ListProcessIds, IReadOnlyList<ProcessId>>, ListProcessIdsHandler>();
+        services.AddScoped<INotificationHandler, EmailAlertHandler>();
+        services.AddScoped<INotificationHandler, AppNotificationHandler>();
         return services;
     }
 }
