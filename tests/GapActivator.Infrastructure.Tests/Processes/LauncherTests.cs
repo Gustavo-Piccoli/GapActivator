@@ -18,6 +18,8 @@ public sealed partial class LauncherTests : IAsyncLifetime
 {
     private static readonly TimeSpan ExitWait = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan OutputWait = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan GrandchildFileWait = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan GoneWait = TimeSpan.FromSeconds(5);
 
     private static readonly string[] TestChildFiles =
         [.. new[] { ".exe", ".dll", ".runtimeconfig.json", ".deps.json" }.Select(e => "GapActivator.TestChild" + e)];
@@ -320,13 +322,14 @@ public sealed partial class LauncherTests : IAsyncLifetime
     {
         string file = Path.Combine(_root.Path, "gc.txt");
         int childPid = 0;
+        int grandchildPid = 0;
         var launcher = new WindowsProcessLauncher(new InfrastructureOptions(Paths), new RecordingLogger<WindowsProcessLauncher>(_logs))
         {
             AfterResume = pid =>
             {
                 childPid = pid;
                 var deadline = Stopwatch.StartNew();
-                while (!File.Exists(file) && deadline.Elapsed < TimeSpan.FromSeconds(10))
+                while (!File.Exists(file) && deadline.Elapsed < GrandchildFileWait)
                 {
                     Thread.Sleep(25);
                 }
@@ -335,14 +338,29 @@ public sealed partial class LauncherTests : IAsyncLifetime
             },
         };
 
-        LaunchFailedException error = await Should.ThrowAsync<LaunchFailedException>(
-            () => LaunchAsync("spawn-grandchild-file \"" + file + "\"", launcher: launcher));
+        try
+        {
+            LaunchFailedException error = await Should.ThrowAsync<LaunchFailedException>(
+                () => LaunchAsync("spawn-grandchild-file \"" + file + "\"", launcher: launcher));
 
-        error.Message.ShouldStartWith("The process could not be tracked:");
-        File.Exists(file).ShouldBeTrue();
-        int grandchildPid = int.Parse(File.ReadAllText(file), CultureInfo.InvariantCulture);
-        (await WaitUntilGoneAsync(childPid)).ShouldBeTrue("the child survived");
-        (await WaitUntilGoneAsync(grandchildPid)).ShouldBeTrue("the grandchild survived");
+            error.Message.ShouldStartWith("The process could not be tracked:");
+            childPid.ShouldNotBe(0, "the AfterResume seam was never reached");
+            File.Exists(file).ShouldBeTrue();
+            grandchildPid = int.Parse(File.ReadAllText(file), CultureInfo.InvariantCulture);
+            (await WaitUntilGoneAsync(childPid)).ShouldBeTrue("the child survived");
+            (await WaitUntilGoneAsync(grandchildPid)).ShouldBeTrue("the grandchild survived");
+        }
+        finally
+        {
+            KillByPid(childPid);
+            if (grandchildPid == 0 && File.Exists(file)
+                && int.TryParse(File.ReadAllText(file), CultureInfo.InvariantCulture, out int fromFile))
+            {
+                grandchildPid = fromFile;
+            }
+
+            KillByPid(grandchildPid);
+        }
     }
 
     // BI-057
@@ -430,7 +448,7 @@ public sealed partial class LauncherTests : IAsyncLifetime
     private static async Task<bool> WaitUntilGoneAsync(int pid)
     {
         var deadline = Stopwatch.StartNew();
-        while (deadline.Elapsed < TimeSpan.FromSeconds(5))
+        while (deadline.Elapsed < GoneWait)
         {
             try
             {
@@ -449,6 +467,24 @@ public sealed partial class LauncherTests : IAsyncLifetime
         }
 
         return false;
+    }
+
+    private static void KillByPid(int pid)
+    {
+        if (pid == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            using Process process = Process.GetProcessById(pid);
+            Kill(process);
+        }
+        catch (ArgumentException)
+        {
+            // Already gone.
+        }
     }
 
     private static void Kill(Process? process)
