@@ -4,6 +4,7 @@ using GapActivator.Application.Messaging;
 using GapActivator.Application.Processes;
 using GapActivator.Application.Queries;
 using GapActivator.Application.Runs;
+using GapActivator.Application.Settings;
 using GapActivator.Domain.Processes;
 using GapActivator.Domain.Runs;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,6 +49,13 @@ public static class DependencyInjection
         services.AddScoped<ICommandHandler<EnableProcess, Unit>, EnableProcessHandler>();
         services.AddScoped<ICommandHandler<DisableProcess, Unit>, DisableProcessHandler>();
         services.AddScoped<ICommandHandler<UnblockProcess, Unit>, UnblockProcessHandler>();
+
+        services.AddScoped<EmailSettingsMapper>();
+        services.AddScoped<ICommandHandler<UpdateSettings, Unit>, UpdateSettingsHandler>();
+        services.AddScoped<ICommandHandler<PauseInstallation, Unit>, PauseInstallationHandler>();
+        services.AddScoped<ICommandHandler<ResumeInstallation, Unit>, ResumeInstallationHandler>();
+        services.AddScoped<ICommandHandler<SendTestEmail, Unit>, SendTestEmailHandler>();
+        services.AddScoped<ICommandHandler<RestartGapActivator, Unit>, RestartGapActivatorHandler>();
 
         services.AddSingleton<CycleRunner>();
         services.AddSingleton<SchedulerLoop>();
