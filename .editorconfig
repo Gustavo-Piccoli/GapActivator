@@ -29,3 +29,6 @@ dotnet_style_qualification_for_property = false:suggestion
 [tests/**.cs]
 dotnet_diagnostic.CA1707.severity = none
 dotnet_diagnostic.CA1515.severity = none
+
+[src/GapActivator.Infrastructure/Persistence/Migrations/**.cs]
+generated_code = true

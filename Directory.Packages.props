@@ -14,5 +14,17 @@
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" />
     <PackageVersion Include="Ical.Net" Version="5.2.2" />
+    <!-- Embedded relational storage with migrations (spec section 3). -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.14" />
+    <!-- Migrations tooling only; referenced with PrivateAssets="all". -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.14" />
+    <!-- The Windows Service host (spec section 3). -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.14" />
+    <!-- Event Log for severe service errors (spec section 9). -->
+    <PackageVersion Include="Microsoft.Extensions.Logging.EventLog" Version="10.0.14" />
+    <!-- DPAPI on .NET for machine-scope secrets (spec sections 3 and 9). -->
+    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+    <!-- SMTP with TLS and authentication (spec section 3). -->
+    <PackageVersion Include="MailKit" Version="4.18.1" />
   </ItemGroup>
 </Project>
