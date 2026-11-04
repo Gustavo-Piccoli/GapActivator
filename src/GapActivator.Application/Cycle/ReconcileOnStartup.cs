@@ -69,8 +69,15 @@ internal sealed partial class ReconcileOnStartupHandler(
             RunLimits limits = RunLimits.For(process!, current);
             bool stopping = run.State == RunState.Stopping;
 
-            // The limit of the current definition applies: one changed while the service was down counts.
-            TimeSpan? remaining = limits.TimeLimit - (now - (run.StartedAt ?? run.CreatedAt));
+            // The limit of the current definition applies: one changed while the service was down counts. A clock moved
+            // back makes the elapsed time negative; it is clamped at zero so the remainder never exceeds the limit.
+            TimeSpan elapsed = now - (run.StartedAt ?? run.CreatedAt);
+            if (elapsed < TimeSpan.Zero)
+            {
+                elapsed = TimeSpan.Zero;
+            }
+
+            TimeSpan? remaining = limits.TimeLimit - elapsed;
             afterCommit.Enqueue(_ =>
             {
                 // The supervisor owns the handle from here on.
