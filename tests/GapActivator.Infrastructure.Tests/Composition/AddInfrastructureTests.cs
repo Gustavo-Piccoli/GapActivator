@@ -24,6 +24,7 @@ public class AddInfrastructureTests
         services.AddApplication();
         services.AddInfrastructure(new InfrastructureOptions(new GapActivatorPaths(root.Path)));
         services.AddSingleton<IServiceControl, FakeServiceControl>();
+        services.AddSingleton<IAppNotifier, RecordingAppNotifier>();
 
         // A singleton that captures a scoped service fails here, either at build or when it is resolved.
         await using ServiceProvider provider = services.BuildServiceProvider(
@@ -56,11 +57,20 @@ public class AddInfrastructureTests
         foreach (Type port in new[]
         {
             typeof(IProcessLauncher), typeof(ISecretProtector), typeof(ILogRetention), typeof(IRunOutputReader),
-            typeof(IEmailSender), typeof(IAppNotifier), typeof(IOccurrenceCalculator),
+            typeof(IEmailSender), typeof(IOccurrenceCalculator),
         })
         {
             services.Single(d => d.ServiceType == port).Lifetime.ShouldBe(ServiceLifetime.Singleton, port.Name);
         }
+    }
+
+    [Fact]
+    public void AddInfrastructure_DoesNotRegisterTheAppNotifier()
+    {
+        var services = new ServiceCollection();
+        services.AddInfrastructure(new InfrastructureOptions(new GapActivatorPaths(Path.Combine(Path.GetTempPath(), "ga-notifier"))));
+
+        services.Any(d => d.ServiceType == typeof(IAppNotifier)).ShouldBeFalse();
     }
 
     [Fact]
@@ -95,6 +105,7 @@ public class AddInfrastructureTests
     {
         var services = new ServiceCollection();
         services.AddInfrastructure(new InfrastructureOptions(new GapActivatorPaths(Path.Combine(Path.GetTempPath(), "ga-lifetimes"))));
+        services.AddSingleton<IAppNotifier, RecordingAppNotifier>();
         return services;
     }
 

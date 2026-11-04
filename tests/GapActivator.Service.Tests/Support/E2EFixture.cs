@@ -318,6 +318,7 @@ internal sealed class E2ESeeding : IAsyncDisposable
         services.AddApplication();
         services.AddInfrastructure(new InfrastructureOptions(new GapActivatorPaths(dataRoot)));
         services.AddSingleton<IServiceControl, FakeServiceControl>();
+        services.AddSingleton<IAppNotifier, RecordingAppNotifier>();
         return new E2ESeeding(services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true, ValidateOnBuild = true }));
     }
 

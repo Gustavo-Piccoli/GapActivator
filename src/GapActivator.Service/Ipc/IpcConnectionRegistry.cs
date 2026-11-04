@@ -1,6 +1,9 @@
+using GapActivator.Ipc;
+using GapActivator.Ipc.Contracts;
+
 namespace GapActivator.Service.Ipc;
 
-/// <summary>The connections the server serves; it holds the connection cap.</summary>
+/// <summary>The connections the server serves; it holds the connection cap and fans the pushes out to them.</summary>
 internal sealed class IpcConnectionRegistry
 {
     private readonly Lock _sync = new();
@@ -38,6 +41,32 @@ internal sealed class IpcConnectionRegistry
         lock (_sync)
         {
             _connections.Remove(connection);
+        }
+    }
+
+    /// <summary>
+    /// Pushes the notification to every connection past Hello. It never waits: each connection queues the push and drains
+    /// it on its own.
+    /// </summary>
+    public void BroadcastNotification(NotificationDto notification)
+    {
+        ArgumentNullException.ThrowIfNull(notification);
+        ServerEnvelope push = ServerEnvelope.Push(
+            IpcEvents.Notification,
+            IpcCodec.ToElement(notification, IpcJsonContext.Default.NotificationDto));
+        foreach (IpcConnection connection in Snapshot())
+        {
+            connection.EnqueuePush(push);
+        }
+    }
+
+    /// <summary>Hands the hint to the coalescer of every connection past Hello; it never waits.</summary>
+    public void PostStateChanged(StateChangedDto hint)
+    {
+        ArgumentNullException.ThrowIfNull(hint);
+        foreach (IpcConnection connection in Snapshot())
+        {
+            connection.PostStateChanged(hint);
         }
     }
 

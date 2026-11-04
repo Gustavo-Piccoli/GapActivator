@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO.Pipes;
 using System.Text.Json;
+using System.Threading.Channels;
 using GapActivator.Application.Messaging;
 using GapActivator.Ipc;
 using GapActivator.Ipc.Contracts;
@@ -35,12 +36,21 @@ internal sealed partial class IpcConnection(
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly SemaphoreSlim _inFlight = new(options.MaxRequestsInFlight, options.MaxRequestsInFlight);
     private readonly ConcurrentDictionary<long, (string Type, Task Done)> _running = new();
+    private readonly Channel<ServerEnvelope> _pushes = Channel.CreateBounded<ServerEnvelope>(
+        new BoundedChannelOptions(Math.Max(1, options.PushQueueCapacity))
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+        });
+
+    private StateChangedCoalescer? _coalescer;
 
     private CancellationToken _stopping;
     private CancellationToken _readToken;
     private Caller? _caller;
     private long _nextHandler;
     private int _ended;
+    private volatile bool _pushReady;
 
     private string CallerName => _caller?.Name ?? Unidentified;
 
@@ -90,6 +100,28 @@ internal sealed partial class IpcConnection(
 
     /// <summary>Closes the pipe at once; the shutdown does this to a connection that did not end in time.</summary>
     public void Abort() => End();
+
+    /// <summary>
+    /// Queues a push for this client. It never waits: a full queue drops its oldest push, and a connection that has not
+    /// finished Hello (or has ended) ignores it.
+    /// </summary>
+    public void EnqueuePush(ServerEnvelope push)
+    {
+        ArgumentNullException.ThrowIfNull(push);
+        if (_pushReady)
+        {
+            _pushes.Writer.TryWrite(push);
+        }
+    }
+
+    /// <summary>Hands a state hint to this client's coalescer; ignored before Hello and after the end.</summary>
+    public void PostStateChanged(StateChangedDto hint)
+    {
+        if (_pushReady)
+        {
+            _coalescer?.Post(hint);
+        }
+    }
 
     private async Task RefuseAsync()
     {
@@ -199,9 +231,53 @@ internal sealed partial class IpcConnection(
         if (written)
         {
             LogConnected(caller.Name, hello.ClientVersion);
+            StartPushing();
         }
 
         return written;
+    }
+
+    /// <summary>
+    /// From here on the client gets pushes. It starts after the Hello response is on the wire, so that response is always
+    /// the first frame; the pushes then use the same write path as the responses.
+    /// </summary>
+    private void StartPushing()
+    {
+        _coalescer = new StateChangedCoalescer(
+            options.StateChangedInterval,
+            options.Time,
+            hint => _pushes.Writer.TryWrite(
+                ServerEnvelope.Push(IpcEvents.StateChanged, IpcCodec.ToElement(hint, IpcJsonContext.Default.StateChangedDto))));
+        _pushReady = true;
+        _ = Task.Run(PushLoopAsync, CancellationToken.None);
+
+        // The connection may have ended while this was being set up.
+        if (_closed.IsCancellationRequested)
+        {
+            _coalescer.Dispose();
+        }
+    }
+
+    private async Task PushLoopAsync()
+    {
+        try
+        {
+            await foreach (ServerEnvelope push in _pushes.Reader.ReadAllAsync(_closed.Token).ConfigureAwait(false))
+            {
+                if (!await WriteAsync(push).ConfigureAwait(false))
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // The connection ended.
+        }
+        catch (Exception ex)
+        {
+            LogConnectionFailed(ex, CallerName);
+        }
     }
 
     private async Task<bool> RejectHelloAsync(int id, string code, string message)
@@ -380,7 +456,10 @@ internal sealed partial class IpcConnection(
             return;
         }
 
+        _pushReady = false;
         _closed.Cancel();
+        _pushes.Writer.TryComplete();
+        _coalescer?.Dispose();
         pipe.Dispose();
         registry.Remove(this);
         if (_caller is not null)

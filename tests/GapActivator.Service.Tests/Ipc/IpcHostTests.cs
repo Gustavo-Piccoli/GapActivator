@@ -1,5 +1,6 @@
 using System.IO.Pipes;
 using GapActivator.Application.Cycle;
+using GapActivator.Application.Ports;
 using GapActivator.Ipc;
 using GapActivator.Service.Ipc;
 using GapActivator.Service.Tests.Support;
@@ -26,6 +27,15 @@ public sealed class IpcHostTests
 
         hosted.ShouldContain(typeof(IpcHostedService));
         Array.IndexOf(hosted, typeof(IpcHostedService)).ShouldBeGreaterThan(Array.IndexOf(hosted, typeof(GapActivatorWorker)));
+    }
+
+    [Fact]
+    public async Task Host_AppNotifierIsThePipeBroadcast()
+    {
+        await using var root = new TempDataRoot();
+        using IHost host = ServiceHostFactory.CreateBuilder(root.Path, []).Build();
+
+        host.Services.GetRequiredService<IAppNotifier>().ShouldBeOfType<PipeBroadcastNotifier>();
     }
 
     [Fact]
