@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.EventLog;
 
@@ -37,12 +38,14 @@ public static class GapActivatorLogging
         logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Information);
         logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
 
-        logging.AddProvider(new DailyFileLoggerProvider(paths, level, time));
+        // Factory registrations, so the container owns the providers and disposing the host closes the live file. An
+        // instance passed to AddProvider is disposed by neither the container nor the logger factory.
+        logging.Services.AddSingleton<ILoggerProvider>(_ => new DailyFileLoggerProvider(paths, level, time));
 
         ILoggerProvider? eventLog = createEventLog();
         if (eventLog is not null)
         {
-            logging.AddProvider(new SafeEventLogLoggerProvider(eventLog));
+            logging.Services.AddSingleton<ILoggerProvider>(_ => new SafeEventLogLoggerProvider(eventLog));
         }
 
         // The rules are added in every case, so the policy is the same everywhere (BI-090, spec section 9).
