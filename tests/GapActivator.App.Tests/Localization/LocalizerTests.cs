@@ -151,8 +151,7 @@ public class LocalizerTests
         foreach (var property in typeof(Localizer).GetProperties(BindingFlags.Public | BindingFlags.Instance)
                      .Where(p => p.PropertyType == typeof(string) && p.GetIndexParameters().Length == 0))
         {
-            var nullable = nullability.Create(property).ReadState == NullabilityState.Nullable;
-            list.Add((property.Name, nullable, l => [(string?)property.GetValue(l)]));
+            list.Add((property.Name, false, l => [(string?)property.GetValue(l)]));
         }
 
         foreach (var method in typeof(Localizer).GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
