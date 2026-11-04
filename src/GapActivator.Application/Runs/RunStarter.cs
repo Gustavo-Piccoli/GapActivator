@@ -24,6 +24,7 @@ public sealed class RunStarter(
 
         Run run = Run.Begin(process.Id, process.Name, process.Kind, trigger, scheduledFor, isLate, now);
         LaunchOptions launch = process.Launch;
+        RunLimits limits = RunLimits.For(process, settings);
         var ticket = new RunStartTicket(
             run.Id,
             process.Id,
@@ -31,8 +32,8 @@ public sealed class RunStarter(
             launch.Arguments,
             launch.EffectiveWorkingDirectory,
             launch.Environment,
-            process.EffectiveTimeLimit(settings.DefaultTimeLimit),
-            process.EffectiveGracePeriod(settings.DefaultGracePeriod));
+            limits.TimeLimit,
+            limits.GracePeriod);
 
         runs.Add(run);
         afterCommit.Enqueue(_ =>

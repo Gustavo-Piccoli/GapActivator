@@ -51,6 +51,7 @@ public static class DependencyInjection
 
         services.AddSingleton<CycleRunner>();
         services.AddSingleton<SchedulerLoop>();
+        services.AddScoped<ICommandHandler<ReconcileOnStartup, Unit>, ReconcileOnStartupHandler>();
         services.AddScoped<ICommandHandler<EvaluateProcess, Unit>, EvaluateProcessHandler>();
         services.AddScoped<ICommandHandler<PurgeHistory, int>, PurgeHistoryHandler>();
         services.AddScoped<ICommandHandler<RecordCycleFailure, Unit>, RecordCycleFailureHandler>();
