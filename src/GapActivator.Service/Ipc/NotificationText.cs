@@ -7,7 +7,7 @@ internal static class NotificationText
 {
     /// <summary>
     /// Replaces every control character (CR, LF, ESC and the rest) and every line separator or bidirectional control
-    /// (U+2028, U+2029, U+200E, U+200F, U+202A..U+202E, U+2066..U+2069) with a space, so a message can neither forge a log
+    /// (U+2028, U+2029, U+061C, U+200E, U+200F, U+202A..U+202E, U+2066..U+2069) with a space, so a message can neither forge a log
     /// entry nor reorder the text a user reads.
     /// </summary>
     public static string Sanitize(string text)
@@ -28,9 +28,24 @@ internal static class NotificationText
         return builder.ToString();
     }
 
+    /// <summary>Truncates to <paramref name="maxLength"/> characters (never inside a surrogate pair), then sanitizes: for client text that is logged.</summary>
+    public static string Sanitize(string text, int maxLength)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxLength);
+
+        if (text.Length > maxLength)
+        {
+            int length = char.IsHighSurrogate(text[maxLength - 1]) ? maxLength - 1 : maxLength;
+            text = text[..length];
+        }
+
+        return Sanitize(text);
+    }
+
     private static bool IsUnsafe(char c) =>
         char.IsControl(c)
-        || c is '\u2028' or '\u2029' or '\u200E' or '\u200F'
+        || c is '\u2028' or '\u2029' or '\u061C' or '\u200E' or '\u200F'
         || c is >= '\u202A' and <= '\u202E'
         || c is >= '\u2066' and <= '\u2069';
 }

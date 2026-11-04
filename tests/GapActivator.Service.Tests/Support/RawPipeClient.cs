@@ -41,8 +41,9 @@ internal sealed class RawPipeClient : IAsyncDisposable
             ? $$"""{"id":{{id}},"type":"{{type}}"}"""
             : $$"""{"id":{{id}},"type":"{{type}}","payload":{{payloadJson}}}""");
 
-    public Task SendHelloAsync(int protocolVersion = IpcProtocol.Version, int id = 1) =>
-        SendRequestAsync(id, "Hello", $$"""{"protocolVersion":{{protocolVersion}},"clientVersion":"raw"}""");
+    /// <summary><paramref name="clientVersionJson"/> is the content of the JSON string, so escapes such as <c>\r\n</c> pass through.</summary>
+    public Task SendHelloAsync(int protocolVersion = IpcProtocol.Version, int id = 1, string clientVersionJson = "raw") =>
+        SendRequestAsync(id, "Hello", $$"""{"protocolVersion":{{protocolVersion}},"clientVersion":"{{clientVersionJson}}"}""");
 
     /// <summary>Sends a frame header only, with any length.</summary>
     public async Task SendHeaderAsync(int length)

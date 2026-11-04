@@ -131,6 +131,54 @@ public sealed class IpcServerTests
         (entry.Exception is null).ShouldBe(notIdentifiable);
     }
 
+    // Final review I-1: client text is logged, and the log is line-oriented.
+    [Fact]
+    public async Task Hello_ClientVersionWithLineBreaks_LogsOneSanitizedTruncatedLine()
+    {
+        await using IpcTestServer server = await IpcTestServer.StartAsync();
+        await using RawPipeClient raw = await server.ConnectRawAsync();
+
+        await raw.SendHelloAsync(clientVersionJson: @"1.0)\r\n2026-11-04 10:00:00.000 -03:00 [ERR] forged" + new string('x', 200));
+        (await raw.ReadAsync(Long)).ShouldNotBeNull();
+
+        LogEntry entry = server.Host.Log.Entries.Single(e => e.Message.Contains("connected (client", StringComparison.Ordinal));
+        entry.Message.ShouldNotContain("\r");
+        entry.Message.ShouldNotContain("\n");
+        entry.Message.ShouldContain("1.0)  2026-11-04");
+        entry.Message.ShouldNotContain("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+    }
+
+    [Fact]
+    public async Task MalformedEnvelopeWithLineBreaksInAPropertyName_LogsASingleLine()
+    {
+        await using IpcTestServer server = await IpcTestServer.StartAsync();
+        await using RawPipeClient raw = await server.ConnectRawAsync();
+        await raw.HelloAsync();
+
+        await raw.SendTextAsync(@"{""id"":2,""type"":""GetDashboard"",""x\r\n2026-11-04 10:00:00.000 -03:00 [ERR] FAKE"":}");
+
+        (await raw.WaitForEndAsync(Short)).ShouldBeTrue();
+        (await BecomesTrueAsync(() => server.Host.Log.Entries.Any(e => e.Message.Contains("broke the protocol")), Short)).ShouldBeTrue();
+        server.Host.Log.Entries.ShouldAllBe(e => !e.Message.Contains('\r') && !e.Message.Contains('\n'));
+    }
+
+    [Fact]
+    public async Task UnknownTypeWithLineBreaks_IsLoggedAndRepliedAsASingleLine()
+    {
+        await using IpcTestServer server = await IpcTestServer.StartAsync();
+        await using RawPipeClient raw = await server.ConnectRawAsync();
+        await raw.HelloAsync();
+
+        await raw.SendRequestAsync(2, @"Evil\r\n2026-11-04 10:00:00.000 -03:00 [ERR] FAKE");
+        ServerEnvelope? reply = await raw.ReadAsync(Long);
+
+        reply.ShouldNotBeNull();
+        reply.Error!.Code.ShouldBe(IpcErrorCodes.UnknownMessage);
+        reply.Error.Message.ShouldNotContain("\n");
+        (await BecomesTrueAsync(() => server.Host.Log.Entries.Any(e => e.Message.Contains("was written")), Short)).ShouldBeTrue();
+        server.Host.Log.Entries.ShouldAllBe(e => !e.Message.Contains('\r') && !e.Message.Contains('\n'));
+    }
+
     [Fact]
     public async Task Hello_WrongProtocolVersion_ReturnsProtocolMismatchAndCloses()
     {

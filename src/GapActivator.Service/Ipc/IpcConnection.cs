@@ -32,6 +32,10 @@ internal sealed partial class IpcConnection(
 
     private const string Unidentified = "(unidentified)";
 
+    // Client-controlled text is cut and cleaned before it reaches the line-oriented log.
+    private const int MaxLoggedClientVersion = 64;
+    private const int MaxLoggedReason = 200;
+
     private readonly CancellationTokenSource _closed = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly SemaphoreSlim _inFlight = new(options.MaxRequestsInFlight, options.MaxRequestsInFlight);
@@ -156,7 +160,8 @@ internal sealed partial class IpcConnection(
         }
         catch (IpcProtocolException ex)
         {
-            LogProtocolViolation(CallerName, ex.Message);
+            string reason = NotificationText.Sanitize(ex.Message, MaxLoggedReason);
+            LogProtocolViolation(CallerName, reason);
             return false;
         }
 
@@ -230,7 +235,8 @@ internal sealed partial class IpcConnection(
             ServerEnvelope.Response(request.Id, IpcCodec.ToElement(response, IpcMessages.Hello.ResponseType))).ConfigureAwait(false);
         if (written)
         {
-            LogConnected(caller.Name, hello.ClientVersion);
+            string clientVersion = NotificationText.Sanitize(hello.ClientVersion, MaxLoggedClientVersion);
+            LogConnected(caller.Name, clientVersion);
             StartPushing();
         }
 
@@ -303,7 +309,8 @@ internal sealed partial class IpcConnection(
             }
             catch (IpcProtocolException ex)
             {
-                LogProtocolViolation(CallerName, ex.Message);
+                string reason = NotificationText.Sanitize(ex.Message, MaxLoggedReason);
+                LogProtocolViolation(CallerName, reason);
                 return;
             }
 
@@ -332,7 +339,7 @@ internal sealed partial class IpcConnection(
     {
         long key = Interlocked.Increment(ref _nextHandler);
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _running[key] = (request.Type!, done.Task);
+        _running[key] = (NotificationText.Sanitize(request.Type!, MaxLoggedReason), done.Task);
         _ = Task.Run(async () =>
         {
             try
@@ -355,6 +362,7 @@ internal sealed partial class IpcConnection(
     private async Task HandleAsync(RequestEnvelope request)
     {
         string type = request.Type!;
+        string loggedType = NotificationText.Sanitize(type, MaxLoggedReason);
         ServerEnvelope response;
         IDisposable? deferral = null;
         try
@@ -376,7 +384,7 @@ internal sealed partial class IpcConnection(
                 bool stopping = _stopping.IsCancellationRequested;
                 if (IpcErrorMapper.IsUnexpected(ex, stopping))
                 {
-                    LogRequestFailed(ex, request.Id, type, CallerName);
+                    LogRequestFailed(ex, request.Id, loggedType, CallerName);
                 }
 
                 response = ServerEnvelope.Failure(request.Id, IpcErrorMapper.Map(ex, type, stopping));
@@ -386,7 +394,7 @@ internal sealed partial class IpcConnection(
             // only then release what was held back for it (also when the write failed).
             if (await WriteAsync(response).ConfigureAwait(false))
             {
-                LogResponseWritten(request.Id, type);
+                LogResponseWritten(request.Id, loggedType);
             }
         }
         finally
