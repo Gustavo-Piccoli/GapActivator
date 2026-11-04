@@ -278,8 +278,9 @@ public sealed class GapActivatorClient : IAsyncDisposable
         // ConnectTimeout, and a server that answers without reading (busy) must still be heard.
         using var writeBudget = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
         writeBudget.CancelAfter(Remaining());
-        Task helloWrite = WriteHelloAsync(hello, writeBudget.Token);
+        Task<bool> helloWrite = WriteHelloAsync(hello, writeBudget.Token);
         ServerEnvelope first;
+        bool helloWritten;
         try
         {
             first = await _handshake.Task.WaitAsync(Remaining(), ct).ConfigureAwait(false) ?? throw Disconnection();
@@ -287,7 +288,7 @@ public sealed class GapActivatorClient : IAsyncDisposable
         finally
         {
             await writeBudget.CancelAsync().ConfigureAwait(false);
-            await helloWrite.ConfigureAwait(false);
+            helloWritten = await helloWrite.ConfigureAwait(false);
         }
 
         if (first.Ok == false)
@@ -295,7 +296,8 @@ public sealed class GapActivatorClient : IAsyncDisposable
             throw FromError(first.Error);
         }
 
-        if (first.Ok != true || first.Id != HelloId)
+        // A success that arrives while the Hello write is unfinished may mean a half-written frame: never continue on it.
+        if (first.Ok != true || first.Id != HelloId || !helloWritten)
         {
             throw new GapActivatorRequestException(
                 IpcErrorCodes.ProtocolMismatch, "The server answered Hello with an unexpected frame.", retryable: false);
@@ -327,15 +329,17 @@ public sealed class GapActivatorClient : IAsyncDisposable
     /// Pre-flight C3: a failed Hello write does not end the handshake and never aborts the connection, so a frame the
     /// server already sent (busy) is still read. Nothing else uses the pipe yet, so no lock is needed.
     /// </summary>
-    private async Task WriteHelloAsync(byte[] hello, CancellationToken budget)
+    private async Task<bool> WriteHelloAsync(byte[] hello, CancellationToken budget)
     {
         try
         {
             await IpcFrame.WriteAsync(_pipe, hello, budget).ConfigureAwait(false);
+            return true;
         }
         catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException)
         {
             // The first server frame, or the end of the budget, decides the handshake.
+            return false;
         }
     }
 
@@ -355,7 +359,7 @@ public sealed class GapActivatorClient : IAsyncDisposable
         catch (OperationCanceledException ex) when (ct.IsCancellationRequested && !_lifetime.IsCancellationRequested)
         {
             Abort(ex);
-            throw;
+            throw new OperationCanceledException(ex.Message, ex, ct);
         }
         catch (IpcProtocolException ex)
         {

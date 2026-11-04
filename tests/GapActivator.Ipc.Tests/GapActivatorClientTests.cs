@@ -107,12 +107,12 @@ public class GapActivatorClientTests
         await accepted.WaitAsync(Wait, TestContext.Current.CancellationToken);
     }
 
-    // Pre-flight C3: a failed Hello write does not end the handshake.
+    // Pre-flight C3: a failed Hello write does not end the handshake. In-buffer 0 makes the Hello write block, then fail when the server closes.
     [Fact]
     public async Task Connect_ServerWritesBusyAndClosesWithoutReading_ThrowsRetryableBusy()
     {
         string name = $"GapActivator.Tests.{Guid.NewGuid():N}";
-        var server = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 65536, 65536);
+        var server = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 65536);
         Task serving = Task.Run(async () =>
         {
             await server.WaitForConnectionAsync();
@@ -170,6 +170,67 @@ public class GapActivatorClientTests
         server.Received.Count.ShouldBe(51);
         server.Received.Skip(1).Select(r => r.Id).Distinct().Count().ShouldBe(50);
         server.Received.Skip(1).ShouldAllBe(r => r.Type == "PauseInstallation");
+    }
+
+    [Fact]
+    public async Task Send_CancelledWhileFrameWriteIsBlocked_AbortsTheConnection()
+    {
+        string name = $"GapActivator.Tests.{Guid.NewGuid():N}";
+        using var stop = new CancellationTokenSource();
+        var server = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0);
+        var firstRequestRead = new TaskCompletionSource();
+        Task serving = Task.Run(async () =>
+        {
+            try
+            {
+                await server.WaitForConnectionAsync(stop.Token);
+                await IpcFrame.ReadAsync(server, stop.Token);
+                byte[] reply = IpcCodec.Serialize(
+                    ServerEnvelope.Response(1, IpcCodec.ToElement(ScriptedPipeServer.DefaultHello, IpcJsonContext.Default.HelloResponse)),
+                    IpcJsonContext.Default.ServerEnvelope);
+                await IpcFrame.WriteAsync(server, reply, stop.Token);
+                await IpcFrame.ReadAsync(server, stop.Token);
+                firstRequestRead.SetResult();
+                await Task.Delay(Timeout.Infinite, stop.Token); // stops reading
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException)
+            {
+                // The test ended the connection.
+            }
+        }, TestContext.Current.CancellationToken);
+        try
+        {
+            GapActivatorClient client = await GapActivatorClient.ConnectAsync(
+                new GapActivatorClientOptions
+                {
+                    PipeName = name,
+                    ConnectTimeout = Wait,
+                    LookupService = _ => new ServiceLookup.NotInstalled(),
+                },
+                TestContext.Current.CancellationToken);
+            int raised = 0;
+            client.Disconnected += (_, _) => Interlocked.Increment(ref raised);
+
+            Task a = client.PauseInstallationAsync(TestContext.Current.CancellationToken);
+            await firstRequestRead.Task.WaitAsync(Wait, TestContext.Current.CancellationToken);
+            using var cancelB = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+            Task b = client.PauseInstallationAsync(cancelB.Token); // holds the write lock, blocked: nobody reads
+            Task c = client.PauseInstallationAsync(TestContext.Current.CancellationToken); // waits on the lock
+
+            await Should.ThrowAsync<OperationCanceledException>(() => b.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
+            (await Should.ThrowAsync<GapActivatorRequestException>(() => a.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)))
+                .Code.ShouldBe("disconnected");
+            (await Should.ThrowAsync<GapActivatorRequestException>(() => c.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken)))
+                .Code.ShouldBe("disconnected");
+            await client.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            raised.ShouldBe(1);
+        }
+        finally
+        {
+            await stop.CancelAsync();
+            await server.DisposeAsync();
+            await serving.WaitAsync(Wait, TestContext.Current.CancellationToken);
+        }
     }
 
     [Fact]
