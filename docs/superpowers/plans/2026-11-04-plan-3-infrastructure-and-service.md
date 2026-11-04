@@ -624,7 +624,7 @@ Steps:
 6. Output cannot be re-captured (ruling 7). Append `[GapActivator] The service restarted and re-adopted this process at {now:O}; later output is not captured.\r\n` to the run output file, best effort.
 7. Return a `WindowsRunningProcess` with the exit wait and no pump.
 
-Unexpected Win32 failures in steps 2–4 throw. `ReconcileOnStartup` deliberately treats a launcher exception as "unknown", not "gone".
+`TryAttach` returns null only when no process has the PID, when the start time does not match, or when access is denied (a Warning). Any other failure throws. `ReconcileOnStartup` does not catch it: the exception propagates and stops the service, and SCM recovery restarts it, because an unknown state is never treated as "gone", which could start a duplicate of a live child (Plan 2 ruling T8-9).
 
 - [ ] **Step 1: Write the failing tests** (integration tests):
   - `TryAttach_LiveChildMatchingStartTime_ReportsExitCode` (BI-063, BI-072, carry-over: the handle keeps the exit code readable): launch `sleep 1500 5`, dispose that handle, then `TryAttach` with a second launcher instance. The result is not null, and `Exited == 5`.

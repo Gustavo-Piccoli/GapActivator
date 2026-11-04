@@ -12,7 +12,7 @@ internal static partial class NativeMethods
     internal const uint JOB_OBJECT_QUERY = 0x0004, JOB_OBJECT_TERMINATE = 0x0008;
     internal const uint STILL_ACTIVE = 259;
     internal const int ERROR_FILE_NOT_FOUND = 2, ERROR_PATH_NOT_FOUND = 3, ERROR_ACCESS_DENIED = 5,
-                       ERROR_BAD_EXE_FORMAT = 193, ERROR_DIRECTORY = 267;
+                       ERROR_INVALID_PARAMETER = 87, ERROR_BAD_EXE_FORMAT = 193, ERROR_DIRECTORY = 267;
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct STARTUPINFOW

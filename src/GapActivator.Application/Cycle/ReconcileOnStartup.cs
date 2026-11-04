@@ -43,8 +43,9 @@ internal sealed partial class ReconcileOnStartupHandler(
 
         foreach (Run run in await runs.ListActiveAsync(ct))
         {
-            // A Launching run has no child this path can see. A crash between the OS process creation and the first
-            // commit can leave an orphan child behind it; Plan 3 owns that window.
+            // A Launching run has no child this path can see. A crash can leave an orphan child behind it: the launcher
+            // starts children suspended, which narrows that window to after CreateProcess, before RecordRunLaunched
+            // commits. The window is accepted (the "crash window").
             Process? process = null;
             IRunningProcess? child = null;
             if (run.State != RunState.Launching)
