@@ -563,10 +563,14 @@ public sealed partial class RunSupervisor(
         return false;
     }
 
+    /// <summary>
+    /// Waits for the exit or until <paramref name="delay"/> has passed by the clock. A single timer can fire up to one
+    /// tick early, which would cut the grace period short, so the wait is measured against a deadline.
+    /// </summary>
     private async Task WaitForExitOrDelayAsync(Task exited, TimeSpan delay)
     {
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
-        await Task.WhenAny(exited, Task.Delay(delay, time, cancellation.Token));
+        await Task.WhenAny(exited, WaitUntilAsync(time.GetUtcNow() + delay, cancellation.Token));
         await cancellation.CancelAsync();
     }
 
