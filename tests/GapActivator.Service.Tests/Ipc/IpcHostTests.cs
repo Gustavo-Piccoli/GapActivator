@@ -25,6 +25,7 @@ public sealed class IpcHostTests
 
         Type[] hosted = [.. host.Services.GetServices<IHostedService>().Select(s => s.GetType())];
 
+        hosted.ShouldContain(typeof(GapActivatorWorker));
         hosted.ShouldContain(typeof(IpcHostedService));
         Array.IndexOf(hosted, typeof(IpcHostedService)).ShouldBeGreaterThan(Array.IndexOf(hosted, typeof(GapActivatorWorker)));
     }

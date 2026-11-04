@@ -12,6 +12,7 @@ public sealed class MiniSmtpServer : IAsyncDisposable
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _stop = new();
     private readonly List<ReceivedMail> _received = [];
+    private int _authAttempts;
     private readonly List<TcpClient> _clients = [];
     private readonly Task _acceptLoop;
 
@@ -35,6 +36,9 @@ public sealed class MiniSmtpServer : IAsyncDisposable
 
     /// <summary>When set, AUTH is answered with this reply line, for example "535 5.7.8 Authentication credentials invalid".</summary>
     public string? RejectAuthWith { get; init; }
+
+    /// <summary>How many AUTH commands the server has received, answered or rejected.</summary>
+    public int AuthAttempts => Volatile.Read(ref _authAttempts);
 
     public IReadOnlyList<ReceivedMail> Received
     {
@@ -126,6 +130,7 @@ public sealed class MiniSmtpServer : IAsyncDisposable
 
                         break;
                     case "AUTH":
+                        Interlocked.Increment(ref _authAttempts);
                         if (RejectAuthWith is { } authRejection)
                         {
                             await writer.WriteLineAsync(authRejection);

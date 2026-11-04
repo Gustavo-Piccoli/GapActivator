@@ -99,6 +99,7 @@ public sealed class IpcEndToEndTests
         gate.ShouldNotBeNull();
         try
         {
+            await gate.Reached.WaitAsync(ConnectWait, Ct);
             await Should.ThrowAsync<TimeoutException>(() => fixture.ConnectAsync(TimeSpan.FromMilliseconds(500), Ct));
         }
         finally
@@ -150,8 +151,10 @@ public sealed class IpcEndToEndTests
 
         foreach (SecretChangeKind kind in new[] { SecretChangeKind.Keep, SecretChangeKind.Set })
         {
+            int attemptsBefore = smtp.AuthAttempts;
             GapActivatorRequestException failure = await Should.ThrowAsync<GapActivatorRequestException>(
                 () => client.SendTestEmailAsync(Email(kind), Ct));
+            smtp.AuthAttempts.ShouldBeGreaterThan(attemptsBefore, "the 535 rejection was never reached");
             failure.Code.ShouldBe(IpcErrorCodes.EmailTestFailed);
             failure.Retryable.ShouldBeFalse();
             failure.Message.ShouldNotContain(Password);
