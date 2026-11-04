@@ -17,7 +17,17 @@ internal static class RunTestHost
 
     private static readonly TimeSpan SafetyTimeout = TimeSpan.FromSeconds(30);
 
-    public static ApplicationTestHost Create() => new(ScriptedCommandDispatcher.Install);
+    /// <param name="configure">Applied after the scripted dispatcher is installed, so it can replace any registration.</param>
+    public static ApplicationTestHost Create(Action<IServiceCollection>? configure = null) =>
+        new(services =>
+        {
+            ScriptedCommandDispatcher.Install(services);
+            configure?.Invoke(services);
+        });
+
+    /// <summary>Ends the supervisor's lifetime, as the container does when the host shuts down.</summary>
+    public static void DisposeSupervisor(this ApplicationTestHost host) =>
+        host.Supervisor().Dispose();
 
     public static RunSupervisor Supervisor(this ApplicationTestHost host) =>
         host.Services.GetRequiredService<RunSupervisor>();
@@ -78,6 +88,25 @@ internal static class RunTestHost
         await host.Time.WaitForTimersAsync(timers).Within();
         host.Time.Advance(by);
     }
+
+    /// <summary>
+    /// Keeps moving the clock until the task completes, for a flow whose number of timers depends on a harmless race,
+    /// such as a retry delay cancelled just before or just after it was created. Yields instead of waiting in real time.
+    /// </summary>
+    public static async Task PumpClockUntilAsync(this ApplicationTestHost host, Task done, TimeSpan step)
+    {
+        Task guarded = done.Within();
+        while (!guarded.IsCompleted)
+        {
+            host.Time.Advance(step);
+            await Task.Yield();
+        }
+
+        await guarded;
+    }
+
+    public static int ErrorsLogged(this ApplicationTestHost host, string category) =>
+        host.Log.Entries.Count(e => e.Level == LogLevel.Error && e.Category == category);
 
     public static bool LoggedAt(this ApplicationTestHost host, LogLevel level, string category) =>
         host.Log.Entries.Any(e => e.Level == level && e.Category == category);

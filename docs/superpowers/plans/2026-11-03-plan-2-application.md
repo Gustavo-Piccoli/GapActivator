@@ -34,7 +34,7 @@
 ## Review Focus
 
 1. **A command racing a run's exit.** A cancel or time-limit stop can arrive just after the child exited. The run must end exactly once, with the outcome of whichever was recorded first, and the supervisor must not throw or leak an entry. Test in Task 5.
-2. **Recording a completion fails.** If the commit throws when the exit is recorded, the supervisor retries 3 times, 1 s apart, then logs the error. It never crashes, and the run stays active for startup reconciliation. Test in Task 5.
+2. **Recording a completion fails.** If the commit throws when the exit is recorded, the supervisor retries 3 times, 1 s apart, logs one Error, then keeps retrying with a backoff doubling from 2 s up to 60 s until it succeeds or the supervisor's lifetime ends. It never crashes, the entry stays tracked meanwhile, and if the lifetime ends first the run stays active for startup reconciliation. Test in Task 5.
 3. **Editing a process while its schedules are mid-series.** Changing only the description must keep each unchanged schedule's `NextOccurrenceAt` and `FulfilledAt`. It must not re-create the schedule and cause a catch-up run. Test in Task 4.
 4. **Settings changed between cycles.** A new cycle interval applies to the next wait. A failure limit lowered below a process's counter blocks it on the next cycle, unless the run is manual (Q-3). Tests in Tasks 6 and 7.
 5. **Shutdown while a launch is in flight.** The run ends **Interrupted**: not Abandoned, not a failure, no retry. A time limit longer than the maximum timer delay (about 49.7 days) still fires. Tests in Tasks 5 and 8.
@@ -395,10 +395,11 @@ Rules:
 - Produces:
 
 ```csharp
-public sealed record RunStartTicket(RunId RunId, ProcessId ProcessId, LaunchRequest Request, TimeSpan? TimeLimit, TimeSpan GracePeriod);
+public sealed record RunStartTicket(RunId RunId, ProcessId ProcessId, string Executable, string Arguments, string WorkingDirectory, EnvironmentVariables Environment, TimeSpan? TimeLimit, TimeSpan GracePeriod);
 public sealed class RunStarter   // scoped
-{ public Run Begin(Process process, InstallationSettings settings, RunTrigger trigger, DateTimeOffset? scheduledFor, bool isLate); }
-  // Run.Begin(...) + IRunRepository.Add + AfterCommit.Enqueue(supervisor.Start(ticket)); ticket env = plain values + Unprotect(secrets);
+{ public Run Begin(Process process, InstallationSettings settings, RunTrigger trigger, DateTimeOffset? scheduledFor, bool isLate, DateTimeOffset now); }
+  // Run.Begin(...) + IRunRepository.Add + AfterCommit.Enqueue(supervisor.Start(ticket)); the ticket carries the domain EnvironmentVariables, no plaintext;
+  // the supervisor unprotects secrets while building the LaunchRequest inside its launch try, so a failure there ends the run FailedToStart;
   // WorkingDirectory = Launch.EffectiveWorkingDirectory; TimeLimit = process.EffectiveTimeLimit(settings.DefaultTimeLimit);
   // GracePeriod = process.EffectiveGracePeriod(settings.DefaultGracePeriod)
 public sealed class RunSupervisor   // singleton
@@ -425,7 +426,7 @@ Supervisor behaviour. Each tracked run has a background task:
 2. **Launched.** Send `RecordRunLaunched`. If `Stop` was called meanwhile, `SignalCancel` at once (§8 "Cancel during Launching").
 3. **Time limit.** Wait for the time limit in chunks of at most 1 day with `Task.Delay(chunk, time, ct)`, then send `StopRun(TimeLimit)`.
 4. **Stop.** `SignalCancel`, wait for the grace period, and if the process has not exited, call `KillTreeAsync` and mark it killed.
-5. **Exit.** On `Exited`, send `RecordRunExited(code, killed)`. If the send throws, retry 3 times, 1 s apart, then log Error and give up (Review Focus 2).
+5. **Exit.** On `Exited`, send `RecordRunExited(code, killed)`, after a still-unrecorded launch and time-limit stop. If a record command throws, retry 3 times, 1 s apart, log one Error, then keep retrying with a backoff doubling from 2 s up to 60 s until it succeeds or the supervisor's lifetime ends (Review Focus 2). `CommandRejectedException` and `DomainException` are logged at Error and not retried. `RecordRunLaunched` and `StopRun(TimeLimit)` retry alongside supervision, so neither holds up the time limit or the exit.
 6. **End.** Remove the entry, complete `WaitForEndAsync`, and if `StartAfterEnd` was set, send `StartPendingRun`.
 
 `Start` for a process that already has an entry is ignored and logged. This is the in-memory half of BI-041.

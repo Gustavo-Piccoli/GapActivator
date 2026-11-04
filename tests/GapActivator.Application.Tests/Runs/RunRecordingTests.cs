@@ -10,6 +10,7 @@ using GapActivator.Domain.Processes;
 using GapActivator.Domain.Runs;
 using GapActivator.Domain.Settings;
 using GapActivator.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using MsLogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace GapActivator.Application.Tests.Runs;
@@ -193,7 +194,7 @@ public class RunRecordingTests
         await host.Run<RecordRunExited, Unit>(new RecordRunExited(run.Id, 0, false));
 
         run.Outcome.ShouldBe(RunOutcome.Succeeded);
-        host.Log.Entries.ShouldContain(e => e.Level == MsLogLevel.Warning);
+        host.LoggedAt(MsLogLevel.Warning, nameof(RunOutcomeApplier)).ShouldBeTrue();
     }
 
     [Fact]
@@ -206,7 +207,7 @@ public class RunRecordingTests
         await host.Run<RecordRunLaunchFailed, Unit>(new RecordRunLaunchFailed(run.Id, "boom"));
 
         run.Outcome.ShouldBe(RunOutcome.FailedToStart);
-        host.Log.Entries.ShouldContain(e => e.Level == MsLogLevel.Warning);
+        host.LoggedAt(MsLogLevel.Warning, nameof(RunOutcomeApplier)).ShouldBeTrue();
     }
 
     [Fact]
@@ -391,12 +392,49 @@ public class RunRecordingTests
     }
 
     [Fact]
+    public async Task RunStarter_SecretCannotBeRead_FailedToStartNamingTheVariableAndNoValue()
+    {
+        await using ApplicationTestHost host = RunTestHost.Create(
+            services => services.AddSingleton<ISecretProtector>(new ProtectorFailingFor("enc:" + SecretValue)));
+        ProcessSaved saved = await host.Run<RegisterProcess, ProcessSaved>(new RegisterProcess(ProcessDefinitions.Basic(
+            environment:
+            [
+                new EnvironmentVariableInput("READABLE", "readable-value", true),
+                new EnvironmentVariableInput("API_TOKEN", SecretValue, true),
+            ])));
+        Process process = host.Store.Processes[saved.Id];
+
+        Run run = await host.StartRunAsync(process);
+        await host.EndOf(run.Id);
+
+        run.Outcome.ShouldBe(RunOutcome.FailedToStart);
+        run.Error.ShouldNotBeNull().ShouldContain("API_TOKEN");
+        run.Error.ShouldNotContain(SecretValue);
+        run.Error.ShouldNotContain("readable-value");
+        run.Error.ShouldNotContain("READABLE");
+        process.ConsecutiveFailures.ShouldBe(1);
+        process.RetryPending.ShouldBeTrue();
+        host.Launcher.LaunchRequests.ShouldBeEmpty();
+        host.Supervisor().IsTracking(process.Id).ShouldBeFalse();
+        host.Log.Entries.ShouldNotContain(e => e.Message.Contains(SecretValue, StringComparison.Ordinal));
+        host.Log.Entries.ShouldContain(e => e.Level == MsLogLevel.Error && e.Message.Contains("API_TOKEN", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void LaunchRequest_ToString_DoesNotExposeEnvironmentValues()
     {
         RunId runId = RunId.New();
         var request = new LaunchRequest(
             runId, Exe, string.Empty, @"C:\Tools", [new KeyValuePair<string, string>("API_TOKEN", SecretValue)]);
-        var ticket = new RunStartTicket(runId, ProcessId.New(), request, null, TimeSpan.FromSeconds(1));
+        var ticket = new RunStartTicket(
+            runId,
+            ProcessId.New(),
+            Exe,
+            string.Empty,
+            @"C:Tools",
+            EnvironmentVariables.Create([EnvironmentVariable.Secret("API_TOKEN", new ProtectedSecret(SecretValue))]),
+            null,
+            TimeSpan.FromSeconds(1));
 
         request.ToString().ShouldNotContain(SecretValue);
         ticket.ToString().ShouldNotContain(SecretValue);
@@ -518,6 +556,19 @@ public class RunRecordingTests
         await host.EndOf(run.Id);
 
         child.Killed.ShouldBeTrue();
+    }
+
+    /// <summary>Fails to read one ciphertext, as a secret protected on another machine would.</summary>
+    private sealed class ProtectorFailingFor(string ciphertext) : ISecretProtector
+    {
+        private readonly FakeSecretProtector _inner = new();
+
+        public ProtectedSecret Protect(string plaintext) => _inner.Protect(plaintext);
+
+        public string Unprotect(ProtectedSecret secret) =>
+            secret.Ciphertext == ciphertext
+                ? throw new InvalidOperationException("The key is not available.")
+                : _inner.Unprotect(secret);
     }
 
     private static void AssertSkipped(ApplicationTestHost host)

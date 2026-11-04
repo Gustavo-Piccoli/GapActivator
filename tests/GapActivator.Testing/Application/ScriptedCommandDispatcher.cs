@@ -18,6 +18,7 @@ public sealed class ScriptedCommandDispatcher(ICommandDispatcher inner) : IComma
     private readonly Dictionary<Type, int> _attempts = [];
     private readonly Dictionary<Type, int> _handled = [];
     private readonly List<(Type Command, int Count, TaskCompletionSource Signal)> _waiters = [];
+    private readonly List<(Type Command, int Count, TaskCompletionSource Signal)> _attemptWaiters = [];
 
     /// <summary>Replaces <see cref="ICommandDispatcher"/> in a service collection with a scripted one.</summary>
     public static void Install(IServiceCollection services)
@@ -42,6 +43,31 @@ public sealed class ScriptedCommandDispatcher(ICommandDispatcher inner) : IComma
             {
                 queue.Enqueue(error ?? new InvalidOperationException("Simulated failure."));
             }
+        }
+    }
+
+    /// <summary>Drops the failures still queued for the command, so its next send reaches the real dispatcher.</summary>
+    public void StopFailing<TCommand>()
+    {
+        lock (_sync)
+        {
+            _failures.Remove(typeof(TCommand));
+        }
+    }
+
+    /// <summary>Completes once at least <paramref name="count"/> sends of the command have started.</summary>
+    public Task WaitForAttemptsAsync<TCommand>(int count)
+    {
+        lock (_sync)
+        {
+            if (_attempts.GetValueOrDefault(typeof(TCommand)) >= count)
+            {
+                return Task.CompletedTask;
+            }
+
+            var signal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _attemptWaiters.Add((typeof(TCommand), count, signal));
+            return signal.Task;
         }
     }
 
@@ -102,7 +128,15 @@ public sealed class ScriptedCommandDispatcher(ICommandDispatcher inner) : IComma
         CommandHold? before;
         lock (_sync)
         {
-            _attempts[key] = _attempts.GetValueOrDefault(key) + 1;
+            int attempts = _attempts.GetValueOrDefault(key) + 1;
+            _attempts[key] = attempts;
+            foreach ((Type Command, int Count, TaskCompletionSource Signal) waiter in
+                _attemptWaiters.Where(w => w.Command == key && w.Count <= attempts))
+            {
+                waiter.Signal.TrySetResult();
+            }
+
+            _attemptWaiters.RemoveAll(w => w.Command == key && w.Count <= attempts);
             _holdsBefore.Remove(key, out before);
             if (before is null && _failures.TryGetValue(key, out Queue<Exception>? queue))
             {

@@ -12,6 +12,7 @@ public sealed class FakeProcessLauncher(TimeProvider time) : IProcessLauncher
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Queue<Func<CancellationToken, Task<IRunningProcess>>>> _behaviours =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly TaskCompletionSource _launchBlocked = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _nextPid = 1000;
 
     public List<LaunchRequest> LaunchRequests { get; } = [];
@@ -20,6 +21,9 @@ public sealed class FakeProcessLauncher(TimeProvider time) : IProcessLauncher
     public List<FakeRunningProcess> Launched { get; } = [];
 
     public List<(RunId RunId, int Pid, DateTimeOffset StartTime)> AttachCalls { get; } = [];
+
+    /// <summary>Completes when a launch queued with <see cref="QueueBlockUntilCancelled"/> has started and is blocking.</summary>
+    public Task LaunchBlocked => _launchBlocked.Task;
 
     /// <summary>What <see cref="TryAttach"/> returns; null means no matching live process.</summary>
     public IRunningProcess? AttachResult { get; set; }
@@ -52,6 +56,7 @@ public sealed class FakeProcessLauncher(TimeProvider time) : IProcessLauncher
     public void QueueBlockUntilCancelled(string executable) =>
         Enqueue(executable, async ct =>
         {
+            _launchBlocked.TrySetResult();
             await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
             throw new InvalidOperationException("Unreachable: an infinite delay only ends by cancellation.");
         });

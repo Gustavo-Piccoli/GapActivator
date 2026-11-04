@@ -12,7 +12,20 @@ public sealed class TrackingTimeProvider(DateTimeOffset start) : FakeTimeProvide
 {
     private readonly Lock _sync = new();
     private readonly List<(int Count, TaskCompletionSource Signal)> _waiters = [];
+    private readonly List<TimeSpan> _timerDelays = [];
     private int _timersCreated;
+
+    /// <summary>The due time of every timer created so far, in creation order.</summary>
+    public IReadOnlyList<TimeSpan> TimerDelays
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return [.. _timerDelays];
+            }
+        }
+    }
 
     /// <summary>How many timers were created so far.</summary>
     public int TimersCreated
@@ -47,6 +60,7 @@ public sealed class TrackingTimeProvider(DateTimeOffset start) : FakeTimeProvide
         ITimer timer = base.CreateTimer(callback, state, dueTime, period);
         lock (_sync)
         {
+            _timerDelays.Add(dueTime);
             _timersCreated++;
             foreach ((int Count, TaskCompletionSource Signal) waiter in _waiters.Where(w => w.Count <= _timersCreated))
             {
