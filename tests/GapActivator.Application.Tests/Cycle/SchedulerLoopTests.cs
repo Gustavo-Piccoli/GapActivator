@@ -1,11 +1,13 @@
 using GapActivator.Application.Cycle;
 using GapActivator.Application.Events;
+using GapActivator.Application.Ports;
 using GapActivator.Application.Runs;
 using GapActivator.Application.Tests.Messaging;
 using GapActivator.Application.Tests.Runs;
 using GapActivator.Domain.Processes;
 using GapActivator.Domain.Runs;
 using GapActivator.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace GapActivator.Application.Tests.Cycle;
@@ -231,9 +233,70 @@ public class SchedulerLoopTests
             e.Level == LogLevel.Warning && e.Category == nameof(RunSupervisor) && e.Message.Contains("2 run", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task Loop_Reconciled_CompletesBeforeTheFirstCycleStarts()
+    {
+        var retention = new ReconciledProbeRetention();
+        await using ApplicationTestHost host = CycleTestHost.Create(services => services.AddSingleton<ILogRetention>(retention));
+        using var stop = new CancellationTokenSource();
+        SchedulerLoop loop = host.Loop();
+        retention.Loop = loop;
+
+        Task running = loop.RunAsync(stop.Token);
+        await host.Time.WaitForTimersAsync(1).Within();
+
+        await loop.Reconciled.Within();
+        retention.ReconciledWhenPurged.ShouldBe(true);
+
+        await StopAsync(stop, running);
+    }
+
+    [Fact]
+    public async Task Loop_ReconcileThrows_ReconciledFaultsWithTheSameException()
+    {
+        await using ApplicationTestHost host = CycleTestHost.Create();
+        var failure = new InvalidOperationException("Simulated reconcile failure.");
+        host.Dispatcher().FailNext<ReconcileOnStartup>(1, failure);
+        SchedulerLoop loop = host.Loop();
+
+        Task running = loop.RunAsync(TestContext.Current.CancellationToken);
+        var error = await Should.ThrowAsync<InvalidOperationException>(loop.Reconciled.Within());
+        await Should.ThrowAsync<InvalidOperationException>(running.Within());
+
+        error.ShouldBeSameAs(failure);
+    }
+
+    [Fact]
+    public async Task Loop_StoppedBeforeReconcile_ReconciledIsCancelled()
+    {
+        await using ApplicationTestHost host = CycleTestHost.Create();
+        using var stop = new CancellationTokenSource();
+        await stop.CancelAsync();
+        SchedulerLoop loop = host.Loop();
+
+        await loop.RunAsync(stop.Token).Within();
+
+        await Should.ThrowAsync<OperationCanceledException>(loop.Reconciled.Within());
+        loop.Reconciled.IsCanceled.ShouldBeTrue();
+    }
+
     private static async Task StopAsync(CancellationTokenSource stop, Task loop)
     {
         await stop.CancelAsync();
         await loop.Within();
+    }
+}
+
+/// <summary>Records whether the loop had already reconciled when the first cycle purged the logs.</summary>
+internal sealed class ReconciledProbeRetention : ILogRetention
+{
+    public SchedulerLoop? Loop { get; set; }
+
+    public bool? ReconciledWhenPurged { get; private set; }
+
+    public Task PurgeOlderThanAsync(int days, CancellationToken ct)
+    {
+        ReconciledWhenPurged ??= Loop?.Reconciled.IsCompletedSuccessfully;
+        return Task.CompletedTask;
     }
 }

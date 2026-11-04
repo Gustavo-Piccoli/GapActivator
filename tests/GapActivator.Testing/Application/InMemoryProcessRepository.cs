@@ -41,6 +41,14 @@ public sealed class InMemoryProcessRepository(InMemoryStore store, InMemoryUnitO
         return Task.FromResult<IReadOnlyList<Process>>(all);
     }
 
+    public Task<IReadOnlyList<ProcessId>> ListIdsAsync(CancellationToken ct)
+    {
+        lock (store.Sync)
+        {
+            return Task.FromResult<IReadOnlyList<ProcessId>>([.. store.Processes.Keys]);
+        }
+    }
+
     public Task<bool> NameExistsAsync(ProcessName name, ProcessId? excluding, CancellationToken ct)
     {
         lock (store.Sync)
