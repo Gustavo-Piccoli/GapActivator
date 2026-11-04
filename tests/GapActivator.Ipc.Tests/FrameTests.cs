@@ -93,6 +93,27 @@ public class FrameTests
         stream.Position.ShouldBe(4);
     }
 
+    [Fact]
+    public async Task Frame_LengthAboveTheCallersMaximum_ThrowsWithoutReadingTheBody()
+    {
+        using var stream = new MemoryStream([.. Header(101), .. new byte[101]]);
+
+        await Should.ThrowAsync<IpcProtocolException>(async () =>
+            await IpcFrame.ReadAsync(stream, 100, CancellationToken.None));
+
+        stream.Position.ShouldBe(4);
+    }
+
+    [Fact]
+    public async Task Frame_LengthAtTheCallersMaximum_IsRead()
+    {
+        using var stream = new MemoryStream([.. Header(100), .. new byte[100]]);
+
+        byte[]? payload = await IpcFrame.ReadAsync(stream, 100, CancellationToken.None);
+
+        payload.ShouldNotBeNull().Length.ShouldBe(100);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]

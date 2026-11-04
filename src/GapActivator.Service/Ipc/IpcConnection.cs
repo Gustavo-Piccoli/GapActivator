@@ -36,6 +36,9 @@ internal sealed partial class IpcConnection(
     private const int MaxLoggedClientVersion = 64;
     private const int MaxLoggedReason = 200;
 
+    // Before Hello the client is unauthenticated, so a frame may not claim more than a Hello (and a refused client) needs.
+    private const int MaxPreHelloPayload = 64 * 1024;
+
     private readonly CancellationTokenSource _closed = new();
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly SemaphoreSlim _inFlight = new(options.MaxRequestsInFlight, options.MaxRequestsInFlight);
@@ -134,11 +137,12 @@ internal sealed partial class IpcConnection(
         try
         {
             // The client is still in its handshake: it sends Hello and waits for the first frame, whatever its id.
-            await ReadFrameAsync(linked.Token).ConfigureAwait(false);
+            await ReadFrameAsync(MaxPreHelloPayload, linked.Token).ConfigureAwait(false);
         }
         catch (IpcProtocolException)
         {
-            // Refused either way.
+            // A refused client that breaks the protocol is not worth an answer.
+            return;
         }
 
         await WriteAsync(
@@ -156,7 +160,7 @@ internal sealed partial class IpcConnection(
         byte[]? frame;
         try
         {
-            frame = await ReadFrameAsync(linked.Token).ConfigureAwait(false);
+            frame = await ReadFrameAsync(MaxPreHelloPayload, linked.Token).ConfigureAwait(false);
         }
         catch (IpcProtocolException ex)
         {
@@ -299,7 +303,7 @@ internal sealed partial class IpcConnection(
             RequestEnvelope request;
             try
             {
-                byte[]? frame = await ReadFrameAsync(_readToken).ConfigureAwait(false);
+                byte[]? frame = await ReadFrameAsync(IpcProtocol.MaxPayloadBytes, _readToken).ConfigureAwait(false);
                 if (frame is null)
                 {
                     return;
@@ -405,11 +409,11 @@ internal sealed partial class IpcConnection(
 
     /// <returns>Null when the client left, the connection closed or the service is stopping.</returns>
     /// <exception cref="IpcProtocolException">A bad frame.</exception>
-    private async Task<byte[]?> ReadFrameAsync(CancellationToken ct)
+    private async Task<byte[]?> ReadFrameAsync(int maxPayload, CancellationToken ct)
     {
         try
         {
-            return await IpcFrame.ReadAsync(pipe, ct).ConfigureAwait(false);
+            return await IpcFrame.ReadAsync(pipe, maxPayload, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException)
         {

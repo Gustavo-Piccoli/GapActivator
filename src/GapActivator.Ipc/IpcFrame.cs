@@ -37,9 +37,20 @@ public static class IpcFrame
 
     /// <returns>The payload, or null on a clean end of stream at a frame boundary.</returns>
     /// <exception cref="IpcProtocolException">A bad length, or the stream ends inside a frame.</exception>
-    public static async ValueTask<byte[]?> ReadAsync(Stream stream, CancellationToken ct)
+    public static ValueTask<byte[]?> ReadAsync(Stream stream, CancellationToken ct) =>
+        ReadAsync(stream, IpcProtocol.MaxPayloadBytes, ct);
+
+    /// <summary>
+    /// Reads one frame whose payload may be at most <paramref name="maxPayload"/> bytes; a longer declared length is a
+    /// protocol error raised before anything is allocated for the payload.
+    /// </summary>
+    /// <returns>The payload, or null on a clean end of stream at a frame boundary.</returns>
+    /// <exception cref="IpcProtocolException">A bad length, or the stream ends inside a frame.</exception>
+    public static async ValueTask<byte[]?> ReadAsync(Stream stream, int maxPayload, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(stream);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxPayload, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(maxPayload, IpcProtocol.MaxPayloadBytes);
 
         byte[] header = new byte[HeaderSize];
         int read = await stream.ReadAtLeastAsync(header, HeaderSize, throwOnEndOfStream: false, ct).ConfigureAwait(false);
@@ -54,10 +65,10 @@ public static class IpcFrame
         }
 
         int length = BinaryPrimitives.ReadInt32LittleEndian(header);
-        if (length <= 0 || length > IpcProtocol.MaxPayloadBytes)
+        if (length <= 0 || length > maxPayload)
         {
             throw new IpcProtocolException(
-                $"A frame length must be 1 to {IpcProtocol.MaxPayloadBytes}, not {length}.");
+                $"A frame length must be 1 to {maxPayload}, not {length}.");
         }
 
         byte[] payload = new byte[length];

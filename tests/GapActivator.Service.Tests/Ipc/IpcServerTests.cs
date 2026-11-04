@@ -366,6 +366,44 @@ public sealed class IpcServerTests
         (await raw.WaitForEndAsync(Short)).ShouldBeTrue();
     }
 
+    // Final review I-2: nothing is allocated for a frame that claims more than a Hello can need.
+    [Fact]
+    public async Task OversizedFrameHeaderBeforeHello_ClosesTheConnection()
+    {
+        await using IpcTestServer server = await IpcTestServer.StartAsync();
+        await using RawPipeClient raw = await server.ConnectRawAsync();
+
+        await raw.SendHeaderAsync(64 * 1024 + 1);
+
+        (await raw.WaitForEndAsync(Short)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task OversizedFrameHeaderOnTheBusyPath_ClosesTheConnection()
+    {
+        await using IpcTestServer server = await IpcTestServer.StartAsync();
+        var clients = new List<GapActivatorClient>();
+        try
+        {
+            for (int i = 0; i < 16; i++)
+            {
+                clients.Add(await server.ConnectAsync());
+            }
+
+            await using RawPipeClient raw = await server.ConnectRawAsync();
+            await raw.SendHeaderAsync(16 * 1024 * 1024);
+
+            (await raw.WaitForEndAsync(Short)).ShouldBeTrue();
+        }
+        finally
+        {
+            foreach (GapActivatorClient client in clients)
+            {
+                await client.DisposeAsync();
+            }
+        }
+    }
+
     [Fact]
     public async Task Rejection_MapsItsCodeNotRetryable()
     {
