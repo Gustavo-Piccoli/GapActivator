@@ -109,11 +109,11 @@ The owner chose **B**.
 
 ## 5. Product overview
 
-Two executables plus an optional helper package:
+Two executables:
 
 1. **GapActivator Service** (`GapActivator.Service.exe`): a Windows Service. It owns the SQLite database, runs the scheduler, launches and supervises child processes, records history, writes logs, sends alerts, and serves the named pipe.
 2. **GapActivator app** (`GapActivator.exe`): an Avalonia desktop app with a tray icon. It is a pure client of the service.
-3. **`GapActivator.Child`** (optional NuGet package, decided later in Plan 3): implements the child side of the contract (section 7) in a few lines.
+3. There is no `GapActivator.Child` package in Plan 3 (decision recorded in Plan 3, ruling 4). The child side of the contract (section 7) is a few lines, shown in `samples/GapActivator.SampleChild` and documented in `docs/child-contract.md`. A package may be added later without breaking anything.
 
 One installation manages the processes of the local machine only. The legacy concept of several activators sharing one database (activator table, activator id on processes, activator name in config, configurable table prefix) is removed: "activator" becomes the **installation settings**.
 
@@ -237,7 +237,11 @@ Any executable works without knowing the contract; the contract only adds gracef
 - **Cancellation**: GapActivator **creates** a manual-reset named event `Local\GapActivator.Cancel.{childPid}` (exact name builder's call, documented) before or immediately after launch, so a cancel requested early is never lost. It signals the event and waits for the per-process grace period, then kills the entire process tree.
 - **Output**: stdout and stderr are captured to the run's output file and are visible in the app. Children never need to write to GapActivator's database.
 - **Children never touch GapActivator's database.** (Legacy children polled the activator's tables to detect cancellation; that coupling is removed.)
-- A sample child process and a contract document ship in the repository.
+- A sample child process (`samples/GapActivator.SampleChild`) and a contract document (`docs/child-contract.md`) ship in the repository; there is no helper package (see section 5). The contract's exact values:
+  - `GAPACTIVATOR_PARENT_PID`: the service's process ID in decimal.
+  - `GAPACTIVATOR_PARENT_START_TIME`: the service's start time as UTC, `DateTime.ToString("O", CultureInfo.InvariantCulture)`, for example `2030-01-01T12:00:00.1234567Z`.
+  - Cancel event: `Local\GapActivator.Cancel.{childPid}`, manual-reset, created while the child is still suspended.
+  - Job object: `Local\GapActivator.Job.{childPid}.{startTimeUtcTicks}`, without kill-on-close; internal to GapActivator.
 
 ## 8. Application layer (CQRS)
 
@@ -270,7 +274,8 @@ Legacy behavior preserved: a long-running run must never block the scheduling of
 ## 9. Infrastructure and service
 
 - SQLite via EF Core with migrations, database at `%ProgramData%\GapActivator\gapactivator.db`. ACL: SYSTEM, Administrators, and the service account only.
-- Process launcher on `System.Diagnostics.Process` + Win32 where needed (named events, process start time, tree kill).
+- Process launcher: `CreateProcessW` (created suspended) plus Job Objects. `System.Diagnostics.Process` is used only for the kill fallback.
+- The Service Control Manager applies the recovery policy; a requested restart takes effect after its 60 s recovery delay (see `docs/running-the-service.md`).
 - Logs at `%ProgramData%\GapActivator\logs\`: one daily service log and one output file per run, both with configurable retention. Windows Event Log only for severe service errors (event source `GapActivator`).
 - E-mail via MailKit, password protected with DPAPI.
 - Restart of GapActivator (command from the app) goes through the Windows Service Control Manager.
@@ -349,3 +354,4 @@ Exact identifiers and file layout inside each project; EF Core mapping details; 
 - Additional database providers through the existing repository ports.
 - Configurable retry backoff.
 - Code signing and winget, as in GapMouse.
+- Durable job ownership across service crashes: today a re-adopted child's process tree is found by walking parent links, so descendants whose parent already exited are not reached.
