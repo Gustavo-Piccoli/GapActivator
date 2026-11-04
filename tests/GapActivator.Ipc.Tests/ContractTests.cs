@@ -133,4 +133,21 @@ public class ContractTests
     [Fact]
     public void Secrets_ToString_KeepsAPlainValueVisible() =>
         new EnvironmentVariableInputDto("K", "plain-value", false).ToString().ShouldContain("plain-value");
+
+    [Fact]
+    public void JsonContext_ResolvesEveryPublicContractType()
+    {
+        Type[] types =
+        [
+            .. typeof(IpcMessages).Assembly.GetTypes()
+                .Where(t => t.Namespace == "GapActivator.Ipc.Contracts" && t.IsPublic && !t.IsEnum
+                    && !t.IsGenericTypeDefinition),
+        ];
+
+        types.ShouldNotBeEmpty();
+        foreach (Type type in types)
+        {
+            IpcJsonContext.Default.GetTypeInfo(type).ShouldNotBeNull($"{type.Name} is not in IpcJsonContext.");
+        }
+    }
 }

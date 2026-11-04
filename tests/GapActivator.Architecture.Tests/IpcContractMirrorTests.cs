@@ -29,6 +29,7 @@ public class IpcContractMirrorTests
         Dtos.Length.ShouldBe(23);
 
         var problems = new List<string>();
+        var context = new NullabilityInfoContext();
         foreach (Type dto in Dtos)
         {
             string stem = NonObviousMirrors.TryGetValue(dto.Name, out string? name) ? name : dto.Name[..^3];
@@ -39,6 +40,8 @@ public class IpcContractMirrorTests
                 continue;
             }
 
+            ParameterInfo[] expectedInfo = ParameterInfos(candidates[0]);
+            ParameterInfo[] actualInfo = ParameterInfos(dto);
             (string Name, Type Type)[] expected = Parameters(candidates[0]);
             (string Name, Type Type)[] actual = Parameters(dto);
             if (!expected.Select(p => p.Name).SequenceEqual(actual.Select(p => p.Name)))
@@ -54,6 +57,13 @@ public class IpcContractMirrorTests
                 if (want != have)
                 {
                     problems.Add($"{dto.Name}.{actual[i].Name}: {have} != {want}.");
+                }
+
+                string wantNull = NullabilityShape(context.Create(expectedInfo[i]));
+                string haveNull = NullabilityShape(context.Create(actualInfo[i]));
+                if (wantNull != haveNull)
+                {
+                    problems.Add($"{dto.Name}.{actual[i].Name}: nullability {haveNull} != {wantNull}.");
                 }
             }
         }
@@ -91,9 +101,11 @@ public class IpcContractMirrorTests
         rejections.Except(ipc).ShouldBeEmpty();
     }
 
+    private static ParameterInfo[] ParameterInfos(Type type) =>
+        type.GetConstructors().OrderByDescending(c => c.GetParameters().Length).First().GetParameters();
+
     private static (string Name, Type Type)[] Parameters(Type type) =>
-        [.. type.GetConstructors().OrderByDescending(c => c.GetParameters().Length).First().GetParameters()
-            .Select(p => (p.Name!, p.ParameterType))];
+        [.. ParameterInfos(type).Select(p => (p.Name!, p.ParameterType))];
 
     // Application/Domain type -> expected wire type.
     private static Type Map(Type type)
@@ -130,9 +142,21 @@ public class IpcContractMirrorTests
         return type;
     }
 
-    // Nullable reference annotations are not part of the CLR type, so the text form carries them.
+    // The CLR type string; reference nullability is compared separately through NullabilityShape.
     private static string Describe(Type type) =>
         type.IsGenericType
             ? $"{type.GetGenericTypeDefinition().Name}<{string.Join(",", type.GetGenericArguments().Select(Describe))}>"
             : type.FullName ?? type.Name;
+
+    // Nullability is part of the wire contract (RespectNullableAnnotations): '?' marks a nullable reference or
+    // Nullable<T>, recursing into generic arguments such as list elements. Nested DTOs are checked as their own pair.
+    private static string NullabilityShape(NullabilityInfo info)
+    {
+        string mark = Nullable.GetUnderlyingType(info.Type) is not null || info.ReadState == NullabilityState.Nullable
+            ? "?"
+            : string.Empty;
+        return info.GenericTypeArguments.Length == 0
+            ? mark
+            : $"{mark}<{string.Join(",", info.GenericTypeArguments.Select(NullabilityShape))}>";
+    }
 }

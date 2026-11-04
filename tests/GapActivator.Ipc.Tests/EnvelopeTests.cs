@@ -34,7 +34,6 @@ public class EnvelopeTests
             "{\"id\":1,\"type\":\"PauseInstallation\"}");
     }
 
-    // Pre-flight C6: Event is serialized first.
     [Fact]
     public void Response_OkAndFailure_SerializeExactlyTheProtocolShapes()
     {
@@ -47,6 +46,7 @@ public class EnvelopeTests
             "{\"id\":7,\"ok\":false,\"error\":{\"code\":\"not-found\",\"message\":\"m\",\"retryable\":false}}");
     }
 
+    // Pre-flight C6: Event is serialized first.
     [Fact]
     public void Push_SerializesEventAndPayloadWithoutId()
     {
@@ -109,6 +109,9 @@ public class EnvelopeTests
     [Theory]
     [InlineData("0")]
     [InlineData("\"Bogus\"")]
+    [InlineData("\"Failed, Succeeded\"")]
+    [InlineData("\"Skipped, Crashed\"")]
+    [InlineData("\"failed\"")]
     public void ReadPayload_EnumAsNumberOrUnknownName_ThrowsJsonException(string outcome) =>
         Should.Throw<JsonException>(() => IpcCodec.ReadPayload(
             Element("{\"filter\":{\"processId\":null,\"outcomes\":[" + outcome + "],\"from\":null,\"to\":null,\"page\":1,\"pageSize\":10}}"),

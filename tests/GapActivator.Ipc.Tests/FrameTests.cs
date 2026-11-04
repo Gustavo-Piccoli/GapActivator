@@ -142,4 +142,19 @@ public class FrameTests
 
         stream.Length.ShouldBe(0);
     }
+
+    [Fact]
+    public async Task Frame_ReadCancelledWhileWaitingForTheBody_ThrowsOperationCanceled()
+    {
+        using var server = new System.IO.Pipes.AnonymousPipeServerStream(System.IO.Pipes.PipeDirection.Out);
+        using var client = new System.IO.Pipes.AnonymousPipeClientStream(
+            System.IO.Pipes.PipeDirection.In, server.ClientSafePipeHandle);
+        await server.WriteAsync(Header(10), TestContext.Current.CancellationToken);
+        await server.FlushAsync(TestContext.Current.CancellationToken);
+        using var cts = new CancellationTokenSource();
+        ValueTask<byte[]?> pending = IpcFrame.ReadAsync(client, cts.Token);
+        await cts.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(async () => await pending);
+    }
 }

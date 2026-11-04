@@ -1,10 +1,42 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace GapActivator.Ipc.Contracts;
 
-/// <summary>Writes an enum as its member name and rejects numbers and unknown names.</summary>
-public sealed class StrictEnumConverter<T>() : JsonStringEnumConverter<T>(namingPolicy: null, allowIntegerValues: false)
-    where T : struct, Enum;
+/// <summary>
+/// Writes an enum as its member name and reads only an exact, case-sensitive member name: numbers, unknown names,
+/// comma-separated lists and other casings are rejected.
+/// </summary>
+public sealed class StrictEnumConverter<T> : JsonConverter<T>
+    where T : struct, Enum
+{
+    private static readonly string[] Names = Enum.GetNames<T>();
+    private static readonly T[] Values = Enum.GetValues<T>();
+
+    public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException($"{typeof(T).Name} must be a JSON string.");
+        }
+
+        string? text = reader.GetString();
+        int index = Array.IndexOf(Names, text);
+        return index >= 0 ? Values[index] : throw new JsonException($"'{text}' is not a {typeof(T).Name} member.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        int index = Array.IndexOf(Values, value);
+        if (index < 0)
+        {
+            throw new JsonException($"{value} is not a defined {typeof(T).Name} member.");
+        }
+
+        writer.WriteStringValue(Names[index]);
+    }
+}
 
 [JsonConverter(typeof(StrictEnumConverter<ProcessKind>))]
 public enum ProcessKind
