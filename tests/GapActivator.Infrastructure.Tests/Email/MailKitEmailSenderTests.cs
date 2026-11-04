@@ -2,7 +2,6 @@ using System.Diagnostics;
 using GapActivator.Application.Ports;
 using GapActivator.Domain.Settings;
 using GapActivator.Infrastructure.Email;
-using GapActivator.Infrastructure.Tests.Support;
 using GapActivator.Testing;
 using MailKit.Security;
 

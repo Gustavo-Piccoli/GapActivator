@@ -2,12 +2,12 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 
-namespace GapActivator.Infrastructure.Tests.Support;
+namespace GapActivator.Testing;
 
-internal sealed record ReceivedMail(string From, IReadOnlyList<string> Recipients, string Data);
+public sealed record ReceivedMail(string From, IReadOnlyList<string> Recipients, string Data);
 
 /// <summary>Minimal in-process SMTP server on 127.0.0.1 for the e-mail sender tests. No TLS.</summary>
-internal sealed class MiniSmtpServer : IAsyncDisposable
+public sealed class MiniSmtpServer : IAsyncDisposable
 {
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _stop = new();
@@ -32,6 +32,9 @@ internal sealed class MiniSmtpServer : IAsyncDisposable
 
     /// <summary>When set, RCPT TO is answered with this reply line, for example "550 no such user".</summary>
     public string? RejectRecipientWith { get; init; }
+
+    /// <summary>When set, AUTH is answered with this reply line, for example "535 5.7.8 Authentication credentials invalid".</summary>
+    public string? RejectAuthWith { get; init; }
 
     public IReadOnlyList<ReceivedMail> Received
     {
@@ -123,6 +126,12 @@ internal sealed class MiniSmtpServer : IAsyncDisposable
 
                         break;
                     case "AUTH":
+                        if (RejectAuthWith is { } authRejection)
+                        {
+                            await writer.WriteLineAsync(authRejection);
+                            break;
+                        }
+
                         string[] words = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                         string payload = words.Length > 2 ? words[2] : await AskAsync(reader, writer);
                         string[] parts = Encoding.UTF8.GetString(Convert.FromBase64String(payload)).Split('\0');

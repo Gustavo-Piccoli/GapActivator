@@ -10,8 +10,11 @@ using GapActivator.Domain.Processes;
 using GapActivator.Domain.Settings;
 using GapActivator.Infrastructure;
 using GapActivator.Infrastructure.Persistence;
+using GapActivator.Ipc;
+using GapActivator.Service.Ipc;
 using GapActivator.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using DiagnosticsProcess = System.Diagnostics.Process;
 
@@ -44,26 +47,53 @@ internal sealed class E2EFixture : IAsyncDisposable
     private readonly TempDataRoot _root;
     private readonly IReadOnlyDictionary<string, ProcessId> _processes;
     private readonly IHost _host;
+    private readonly List<GapActivatorClient> _clients = [];
     private bool _stopped;
 
-    private E2EFixture(TempDataRoot root, IReadOnlyDictionary<string, ProcessId> processes, IHost host)
+    private E2EFixture(
+        TempDataRoot root,
+        IReadOnlyDictionary<string, ProcessId> processes,
+        IHost host,
+        string pipeName,
+        FakeCallerResolver callers)
     {
         _root = root;
         _processes = processes;
         _host = host;
+        PipeName = pipeName;
+        Callers = callers;
     }
 
     public string DataRoot => _root.Path;
 
-    /// <summary>Seeds a new data root, starts the host on it and waits until startup reconciliation has finished.</summary>
-    public static async Task<E2EFixture> StartAsync(CancellationToken ct)
+    /// <summary>The unique pipe the host listens on.</summary>
+    public string PipeName { get; }
+
+    /// <summary>The scripted caller resolver the host's pipe server uses: the operator unless <c>Next</c> says otherwise.</summary>
+    public FakeCallerResolver Callers { get; }
+
+    /// <summary>
+    /// Seeds a new data root and starts the host on it, with <see cref="FakeCallerResolver"/> as the pipe's caller
+    /// resolver. <paramref name="configure"/> runs last, so it may replace anything. Unless
+    /// <paramref name="waitForReconcile"/> is false, it waits until startup reconciliation has finished.
+    /// </summary>
+    public static async Task<E2EFixture> StartAsync(
+        CancellationToken ct,
+        Action<HostApplicationBuilder>? configure = null,
+        bool waitForReconcile = true)
     {
         var root = new TempDataRoot();
         IHost? host = null;
         try
         {
             IReadOnlyDictionary<string, ProcessId> processes = await SeedAsync(root.Path, ct);
-            host = ServiceHostFactory.CreateBuilder(root.Path, []).Build();
+            HostApplicationBuilder builder = ServiceHostFactory.CreateBuilder(root.Path, []);
+            string pipeName = builder.Configuration[IpcOptions.PipeNameKey]
+                ?? throw new InvalidOperationException("The test host has no pipe name.");
+            var callers = new FakeCallerResolver();
+            builder.Services.Replace(ServiceDescriptor.Singleton<ICallerResolver>(callers));
+            configure?.Invoke(builder);
+            host = builder.Build();
             using (var startTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
             {
                 // Bounded on its own: the token cancels a start that honours it, the wait caps one that does not.
@@ -71,8 +101,12 @@ internal sealed class E2EFixture : IAsyncDisposable
                 await host.StartAsync(startTimeout.Token).WaitAsync(StartWait, ct);
             }
 
-            await host.Services.GetRequiredService<SchedulerLoop>().Reconciled.WaitAsync(ReconcileWait, ct);
-            return new E2EFixture(root, processes, host);
+            if (waitForReconcile)
+            {
+                await host.Services.GetRequiredService<SchedulerLoop>().Reconciled.WaitAsync(ReconcileWait, ct);
+            }
+
+            return new E2EFixture(root, processes, host, pipeName, callers);
         }
         catch
         {
@@ -168,6 +202,25 @@ internal sealed class E2EFixture : IAsyncDisposable
         }
     }
 
+    /// <summary>Connects a client to the host's pipe; the fixture disposes it. The server is not verified against the SCM.</summary>
+    public async Task<GapActivatorClient> ConnectAsync(TimeSpan timeout, CancellationToken ct)
+    {
+        GapActivatorClient client = await GapActivatorClient.ConnectAsync(
+            new GapActivatorClientOptions
+            {
+                PipeName = PipeName,
+                ConnectTimeout = timeout,
+                ServiceName = "GapActivator.Tests.NotInstalled",
+            },
+            ct);
+        lock (_clients)
+        {
+            _clients.Add(client);
+        }
+
+        return client;
+    }
+
     public ProcessId ProcessId(string name) => _processes[name];
 
     public Task<RunRow> WaitForRunAsync(string processName, Func<RunRow, bool> predicate, TimeSpan timeout, CancellationToken ct) =>
@@ -207,6 +260,18 @@ internal sealed class E2EFixture : IAsyncDisposable
     /// </summary>
     public async ValueTask DisposeAsync()
     {
+        GapActivatorClient[] clients;
+        lock (_clients)
+        {
+            clients = [.. _clients];
+            _clients.Clear();
+        }
+
+        foreach (GapActivatorClient client in clients)
+        {
+            await client.DisposeAsync();
+        }
+
         List<DiagnosticsProcess> children = _stopped ? [] : await OpenActiveChildrenAsync();
         List<int> leftovers;
         try
@@ -335,6 +400,14 @@ internal sealed class E2ESeeding : IAsyncDisposable
     public Task<TResult> Query<TQuery, TResult>(TQuery query, CancellationToken ct)
         where TQuery : IQuery<TResult> =>
         _services.GetRequiredService<IQueryDispatcher>().QueryAsync<TQuery, TResult>(query, Caller.System, ct);
+
+    /// <summary>The stored (protected) e-mail password: <c>Email.Password?.Ciphertext</c>, or null when none is set.</summary>
+    public async Task<string?> StoredEmailPasswordAsync(CancellationToken ct)
+    {
+        await using AsyncServiceScope scope = _services.CreateAsyncScope();
+        InstallationSettings settings = await scope.ServiceProvider.GetRequiredService<ISettingsRepository>().GetAsync(ct);
+        return settings.Email.Password?.Ciphertext;
+    }
 
     public Task<RunRow> WaitForRunAsync(ProcessId processId, Func<RunRow, bool> predicate, TimeSpan timeout, CancellationToken ct) =>
         E2EFixture.WaitForRunAsync(_services.GetRequiredService<IQueryDispatcher>(), processId, predicate, timeout, ct);

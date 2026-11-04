@@ -1,9 +1,11 @@
 using System.Diagnostics;
+using System.Security.Principal;
 using System.Text;
 using GapActivator.Application.Queries;
 using GapActivator.Domain.Processes;
 using GapActivator.Domain.Runs;
 using GapActivator.Infrastructure;
+using GapActivator.Ipc;
 using GapActivator.Service.Tests.Support;
 using GapActivator.Testing;
 using DiagnosticsProcess = System.Diagnostics.Process;
@@ -69,6 +71,68 @@ public sealed class ServiceExeSmokeTests
             logFiles.Any(File.Exists).ShouldBeTrue();
             string log = string.Concat(logFiles.Where(File.Exists).Select(ReadShared));
             log.ShouldContain("Application started");
+        }
+        finally
+        {
+            // Never throws, so a failure of the test above is never replaced by a cleanup failure.
+            cleanupFailure = await StopTreeAsync(exe);
+        }
+
+        cleanupFailure.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task ServiceExe_ConsoleMode_AnswersHelloWithTheRealCaller()
+    {
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        await using var root = new TempDataRoot();
+        await E2EFixture.SeedAsync(root.Path, ct);
+        File.Exists(ChildPaths.ServiceExe).ShouldBeTrue();
+        string pipeName = $"GapActivator.Tests.{Guid.NewGuid():N}";
+
+        var startInfo = new ProcessStartInfo(ChildPaths.ServiceExe)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        startInfo.ArgumentList.Add("--GapActivator:DataRoot=" + root.Path);
+        startInfo.ArgumentList.Add($"--GapActivator:Ipc:PipeName={pipeName}");
+        var console = new StringBuilder();
+
+        using DiagnosticsProcess exe = DiagnosticsProcess.Start(startInfo).ShouldNotBeNull();
+        string? cleanupFailure;
+        try
+        {
+            exe.OutputDataReceived += (_, e) => Append(console, e.Data);
+            exe.ErrorDataReceived += (_, e) => Append(console, e.Data);
+            exe.BeginOutputReadLine();
+            exe.BeginErrorReadLine();
+
+            GapActivatorClient client;
+            try
+            {
+                client = await GapActivatorClient.ConnectAsync(
+                    new GapActivatorClientOptions
+                    {
+                        PipeName = pipeName,
+                        ConnectTimeout = TimeSpan.FromSeconds(15),
+                        ServiceName = "GapActivator.Tests.NotInstalled",
+                    },
+                    ct);
+            }
+            catch (Exception e)
+            {
+                Assert.Fail($"The client could not connect ({e.GetType().Name}: {e.Message}). Console:\r\n{Read(console)}");
+                return;
+            }
+
+            await using (client)
+            {
+                client.Server.Caller.Name.ShouldBe(WindowsIdentity.GetCurrent().Name);
+                client.ServerVerified.ShouldBeFalse();
+            }
         }
         finally
         {
