@@ -10,6 +10,7 @@
     <PackageReference Include="MailKit" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.Logging.EventLog" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" />
   </ItemGroup>
