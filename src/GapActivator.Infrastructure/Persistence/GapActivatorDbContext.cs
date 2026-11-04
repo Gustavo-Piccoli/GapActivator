@@ -1,14 +1,17 @@
 using GapActivator.Application.Events;
 using GapActivator.Domain.Processes;
 using GapActivator.Domain.Runs;
+using GapActivator.Domain.Scheduling;
 using GapActivator.Domain.Settings;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace GapActivator.Infrastructure.Persistence;
 
 /// <summary>
 /// The SQLite model. Saving stamps the shadow columns: the upper-invariant name and executable keys of each added or
-/// modified process, and the next <c>Version</c> of each modified process, run or settings row.
+/// modified process, and the next <c>Version</c> of each modified process, run or settings row, and of each process
+/// whose schedules alone were added, changed or removed.
 /// </summary>
 public sealed class GapActivatorDbContext(DbContextOptions<GapActivatorDbContext> options) : DbContext(options)
 {
@@ -52,7 +55,18 @@ public sealed class GapActivatorDbContext(DbContextOptions<GapActivatorDbContext
     private void StampShadowProperties()
     {
         ChangeTracker.DetectChanges();
-        foreach (var entry in ChangeTracker.Entries())
+
+        // Materialized: bumping the version of an unchanged process moves its entry to Modified.
+        EntityEntry[] entries = [.. ChangeTracker.Entries()];
+        HashSet<ProcessId> scheduleChanged = [.. entries
+            .Where(e => e.Entity is Schedule && e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            .Select(e =>
+            {
+                var owner = e.Property(ProcessConfiguration.ProcessIdColumn);
+                return (ProcessId)(e.State == EntityState.Deleted ? owner.OriginalValue : owner.CurrentValue)!;
+            })];
+
+        foreach (var entry in entries)
         {
             if (entry.Entity is Process process && entry.State is EntityState.Added or EntityState.Modified)
             {
@@ -61,7 +75,12 @@ public sealed class GapActivatorDbContext(DbContextOptions<GapActivatorDbContext
                     process.Launch.Executable.Value.ToUpperInvariant();
             }
 
-            if (entry.State == EntityState.Modified && entry.Entity is Process or Run or InstallationSettings)
+            // A change to the schedules alone still bumps the owning process, so its token guards them (BI-042).
+            bool changed = entry.State == EntityState.Modified && entry.Entity is Process or Run or InstallationSettings;
+            bool schedulesChanged = entry.State == EntityState.Unchanged
+                && entry.Entity is Process owner
+                && scheduleChanged.Contains(owner.Id);
+            if (changed || schedulesChanged)
             {
                 var version = entry.Property(VersionProperty);
                 version.CurrentValue = (int)version.OriginalValue! + 1;
