@@ -108,6 +108,15 @@ internal static class RunTestHost
     public static int ErrorsLogged(this ApplicationTestHost host, string category) =>
         host.Log.Entries.Count(e => e.Level == LogLevel.Error && e.Category == category);
 
+    /// <summary>Completes once an Error was logged in the category. Yields instead of waiting in real time.</summary>
+    public static async Task ErrorLoggedAsync(this ApplicationTestHost host, string category)
+    {
+        while (host.ErrorsLogged(category) == 0)
+        {
+            await Task.Yield();
+        }
+    }
+
     public static bool LoggedAt(this ApplicationTestHost host, LogLevel level, string category) =>
         host.Log.Entries.Any(e => e.Level == level && e.Category == category);
 

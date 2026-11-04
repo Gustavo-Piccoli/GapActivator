@@ -423,11 +423,11 @@ Supervisor behaviour. Each tracked run has a background task:
 1. **Launch.** `LaunchAsync(request, launchCts.Token)`.
    - `LaunchFailedException` → send `RecordRunLaunchFailed`.
    - `OperationCanceledException` after `Stop` → send `RecordLaunchAborted`.
-2. **Launched.** Send `RecordRunLaunched`. If `Stop` was called meanwhile, `SignalCancel` at once (§8 "Cancel during Launching").
-3. **Time limit.** Wait for the time limit in chunks of at most 1 day with `Task.Delay(chunk, time, ct)`, then send `StopRun(TimeLimit)`.
+2. **Launched.** Send `RecordRunLaunched` alongside supervision, under the retry policy in step 5, so the time limit and the exit never wait on it. If `Stop` was called meanwhile, `SignalCancel` at once (§8 "Cancel during Launching"); when the record succeeds, its after-commit `Stop` re-delivers a stop committed meanwhile.
+3. **Time limit.** Fix the deadline once, right after the launch returns. Wait for it in chunks of at most 1 day with `Task.Delay(chunk, time, ct)`, then send `StopRun(TimeLimit)` alongside the stop in step 4, under the retry policy in step 5.
 4. **Stop.** `SignalCancel`, wait for the grace period, and if the process has not exited, call `KillTreeAsync` and mark it killed.
 5. **Exit.** On `Exited`, send `RecordRunExited(code, killed)`, after a still-unrecorded launch and time-limit stop. If a record command throws, retry 3 times, 1 s apart, log one Error, then keep retrying with a backoff doubling from 2 s up to 60 s until it succeeds or the supervisor's lifetime ends (Review Focus 2). `CommandRejectedException` and `DomainException` are logged at Error and not retried. `RecordRunLaunched` and `StopRun(TimeLimit)` retry alongside supervision, so neither holds up the time limit or the exit.
-6. **End.** Remove the entry, complete `WaitForEndAsync`, and if `StartAfterEnd` was set, send `StartPendingRun`.
+6. **End.** Remove the entry, complete `WaitForEndAsync`, and if `StartAfterEnd` was set, send `StartPendingRun`. A restart is a momentary intent, so `StartPendingRun` has a bounded policy, not the one in step 5: retry 3 times, 1 s apart, then log Error and drop the restart, because the stop already happened and the operator can ask again.
 
 `Start` for a process that already has an entry is ignored and logged. This is the in-memory half of BI-041.
 
@@ -450,7 +450,7 @@ Handler rules:
   - `Stop_AfterOsProcessCreatedButBeforeRecorded_SignalsImmediately`
   - `StopRun_AfterRunCompleted_IsNoOp` (Review Focus 1)
   - `RecordRunExited_CommitFailsOnce_RetriedAndRecorded`
-  - `RecordRunExited_CommitAlwaysFails_LoggedAndEntryRemoved` (Review Focus 2)
+  - `RecordRunExited_CommitKeepsFailing_LogsErrorOnceKeepsTrackingThenRecordsWhenItRecovers` (Review Focus 2)
   - `Start_SecondTicketSameProcess_Ignored` (BI-041)
   - `RunStarter_SecretVariable_IsUnprotectedInRequest`
   - `RunStarter_NoWorkingDirectory_UsesExecutableFolder`

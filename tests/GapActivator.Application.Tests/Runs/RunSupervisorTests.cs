@@ -1,10 +1,12 @@
 using GapActivator.Application.Messaging;
+using GapActivator.Application.Ports;
 using GapActivator.Application.Runs;
 using GapActivator.Application.Tests.Messaging;
 using GapActivator.Domain.Common;
 using GapActivator.Domain.Processes;
 using GapActivator.Domain.Runs;
 using GapActivator.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace GapActivator.Application.Tests.Runs;
@@ -464,6 +466,8 @@ public class RunSupervisorTests
 
         child.KillAttempts.ShouldBe(2);
         host.Time.TimerDelays.ShouldBe([Grace, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30)]);
+        host.ErrorsLogged(nameof(RunSupervisor)).ShouldBe(1);
+        host.Log.Entries.Count(e => e.Level == LogLevel.Debug && e.Category == nameof(RunSupervisor)).ShouldBe(1);
 
         child.KillFailure = null;
         host.Time.Advance(TimeSpan.FromSeconds(30));
@@ -671,6 +675,103 @@ public class RunSupervisorTests
         host.DisposeSupervisor();
 
         host.Supervisor().TrackedRuns.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Dispose_CancellationCallback_RunsAwayFromTheCaller()
+    {
+        using var release = new ManualResetEventSlim();
+        bool released = false;
+        var launcher = new CallbackLauncher(() => released = release.Wait(TimeSpan.FromSeconds(30)));
+        await using ApplicationTestHost host = RunTestHost.Create(services => services.AddSingleton<IProcessLauncher>(launcher));
+        Process process = host.AddProcess();
+
+        Run run = await host.StartRunAsync(process);
+        await launcher.Reached.Within();
+        Task end = host.Supervisor().WaitForEndAsync(run.Id, TestContext.Current.CancellationToken);
+
+        host.DisposeSupervisor();
+        release.Set();
+        await end.Within();
+
+        released.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Dispose_CancellationCallbackThrows_DoesNotThrowLogsErrorAndEndsTheWorker()
+    {
+        var launcher = new CallbackLauncher(() => throw new InvalidOperationException("Simulated callback failure."));
+        await using ApplicationTestHost host = RunTestHost.Create(services => services.AddSingleton<IProcessLauncher>(launcher));
+        Process process = host.AddProcess();
+
+        Run run = await host.StartRunAsync(process);
+        await launcher.Reached.Within();
+        Task end = host.Supervisor().WaitForEndAsync(run.Id, TestContext.Current.CancellationToken);
+
+        host.DisposeSupervisor();
+        await end.Within();
+        await host.ErrorLoggedAsync(nameof(RunSupervisor)).Within();
+
+        run.State.ShouldBe(RunState.Launching);
+        host.Supervisor().TrackedRuns.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task StartPendingRun_FailsWithinTheRetries_StillStartsTheRun()
+    {
+        await using ApplicationTestHost host = RunTestHost.Create();
+        Process process = host.AddProcess();
+        FakeRunningProcess oldChild = host.Launcher.QueueSucceed(Exe);
+        FakeRunningProcess newChild = host.Launcher.QueueSucceed(Exe);
+
+        Run oldRun = await host.StartRunAsync(process);
+        host.Dispatcher().FailNext<StartPendingRun>(3);
+        host.Supervisor().StartAfterEnd(oldRun.Id, process.Id);
+        oldChild.Exit(0);
+        await host.EndOf(oldRun.Id);
+        await host.PumpClockUntilAsync(host.Dispatcher().WaitForHandledAsync<StartPendingRun>(2), RetryDelay);
+        Run newRun = host.ActiveRun(process);
+
+        newRun.Trigger.ShouldBe(RunTrigger.Restart);
+        host.Dispatcher().Attempts<StartPendingRun>().ShouldBe(5);
+        host.ErrorsLogged(nameof(RunSupervisor)).ShouldBe(0);
+
+        newChild.Exit(0);
+        await host.EndOf(newRun.Id);
+    }
+
+    [Fact]
+    public async Task StartPendingRun_FailsPastTheRetries_LogsErrorStartsNothingAndLeavesTheSupervisorIdle()
+    {
+        await using ApplicationTestHost host = RunTestHost.Create();
+        Process process = host.AddProcess();
+        FakeRunningProcess child = host.Launcher.QueueSucceed(Exe);
+
+        Run run = await host.StartRunAsync(process);
+        host.Dispatcher().FailNext<StartPendingRun>(1000);
+        host.Supervisor().StartAfterEnd(run.Id, process.Id);
+        child.Exit(0);
+        await host.EndOf(run.Id);
+        await host.PumpClockUntilAsync(host.ErrorLoggedAsync(nameof(RunSupervisor)), RetryDelay);
+
+        AssertRestartDropped(host, process);
+    }
+
+    [Fact]
+    public async Task StartPendingRun_RunAlreadyGoneAndFailsPastTheRetries_LogsErrorAndStartsNothing()
+    {
+        await using ApplicationTestHost host = RunTestHost.Create();
+        Process process = host.AddProcess();
+        FakeRunningProcess child = host.Launcher.QueueSucceed(Exe);
+
+        Run run = await host.StartRunAsync(process);
+        child.Exit(0);
+        await host.EndOf(run.Id);
+        host.Dispatcher().FailNext<StartPendingRun>(1000);
+        host.Supervisor().StartAfterEnd(run.Id, process.Id);
+        await host.PumpClockUntilAsync(host.ErrorLoggedAsync(nameof(RunSupervisor)), RetryDelay);
+
+        AssertRestartDropped(host, process);
     }
 
     public static TheoryData<Exception> RuleViolations() =>
@@ -1317,6 +1418,46 @@ public class RunSupervisorTests
         await host.EndOf(run.Id);
     }
 
+    /// <summary>One send that began the run, then the first try and 3 retries of the restart, and no timer after them.</summary>
+    private static void AssertRestartDropped(ApplicationTestHost host, Process process)
+    {
+        host.Dispatcher().Attempts<StartPendingRun>().ShouldBe(5);
+        host.Time.TimerDelays.ShouldBe([RetryDelay, RetryDelay, RetryDelay]);
+        host.ErrorsLogged(nameof(RunSupervisor)).ShouldBe(1);
+        host.Log.Entries.ShouldContain(e => e.Level == LogLevel.Error && e.Message.Contains("dropped", StringComparison.Ordinal));
+        host.Launcher.LaunchRequests.Count.ShouldBe(1);
+        host.Supervisor().TrackedRuns.ShouldBeEmpty();
+        host.Supervisor().IsTracking(process.Id).ShouldBeFalse();
+    }
+
     private static RunStartTicket TicketFor(RunId runId, ProcessId processId) =>
         new(runId, processId, Exe, string.Empty, @"C:\Tools", EnvironmentVariables.Empty, null, Grace);
+
+    /// <summary>A launch that never returns by itself and runs a callback when its token fires.</summary>
+    private sealed class CallbackLauncher(Action onCancelled) : IProcessLauncher
+    {
+        private readonly TaskCompletionSource _reached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Reached => _reached.Task;
+
+        public Task<IRunningProcess> LaunchAsync(LaunchRequest request, CancellationToken ct)
+        {
+            var launch = new TaskCompletionSource<IRunningProcess>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _ = ct.Register(() =>
+            {
+                try
+                {
+                    onCancelled();
+                }
+                finally
+                {
+                    launch.TrySetCanceled(ct);
+                }
+            });
+            _reached.TrySetResult();
+            return launch.Task;
+        }
+
+        public IRunningProcess? TryAttach(RunId runId, int pid, DateTimeOffset processStartTime) => null;
+    }
 }
