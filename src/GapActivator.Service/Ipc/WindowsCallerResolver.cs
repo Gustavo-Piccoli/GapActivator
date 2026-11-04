@@ -9,7 +9,8 @@ namespace GapActivator.Service.Ipc;
 
 internal sealed class WindowsCallerResolver(AuthorizationOptions options) : ICallerResolver
 {
-    // Built here, not under impersonation: the first use of the type then loads nothing while the thread wears the client token.
+    // beforefieldinit: this runs at the first read of the field, not at the first use of the type. ReadClient therefore reads
+    // it into a local on the calling thread, before the impersonating thread starts.
     private static readonly SecurityIdentifier Administrators = new(WellKnownSidType.BuiltinAdministratorsSid, null);
 
     // Not lazy on purpose: this also preloads the assemblies that cannot be loaded later,
@@ -57,6 +58,7 @@ internal sealed class WindowsCallerResolver(AuthorizationOptions options) : ICal
     {
         (SecurityIdentifier, bool, bool) result = default;
         Exception? failure = null;
+        SecurityIdentifier administrators = Administrators;
 
         var thread = new Thread(() =>
         {
@@ -72,7 +74,7 @@ internal sealed class WindowsCallerResolver(AuthorizationOptions options) : ICal
                     var principal = new WindowsPrincipal(id);
                     result = (
                         id.User ?? throw new UnauthorizedAccessException("The client has no user SID."),
-                        principal.IsInRole(Administrators),
+                        principal.IsInRole(administrators),
                         group is not null && principal.IsInRole(group));
                 });
             }
