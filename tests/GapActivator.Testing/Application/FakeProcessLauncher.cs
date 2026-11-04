@@ -28,6 +28,9 @@ public sealed class FakeProcessLauncher(TimeProvider time) : IProcessLauncher
     /// <summary>What <see cref="TryAttach"/> returns; null means no matching live process.</summary>
     public IRunningProcess? AttachResult { get; set; }
 
+    /// <summary>When set, <see cref="TryAttach"/> returns what this returns, or throws what it throws, instead of <see cref="AttachResult"/>.</summary>
+    public Func<RunId, int, DateTimeOffset, IRunningProcess?>? AttachHandler { get; set; }
+
     /// <summary>Queues a successful launch and returns the process it will hand out.</summary>
     public FakeRunningProcess QueueSucceed(string executable, int? pid = null, DateTimeOffset? startTime = null)
     {
@@ -91,7 +94,7 @@ public sealed class FakeProcessLauncher(TimeProvider time) : IProcessLauncher
             AttachCalls.Add((runId, pid, processStartTime));
         }
 
-        return AttachResult;
+        return AttachHandler is { } handler ? handler(runId, pid, processStartTime) : AttachResult;
     }
 
     private int NextPid()

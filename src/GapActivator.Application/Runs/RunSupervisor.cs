@@ -41,6 +41,9 @@ public sealed partial class RunSupervisor(
     /// <summary>The newest run of each process. At most one run of a process can have a live child: see <see cref="Start"/>.</summary>
     private readonly Dictionary<ProcessId, TrackedRun> _byProcess = [];
 
+    /// <summary>Set under <see cref="_sync"/> when <see cref="StopAllAsync"/> begins: nothing is launched or restarted after it.</summary>
+    private bool _stoppingAll;
+
     public IReadOnlyCollection<RunId> TrackedRuns
     {
         get
@@ -48,6 +51,18 @@ public sealed partial class RunSupervisor(
             lock (_sync)
             {
                 return [.. _byRun.Keys];
+            }
+        }
+    }
+
+    /// <summary>The largest grace period of the tracked runs; zero when nothing is tracked.</summary>
+    public TimeSpan LargestGracePeriod
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _byRun.Values.Select(run => run.GracePeriod).DefaultIfEmpty(TimeSpan.Zero).Max();
             }
         }
     }
@@ -72,12 +87,14 @@ public sealed partial class RunSupervisor(
 
         TrackedRun? run = null;
         TrackedRun? previous = null;
+        bool shuttingDown = false;
         lock (_sync)
         {
             _byProcess.TryGetValue(ticket.ProcessId, out TrackedRun? current);
             if ((current is null || current.IsEnding) && !_byRun.ContainsKey(ticket.RunId))
             {
                 previous = current;
+                shuttingDown = _stoppingAll;
                 run = Track(ticket.RunId, ticket.ProcessId, ticket.GracePeriod);
             }
         }
@@ -88,7 +105,7 @@ public sealed partial class RunSupervisor(
             return;
         }
 
-        _ = Task.Run(() => LaunchAndSuperviseAsync(run, ticket, previous));
+        _ = Task.Run(() => LaunchAndSuperviseAsync(run, ticket, previous, shuttingDown));
     }
 
     /// <summary>
@@ -151,10 +168,12 @@ public sealed partial class RunSupervisor(
     /// <summary>
     /// Sends <see cref="StartPendingRun"/> once the end of the run was recorded, or at once when the run is no longer
     /// tracked, because the exit can win the race. The entry's removal and this check share the lock, so exactly one of
-    /// the two paths sends it.
+    /// the two paths sends it. Once <see cref="StopAllAsync"/> has begun the restart is dropped and logged: it is not
+    /// persisted, so the next start does not run it either.
     /// </summary>
     public void StartAfterEnd(RunId runId, ProcessId processId)
     {
+        bool dropped;
         lock (_sync)
         {
             if (_byRun.TryGetValue(runId, out TrackedRun? run))
@@ -162,6 +181,14 @@ public sealed partial class RunSupervisor(
                 run.RestartAfterEnd = true;
                 return;
             }
+
+            dropped = _stoppingAll;
+        }
+
+        if (dropped)
+        {
+            LogRestartDroppedForShutdown(processId);
+            return;
         }
 
         _ = Task.Run(() => SendRestartAsync(processId));
@@ -183,10 +210,74 @@ public sealed partial class RunSupervisor(
     }
 
     /// <summary>
+    /// Stops every tracked run for a shutdown and waits for their ends, bounded by <paramref name="ct"/>. Each stop goes
+    /// through <see cref="StopRun"/> so the reason is recorded and the run ends Interrupted; a send that fails is logged
+    /// and its run left alone. From here on nothing is launched or restarted: a run tracked later is stopped without
+    /// launching and is waited for too. When <paramref name="ct"/> fires this returns normally, and the runs still
+    /// tracked stay active for startup reconciliation. Never throws.
+    /// </summary>
+    public async Task StopAllAsync(CancellationToken ct)
+    {
+        RunId[] tracked;
+        lock (_sync)
+        {
+            _stoppingAll = true;
+            tracked = [.. _byRun.Keys];
+        }
+
+        await Task.WhenAll(tracked.Select(runId => SendShutdownStopAsync(runId, ct)));
+
+        try
+        {
+            // Runs tracked after this began are not launched, but they are waited for as well.
+            while (true)
+            {
+                Task[] ends;
+                lock (_sync)
+                {
+                    ends = [.. _byRun.Values.Select(run => run.Ended)];
+                }
+
+                if (ends.Length == 0)
+                {
+                    break;
+                }
+
+                await Task.WhenAll(ends).WaitAsync(ct);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            LogShutdownDeadline(TrackedRuns.Count);
+        }
+    }
+
+    /// <summary>
     /// Ends the supervisor's lifetime: every background task finishes and no child is touched. The lifetime has ended when
     /// this returns; the cancellation callbacks run away from the caller.
     /// </summary>
     public void Dispose() => _ = EndLifetimeAsync();
+
+    /// <summary>The same as <see cref="Dispose"/>, for the shutdown; either may be called first, and more than once.</summary>
+    public void EndLifetime() => _ = EndLifetimeAsync();
+
+    private async Task SendShutdownStopAsync(RunId runId, CancellationToken ct)
+    {
+        try
+        {
+            await dispatcher.SendAsync<StopRun, Unit>(new StopRun(runId, StopReason.Shutdown), Caller.System, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            LogShutdownStopCancelled(runId);
+        }
+        catch (Exception ex)
+        {
+            // Stop is not called directly: a child signalled with no recorded reason would end as a failure. The run
+            // stays active for startup reconciliation, like one still active at the deadline.
+            LogShutdownStopFailed(ex, runId);
+        }
+    }
 
     /// <summary>Must be called holding <see cref="_sync"/>.</summary>
     private TrackedRun Track(RunId runId, ProcessId processId, TimeSpan gracePeriod)
@@ -197,11 +288,12 @@ public sealed partial class RunSupervisor(
         return run;
     }
 
-    private async Task LaunchAndSuperviseAsync(TrackedRun run, RunStartTicket ticket, TrackedRun? previous)
+    private async Task LaunchAndSuperviseAsync(
+        TrackedRun run, RunStartTicket ticket, TrackedRun? previous, bool shuttingDown)
     {
         try
         {
-            IRunningProcess? process = await LaunchAsync(run, ticket, previous);
+            IRunningProcess? process = await LaunchAsync(run, ticket, previous, shuttingDown);
             if (process is not null)
             {
                 await using (process)
@@ -242,10 +334,18 @@ public sealed partial class RunSupervisor(
 
     /// <summary>
     /// Returns the process, or null after recording why there is none. The plaintext request exists only inside this
-    /// method, so it does not stay alive for the child's life.
+    /// method, so it does not stay alive for the child's life. A run tracked after <see cref="StopAllAsync"/> began is
+    /// never launched: it is stopped for the shutdown, so it ends Interrupted through the abort below.
     /// </summary>
-    private async Task<IRunningProcess?> LaunchAsync(TrackedRun run, RunStartTicket ticket, TrackedRun? previous)
+    private async Task<IRunningProcess?> LaunchAsync(
+        TrackedRun run, RunStartTicket ticket, TrackedRun? previous, bool shuttingDown)
     {
+        if (shuttingDown)
+        {
+            // The stop's after-commit action requests the stop before this returns, unless the run is no longer active.
+            await SendAsync(new StopRun(run.RunId, StopReason.Shutdown), run.RunId.ToString());
+        }
+
         if (previous is not null)
         {
             await Task.WhenAny(previous.Ended, run.StopRequested, _lifetime.Ended);
@@ -261,6 +361,12 @@ public sealed partial class RunSupervisor(
         {
             MarkEnding(run);
             await SendAsync(new RecordLaunchAborted(run.RunId), run.RunId.ToString());
+            return null;
+        }
+
+        if (shuttingDown)
+        {
+            LogNotLaunchedForShutdown(run.RunId);
             return null;
         }
 
@@ -466,6 +572,7 @@ public sealed partial class RunSupervisor(
     private async Task FinishAsync(TrackedRun run)
     {
         bool restart;
+        bool dropped;
         lock (_sync)
         {
             _byRun.Remove(run.RunId);
@@ -476,7 +583,14 @@ public sealed partial class RunSupervisor(
                 _byProcess.Remove(run.ProcessId);
             }
 
-            restart = run.RestartAfterEnd;
+            restart = run.RestartAfterEnd && !_stoppingAll;
+            dropped = run.RestartAfterEnd && _stoppingAll;
+        }
+
+        // Logged before the end is signalled, so whoever awaits the end sees the decision.
+        if (dropped)
+        {
+            LogRestartDroppedForShutdown(run.ProcessId);
         }
 
         run.Dispose();
@@ -642,6 +756,21 @@ public sealed partial class RunSupervisor(
             }
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The shutdown deadline passed with {Count} run(s) still tracked; they stay active for startup reconciliation.")]
+    private partial void LogShutdownDeadline(int count);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "GapActivator is stopping; run {RunId} was not launched and stays active for startup reconciliation.")]
+    private partial void LogNotLaunchedForShutdown(RunId runId);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "GapActivator is stopping; the pending restart of process {ProcessId} was dropped.")]
+    private partial void LogRestartDroppedForShutdown(ProcessId processId);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "Stopping run {RunId} for the shutdown failed; it stays active for startup reconciliation.")]
+    private partial void LogShutdownStopFailed(Exception exception, RunId runId);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The shutdown deadline passed before run {RunId} could be stopped; it stays active for startup reconciliation.")]
+    private partial void LogShutdownStopCancelled(RunId runId);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Process {ProcessId} is already tracked; run {RunId} was ignored.")]
     private partial void LogAlreadyTracked(ProcessId processId, RunId runId);
