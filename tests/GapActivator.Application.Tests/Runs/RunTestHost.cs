@@ -50,11 +50,23 @@ internal static class RunTestHost
         return process;
     }
 
-    /// <summary>Begins a run through the real pipeline; it is tracked by the supervisor when this returns.</summary>
+    /// <summary>
+    /// Begins a run through the real pipeline and returns the run it created, whatever its state: the supervisor works in
+    /// the background, so a launch that fails at once can already have ended the run when this reads the store.
+    /// </summary>
     public static async Task<Run> StartRunAsync(this ApplicationTestHost host, Process process)
     {
+        HashSet<RunId> existing;
+        lock (host.Store.Sync)
+        {
+            existing = [.. host.Store.Runs.Values.Where(r => r.ProcessId == process.Id).Select(r => r.Id)];
+        }
+
         await host.Run<StartPendingRun, Unit>(new StartPendingRun(process.Id));
-        return host.ActiveRun(process);
+        lock (host.Store.Sync)
+        {
+            return host.Store.Runs.Values.Single(r => r.ProcessId == process.Id && !existing.Contains(r.Id));
+        }
     }
 
     public static Run ActiveRun(this ApplicationTestHost host, Process process)
