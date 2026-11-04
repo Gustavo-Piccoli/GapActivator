@@ -58,7 +58,11 @@ internal sealed partial class WindowsProcessLauncher(InfrastructureOptions optio
         try
         {
             pipe = new NamedPipeServerStream(
-                pipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                pipeName,
+                PipeDirection.In,
+                1,
+                PipeTransmissionMode.Byte,
+                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             created = Create(request, application, commandLine, environment, pipeName);
         }
         catch
@@ -113,8 +117,32 @@ internal sealed partial class WindowsProcessLauncher(InfrastructureOptions optio
         }
 
         NativeMethods.CloseHandle(created.hThread);
-        var pump = new RunOutputPump(pipe, output, options.RunOutputMaxBytes, request.RunId, logger);
-        return new WindowsRunningProcess(pid, startTime, process, job, cancelEvent, pump, options.KillWaitTimeout, logger);
+        RunOutputPump? pump = null;
+        try
+        {
+            pump = new RunOutputPump(pipe, output, options.RunOutputMaxBytes, request.RunId, logger);
+            return new WindowsRunningProcess(pid, startTime, process, job, cancelEvent, pump, options.KillWaitTimeout, logger);
+        }
+        catch (Exception ex)
+        {
+            // The child is already running: never leave it untracked.
+            NativeMethods.TerminateProcess(process, 1);
+            if (pump is not null)
+            {
+                await pump.DisposeAsync().ConfigureAwait(false);
+            }
+
+            cancelEvent.Dispose();
+            job.Dispose();
+            process.Dispose();
+            await pipe.DisposeAsync().ConfigureAwait(false);
+            if (output is not null)
+            {
+                await output.DisposeAsync().ConfigureAwait(false);
+            }
+
+            throw new LaunchFailedException($"The process could not be tracked: {ex.Message}", ex);
+        }
     }
 
     /// <summary>
