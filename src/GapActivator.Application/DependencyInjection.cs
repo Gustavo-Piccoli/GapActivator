@@ -66,6 +66,13 @@ public static class DependencyInjection
         services.AddScoped<ICommandHandler<RecordCycleFailure, Unit>, RecordCycleFailureHandler>();
         services.AddScoped<IQueryHandler<GetCycleSettings, CycleSettings>, GetCycleSettingsHandler>();
         services.AddScoped<IQueryHandler<ListProcessIds, IReadOnlyList<ProcessId>>, ListProcessIdsHandler>();
+        services.AddScoped<IQueryHandler<ListProcesses, IReadOnlyList<ProcessSummary>>, ListProcessesHandler>();
+        services.AddScoped<IQueryHandler<GetProcess, ProcessDetails>, GetProcessHandler>();
+        services.AddScoped<IQueryHandler<GetDashboard, Dashboard>, GetDashboardHandler>();
+        services.AddScoped<IQueryHandler<ListRuns, RunRowPage>, ListRunsHandler>();
+        services.AddScoped<IQueryHandler<GetRun, RunDetails>, GetRunHandler>();
+        services.AddScoped<IQueryHandler<GetSettings, SettingsView>, GetSettingsHandler>();
+        services.AddScoped<IQueryHandler<PreviewSchedule, IReadOnlyList<DateTimeOffset>>, PreviewScheduleHandler>();
         services.AddScoped<INotificationHandler, EmailAlertHandler>();
         services.AddScoped<INotificationHandler, AppNotificationHandler>();
         return services;
