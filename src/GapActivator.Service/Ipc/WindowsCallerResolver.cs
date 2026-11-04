@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.IO.Pipes;
+using System.Runtime.ExceptionServices;
 using System.Security;
 using System.Security.Principal;
 using GapActivator.Application.Messaging;
@@ -8,6 +9,9 @@ namespace GapActivator.Service.Ipc;
 
 internal sealed class WindowsCallerResolver(AuthorizationOptions options) : ICallerResolver
 {
+    // Built here, not under impersonation: the first use of the type then loads nothing while the thread wears the client token.
+    private static readonly SecurityIdentifier Administrators = new(WellKnownSidType.BuiltinAdministratorsSid, null);
+
     // Not lazy on purpose: this also preloads the assemblies that cannot be loaded later,
     // while a thread impersonates an Identification-level client token.
     public bool OperatorsGroupEnabled { get; } = ComputeEnabled(options);
@@ -21,8 +25,10 @@ internal sealed class WindowsCallerResolver(AuthorizationOptions options) : ICal
             group = (SecurityIdentifier)new NTAccount($"{Environment.MachineName}\\{AuthorizationOptions.OperatorsGroupName}")
                 .Translate(typeof(SecurityIdentifier));
         }
-        catch (IdentityNotMappedException)
+        catch (SystemException)
         {
+            // IdentityNotMappedException, Win32Exception, UnauthorizedAccessException: without the group, nobody qualifies
+            // through it, and the administrators still do.
         }
 
         (SecurityIdentifier user, bool isAdmin, bool isOperator) = ReadClient(pipe, group);
@@ -32,7 +38,7 @@ internal sealed class WindowsCallerResolver(AuthorizationOptions options) : ICal
         {
             name = user.Translate(typeof(NTAccount)).Value;
         }
-        catch (IdentityNotMappedException)
+        catch (SystemException)
         {
             name = user.Value;
         }
@@ -66,7 +72,7 @@ internal sealed class WindowsCallerResolver(AuthorizationOptions options) : ICal
                     var principal = new WindowsPrincipal(id);
                     result = (
                         id.User ?? throw new UnauthorizedAccessException("The client has no user SID."),
-                        principal.IsInRole(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null)),
+                        principal.IsInRole(Administrators),
                         group is not null && principal.IsInRole(group));
                 });
             }
@@ -81,10 +87,14 @@ internal sealed class WindowsCallerResolver(AuthorizationOptions options) : ICal
         thread.UnsafeStart();
         thread.Join();
 
+        if (failure is UnauthorizedAccessException)
+        {
+            ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+
         return failure switch
         {
             null => result,
-            UnauthorizedAccessException => throw failure,
             IOException or SecurityException or Win32Exception =>
                 throw new UnauthorizedAccessException("The client could not be identified.", failure),
             _ => throw new InvalidOperationException("Resolving the pipe client failed.", failure),
