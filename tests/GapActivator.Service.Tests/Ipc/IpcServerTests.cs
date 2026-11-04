@@ -404,6 +404,24 @@ public sealed class IpcServerTests
         }
     }
 
+    // Final review I-4. The accept-time IOException cannot be forced deterministically (it depends on when the OS notices
+    // the client is gone), so this only hammers the path: the server must keep serving after clients that vanish at once.
+    [Fact]
+    public async Task ClientsThatConnectAndLeaveAtOnce_DoNotStopTheServer()
+    {
+        await using IpcTestServer server = await IpcTestServer.StartAsync();
+
+        for (int i = 0; i < 100; i++)
+        {
+            RawPipeClient raw = await server.ConnectRawAsync();
+            await raw.DisposeAsync();
+        }
+
+        await using GapActivatorClient client = await server.ConnectAsync();
+        (await client.GetDashboardAsync(TestContext.Current.CancellationToken)).ShouldNotBeNull();
+        server.Running.IsCompleted.ShouldBeFalse();
+    }
+
     [Fact]
     public async Task Rejection_MapsItsCodeNotRetryable()
     {

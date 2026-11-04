@@ -65,9 +65,11 @@ internal sealed partial class IpcServer(
                 }
                 catch (IOException)
                 {
-                    // The client left between connecting and being accepted.
-                    await listening.DisposeAsync().ConfigureAwait(false);
+                    // The client left between connecting and being accepted. The replacement exists before the failed
+                    // instance goes, so the name is never free for another process to take.
+                    NamedPipeServerStream failed = listening;
                     listening = CreateInstance(security, first: false);
+                    await failed.DisposeAsync().ConfigureAwait(false);
                     continue;
                 }
 
