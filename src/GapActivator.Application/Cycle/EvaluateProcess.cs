@@ -38,6 +38,18 @@ internal sealed partial class EvaluateProcessHandler(
 
         InstallationSettings current = await settings.GetAsync(ct);
 
+        // BI-064: an enabled Service-kind process found running resets its counter before the limit is enforced, so a
+        // lowered limit never blocks it while its child is alive.
+        Run? active = null;
+        if (process.Kind == ProcessKind.Service)
+        {
+            active = await runs.GetActiveForProcessAsync(process.Id, ct);
+            if (process.Lifecycle == ProcessLifecycle.Enabled && active?.State == RunState.Running)
+            {
+                process.MarkServiceFoundRunning(now);
+            }
+        }
+
         // BI-008: a Blocked process does nothing. BI-044, Q-3: a lowered limit blocks it here, before anything else.
         process.EnforceFailureLimit(current.FailureLimit, now);
         if (process.Lifecycle != ProcessLifecycle.Enabled)
@@ -47,7 +59,7 @@ internal sealed partial class EvaluateProcessHandler(
 
         if (process.Kind == ProcessKind.Service)
         {
-            await EvaluateServiceAsync(process, current, now, ct);
+            EvaluateService(process, active, current, now);
         }
         else
         {
@@ -77,13 +89,12 @@ internal sealed partial class EvaluateProcessHandler(
         }
     }
 
-    private async Task EvaluateServiceAsync(Process process, InstallationSettings current, DateTimeOffset now, CancellationToken ct)
+    private void EvaluateService(Process process, Run? active, InstallationSettings current, DateTimeOffset now)
     {
-        Run? active = await runs.GetActiveForProcessAsync(process.Id, ct);
         switch (active?.State)
         {
             case RunState.Running:
-                process.MarkServiceFoundRunning(now);
+                // BI-064: the counter was already reset before the limit was enforced.
                 break;
             case RunState.Launching or RunState.Stopping:
                 // BI-070: the run is changing state; leave it alone.
