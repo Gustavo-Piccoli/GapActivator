@@ -7,13 +7,20 @@
 
   <ItemGroup>
     <PackageReference Include="Ical.Net" />
+    <PackageReference Include="MailKit" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\GapActivator.Domain\GapActivator.Domain.csproj" />
     <ProjectReference Include="..\GapActivator.Application\GapActivator.Application.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="GapActivator.Infrastructure.Tests" />
   </ItemGroup>
 
 </Project>
