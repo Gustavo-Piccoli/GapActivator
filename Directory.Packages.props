@@ -26,5 +26,7 @@
     <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
     <!-- SMTP with TLS and authentication (spec section 3). -->
     <PackageVersion Include="MailKit" Version="4.18.1" />
+    <!-- Exact pin of a transitive dependency of MailKit 4.18.1: its default 10.0.0 is flagged by NuGet audit. -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
   </ItemGroup>
 </Project>
