@@ -23,11 +23,12 @@ public sealed class ApplicationTestHost : IAsyncDisposable
     /// <param name="configure">Applied after the defaults, so it can replace any registration.</param>
     public ApplicationTestHost(Action<IServiceCollection>? configure = null)
     {
-        var time = new FakeTimeProvider(StartTime);
+        var time = new TrackingTimeProvider(StartTime);
         time.SetLocalTimeZone(TimeZoneInfo.Utc);
 
         var services = new ServiceCollection();
         services.AddSingleton(time);
+        services.AddSingleton<FakeTimeProvider>(time);
         services.AddSingleton<TimeProvider>(time);
         services.AddApplication();
 
@@ -72,7 +73,7 @@ public sealed class ApplicationTestHost : IAsyncDisposable
 
     public FakeProcessLauncher Launcher => Services.GetRequiredService<FakeProcessLauncher>();
 
-    public FakeTimeProvider Time => Services.GetRequiredService<FakeTimeProvider>();
+    public TrackingTimeProvider Time => Services.GetRequiredService<TrackingTimeProvider>();
 
     public RecordingEmailSender Email => Services.GetRequiredService<RecordingEmailSender>();
 
