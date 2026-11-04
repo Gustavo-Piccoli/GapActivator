@@ -83,6 +83,47 @@ public class ReconcileOnStartupTests
         host.RunCompletedEntries(run.Id).ShouldBe(1);
     }
 
+    // BI-074
+    [Fact]
+    public async Task Reconcile_StoppingForShutdownAndGone_InterruptedNoFailure()
+    {
+        await using ApplicationTestHost host = CycleTestHost.Create();
+        Process process = host.AddProcess();
+        Run run = host.AddRunningRun(process);
+        run.RequestStop(StopReason.Shutdown, host.Time.GetUtcNow());
+        run.ClearDomainEvents();
+
+        await ReconcileAsync(host);
+
+        host.Launcher.AttachCalls.Count.ShouldBe(1);
+        run.Outcome.ShouldBe(RunOutcome.Interrupted);
+        run.Killed.ShouldBeFalse();
+        run.ExitCode.ShouldBeNull();
+        process.ConsecutiveFailures.ShouldBe(0);
+        process.RetryPending.ShouldBeFalse();
+        host.Supervisor().TrackedRuns.ShouldBeEmpty();
+        host.RunCompletedEntries(run.Id).ShouldBe(1);
+    }
+
+    // BI-074
+    [Fact]
+    public async Task Reconcile_LaunchingWithShutdownReason_Interrupted()
+    {
+        await using ApplicationTestHost host = CycleTestHost.Create();
+        Process process = host.AddProcess();
+        Run run = Run.Begin(process.Id, process.Name, process.Kind, RunTrigger.Manual, null, false, host.Time.GetUtcNow());
+        run.RequestStop(StopReason.Shutdown, host.Time.GetUtcNow());
+        run.ClearDomainEvents();
+        host.Store.Runs[run.Id] = run;
+
+        await ReconcileAsync(host);
+
+        host.Launcher.AttachCalls.ShouldBeEmpty();
+        run.Outcome.ShouldBe(RunOutcome.Interrupted);
+        process.ConsecutiveFailures.ShouldBe(0);
+        process.RetryPending.ShouldBeFalse();
+    }
+
     [Fact]
     public async Task Reconcile_StoppingAndAlive_SignalledAgainThenKilled()
     {
