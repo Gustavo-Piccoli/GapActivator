@@ -2,6 +2,7 @@ using GapActivator.Application.Events;
 using GapActivator.Application.Messaging;
 using GapActivator.Application.Processes;
 using GapActivator.Application.Runs;
+using GapActivator.Domain.Runs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -38,6 +39,12 @@ public static class DependencyInjection
         services.AddScoped<ICommandHandler<RecordRunExited, Unit>, RecordRunExitedHandler>();
         services.AddScoped<ICommandHandler<StopRun, Unit>, StopRunHandler>();
         services.AddScoped<ICommandHandler<StartPendingRun, Unit>, StartPendingRunHandler>();
+        services.AddScoped<ICommandHandler<RunNow, RunId>, RunNowHandler>();
+        services.AddScoped<ICommandHandler<RestartRun, Unit>, RestartRunHandler>();
+        services.AddScoped<ICommandHandler<CancelRun, Unit>, CancelRunHandler>();
+        services.AddScoped<ICommandHandler<EnableProcess, Unit>, EnableProcessHandler>();
+        services.AddScoped<ICommandHandler<DisableProcess, Unit>, DisableProcessHandler>();
+        services.AddScoped<ICommandHandler<UnblockProcess, Unit>, UnblockProcessHandler>();
         return services;
     }
 }
