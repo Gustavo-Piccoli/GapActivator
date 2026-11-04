@@ -27,7 +27,7 @@ public sealed class FileLoggerTests : IAsyncLifetime
 
     // BI-084
     [Fact]
-    public void FileLogger_WritesTodaysFileNamedByLocalDateInTheLineFormat()
+    public void Log_Information_WritesFileNamedByLocalDateInTheLineFormat()
     {
         using var provider = new DailyFileLoggerProvider(Paths, _level, _time);
         provider.CreateLogger("Sample.Category").LogInformation("Hello {Name}", "world");
