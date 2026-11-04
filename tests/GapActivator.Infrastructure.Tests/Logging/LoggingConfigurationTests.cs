@@ -1,3 +1,4 @@
+#pragma warning disable CA1848, CA1873 // Test code logs through the extension methods on purpose.
 using GapActivator.Infrastructure.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -34,6 +35,55 @@ public sealed class LoggingConfigurationTests
         string[] names = provider.GetServices<ILoggerProvider>().Select(p => p.GetType().Name).ToArray();
         names.ShouldContain(nameof(DailyFileLoggerProvider));
         names.ShouldNotContain(n => n.Contains("Console", StringComparison.Ordinal));
+    }
+
+    // BI-090: behaviour through a real logger factory, with a capturing stand-in for the Event Log provider.
+    [Fact]
+    public void Logging_EventLogSide_ReceivesOnlyErrorsAndNeverAppNotifications()
+    {
+        var captured = new CapturingProvider();
+        var paths = new GapActivatorPaths(Path.Combine(Path.GetTempPath(), "GapActivator.Tests", "rules-only"));
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.AddGapActivatorLogging(paths, new LogLevelSwitch(), new FakeTimeProvider(), () => captured));
+        using ServiceProvider provider = services.BuildServiceProvider();
+        ILoggerFactory factory = provider.GetRequiredService<ILoggerFactory>();
+
+        ILogger sample = factory.CreateLogger("Sample.Category");
+        sample.Log(LogLevel.Warning, "a warning");
+        sample.Log(LogLevel.Error, "an error");
+        sample.Log(LogLevel.Critical, "a critical");
+        ILogger notifier = factory.CreateLogger("GapActivator.Infrastructure.Notifications.LoggingAppNotifier");
+        notifier.Log(LogLevel.Error, "a failed child run");
+        notifier.Log(LogLevel.Critical, "a critical notification");
+
+        captured.Entries.ShouldBe(["Sample.Category|Error", "Sample.Category|Critical"]);
+    }
+
+    private sealed class CapturingProvider : ILoggerProvider
+    {
+        public List<string> Entries { get; } = [];
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(this, categoryName);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class CapturingLogger(CapturingProvider owner, string category) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                lock (owner.Entries)
+                {
+                    owner.Entries.Add($"{category}|{logLevel}");
+                }
+            }
+        }
     }
 
     private static ServiceProvider BuildProvider()

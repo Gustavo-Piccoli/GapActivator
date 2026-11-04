@@ -1,4 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.EventLog;
 
@@ -16,7 +15,16 @@ public static class GapActivatorLogging
         this ILoggingBuilder logging,
         GapActivatorPaths paths,
         LogLevelSwitch level,
-        TimeProvider time)
+        TimeProvider time) =>
+        logging.AddGapActivatorLogging(paths, level, time, TryCreateEventLog);
+
+    /// <summary>The seam for tests: <paramref name="createEventLog"/> supplies the provider the safe wrapper delegates to.</summary>
+    internal static ILoggingBuilder AddGapActivatorLogging(
+        this ILoggingBuilder logging,
+        GapActivatorPaths paths,
+        LogLevelSwitch level,
+        TimeProvider time,
+        Func<ILoggerProvider?> createEventLog)
     {
         ArgumentNullException.ThrowIfNull(logging);
         ArgumentNullException.ThrowIfNull(paths);
@@ -31,24 +39,19 @@ public static class GapActivatorLogging
 
         logging.AddProvider(new DailyFileLoggerProvider(paths, level, time));
 
-        ILoggerProvider? eventLog = TryCreateEventLog();
+        ILoggerProvider? eventLog = createEventLog();
         if (eventLog is not null)
         {
             logging.AddProvider(new SafeEventLogLoggerProvider(eventLog));
         }
 
         // The rules are added in every case, so the policy is the same everywhere (BI-090, spec section 9).
-        string eventLogProvider = typeof(SafeEventLogLoggerProvider).FullName!;
-        logging.Services.Configure<LoggerFilterOptions>(
-            options =>
-            {
-                options.Rules.Add(new LoggerFilterRule(eventLogProvider, null, LogLevel.Error, null));
-                options.Rules.Add(new LoggerFilterRule(eventLogProvider, NotifierCategory, LogLevel.None, null));
-            });
+        logging.AddFilter<SafeEventLogLoggerProvider>(null, LogLevel.Error);
+        logging.AddFilter<SafeEventLogLoggerProvider>(NotifierCategory, LogLevel.None);
         return logging;
     }
 
-    private static EventLogLoggerProvider? TryCreateEventLog()
+    private static ILoggerProvider? TryCreateEventLog()
     {
         try
         {
