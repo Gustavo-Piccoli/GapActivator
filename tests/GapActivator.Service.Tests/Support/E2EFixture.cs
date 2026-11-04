@@ -36,6 +36,7 @@ internal sealed class E2EFixture : IAsyncDisposable
     public const string StubbornName = "Stubborn";
 
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(200);
+    private static readonly TimeSpan StartWait = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ReconcileWait = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ChildExitWait = TimeSpan.FromSeconds(10);
     private static readonly string[] ChildProcessNames = ["GapActivator.SampleChild", "GapActivator.TestChild"];
@@ -63,7 +64,13 @@ internal sealed class E2EFixture : IAsyncDisposable
         {
             IReadOnlyDictionary<string, ProcessId> processes = await SeedAsync(root.Path, ct);
             host = ServiceHostFactory.CreateBuilder(root.Path, []).Build();
-            await host.StartAsync(ct);
+            using (var startTimeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            {
+                // Bounded on its own: the token cancels a start that honours it, the wait caps one that does not.
+                startTimeout.CancelAfter(StartWait);
+                await host.StartAsync(startTimeout.Token).WaitAsync(StartWait, ct);
+            }
+
             await host.Services.GetRequiredService<SchedulerLoop>().Reconciled.WaitAsync(ReconcileWait, ct);
             return new E2EFixture(root, processes, host);
         }
