@@ -462,13 +462,13 @@ public class RunSupervisorTests
         run.Killed.ShouldBeTrue();
     }
 
-    // A system timer can fire up to one tick early; the grace period is still waited in full, by the clock.
+    // A system timer can fire up to one tick early; the grace period is still waited in full.
     [Fact]
     public async Task Stop_GraceTimerFiresEarly_KillsOnlyAfterTheFullGrace()
     {
         TimeSpan early = TimeSpan.FromSeconds(5);
         await using ApplicationTestHost host = RunTestHost.Create(services => services.AddSingleton<TimeProvider>(
-            sp => new EarlyTimerTimeProvider(sp.GetRequiredService<TrackingTimeProvider>(), early)));
+            sp => new SkewedTimeProvider(sp.GetRequiredService<TrackingTimeProvider>(), early)));
         Process process = host.AddProcess(gracePeriod: Grace);
         FakeRunningProcess child = host.Launcher.QueueSucceed(Exe);
 
@@ -485,6 +485,58 @@ public class RunSupervisorTests
         await host.EndOf(run.Id);
         child.Killed.ShouldBeTrue();
         run.Outcome.ShouldBe(RunOutcome.Cancelled);
+    }
+
+    // The grace period is measured monotonically: a wall clock stepped back during it does not delay the kill (at
+    // shutdown that delay could outlast the shutdown cap and leave the child running, BI-075).
+    [Fact]
+    public async Task Stop_WallClockStepsBackDuringGrace_KillsWhenTheGraceHasElapsed()
+    {
+        SkewedTimeProvider? clock = null;
+        await using ApplicationTestHost host = RunTestHost.Create(services => services.AddSingleton<TimeProvider>(
+            sp => clock = new SkewedTimeProvider(sp.GetRequiredService<TrackingTimeProvider>(), TimeSpan.Zero)));
+        Process process = host.AddProcess(gracePeriod: Grace);
+        FakeRunningProcess child = host.Launcher.QueueSucceed(Exe);
+
+        Run run = await host.StartRunAsync(process);
+        await host.Dispatcher().WaitForHandledAsync<RecordRunLaunched>().Within();
+        await host.Run<StopRun, Unit>(new StopRun(run.Id, StopReason.UserCancel));
+        await host.Time.WaitForTimersAsync(1).Within();
+        clock.ShouldNotBeNull().WallClockOffset = TimeSpan.FromHours(-1);
+        host.Time.Advance(Grace);
+        Task ended = host.Supervisor().WaitForEndAsync(run.Id, TestContext.Current.CancellationToken);
+        await Task.WhenAny(host.Time.WaitForTimersAsync(2), ended).Within();
+
+        child.Killed.ShouldBeTrue();
+        await host.EndOf(run.Id);
+        run.Outcome.ShouldBe(RunOutcome.Cancelled);
+    }
+
+    // The grace period is measured monotonically: a wall clock stepped forward during it does not cut it short.
+    [Fact]
+    public async Task Stop_WallClockStepsForwardDuringGrace_KillsOnlyAfterTheFullGrace()
+    {
+        TimeSpan early = TimeSpan.FromSeconds(5);
+        SkewedTimeProvider? clock = null;
+        await using ApplicationTestHost host = RunTestHost.Create(services => services.AddSingleton<TimeProvider>(
+            sp => clock = new SkewedTimeProvider(sp.GetRequiredService<TrackingTimeProvider>(), early)));
+        Process process = host.AddProcess(gracePeriod: Grace);
+        FakeRunningProcess child = host.Launcher.QueueSucceed(Exe);
+
+        Run run = await host.StartRunAsync(process);
+        await host.Dispatcher().WaitForHandledAsync<RecordRunLaunched>().Within();
+        await host.Run<StopRun, Unit>(new StopRun(run.Id, StopReason.UserCancel));
+        await host.Time.WaitForTimersAsync(1).Within();
+        clock.ShouldNotBeNull().WallClockOffset = TimeSpan.FromHours(1);
+        host.Time.Advance(Grace - early);
+        Task ended = host.Supervisor().WaitForEndAsync(run.Id, TestContext.Current.CancellationToken);
+        await Task.WhenAny(host.Time.WaitForTimersAsync(2), ended).Within();
+
+        child.Killed.ShouldBeFalse();
+
+        host.Time.Advance(early);
+        await host.EndOf(run.Id);
+        child.Killed.ShouldBeTrue();
     }
 
     [Fact]
@@ -1540,14 +1592,26 @@ public class RunSupervisorTests
         public IRunningProcess? TryAttach(RunId runId, int pid, DateTimeOffset processStartTime) => null;
     }
 
-    /// <summary>The fake clock, with every timer due <paramref name="early"/> before its time, as a coarse system timer can be.</summary>
-    private sealed class EarlyTimerTimeProvider(TrackingTimeProvider inner, TimeSpan early) : TimeProvider
+    /// <summary>
+    /// The fake clock, with every timer due <paramref name="early"/> before its time (as a coarse system timer can be) and a
+    /// wall clock that can be stepped by <see cref="WallClockOffset"/> while the monotonic timestamps and timers are not.
+    /// </summary>
+    private sealed class SkewedTimeProvider(TrackingTimeProvider inner, TimeSpan early) : TimeProvider
     {
+        private long _offsetTicks;
+
+        /// <summary>A step of the wall clock only: what <see cref="GetUtcNow"/> adds to the fake clock.</summary>
+        public TimeSpan WallClockOffset
+        {
+            get => TimeSpan.FromTicks(Interlocked.Read(ref _offsetTicks));
+            set => Interlocked.Exchange(ref _offsetTicks, value.Ticks);
+        }
+
         public override TimeZoneInfo LocalTimeZone => inner.LocalTimeZone;
 
         public override long TimestampFrequency => inner.TimestampFrequency;
 
-        public override DateTimeOffset GetUtcNow() => inner.GetUtcNow();
+        public override DateTimeOffset GetUtcNow() => inner.GetUtcNow() + WallClockOffset;
 
         public override long GetTimestamp() => inner.GetTimestamp();
 
