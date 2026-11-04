@@ -22,10 +22,15 @@ internal static class AlertFormatter
 {
     private const string DeletedProcess = "(deleted process)";
 
+    /// <summary>
+    /// The process is named from its registration; for a deleted process, from the snapshot its run kept. Only when
+    /// both are gone does the alert say "(deleted process)".
+    /// </summary>
     public static async Task<AlertContent> BuildAsync(
         AlertKind kind,
         IDomainEvent e,
         IProcessRepository processes,
+        IRunRepository runs,
         TimeProvider time,
         CancellationToken ct)
     {
@@ -34,7 +39,14 @@ internal static class AlertFormatter
         if (processId is { } id)
         {
             Process? process = await processes.GetByIdAsync(id, ct);
-            name = process?.Name.Value ?? DeletedProcess;
+            name = process?.Name.Value;
+            if (name is null && runId is { } snapshotRunId)
+            {
+                Run? snapshotRun = await runs.GetByIdAsync(snapshotRunId, ct);
+                name = snapshotRun?.ProcessNameSnapshot.Value;
+            }
+
+            name ??= DeletedProcess;
         }
 
         List<string> lines = [];

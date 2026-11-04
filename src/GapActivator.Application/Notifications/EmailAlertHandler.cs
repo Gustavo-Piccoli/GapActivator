@@ -2,6 +2,7 @@ using GapActivator.Application.Events;
 using GapActivator.Application.Ports;
 using GapActivator.Domain.Common;
 using GapActivator.Domain.Processes;
+using GapActivator.Domain.Runs;
 using GapActivator.Domain.Settings;
 
 namespace GapActivator.Application.Notifications;
@@ -13,6 +14,7 @@ namespace GapActivator.Application.Notifications;
 public sealed class EmailAlertHandler(
     ISettingsRepository settings,
     IProcessRepository processes,
+    IRunRepository runs,
     IEmailSender sender,
     TimeProvider time) : INotificationHandler
 {
@@ -31,7 +33,7 @@ public sealed class EmailAlertHandler(
             return;
         }
 
-        AlertContent content = await AlertFormatter.BuildAsync(kind, domainEvent, processes, time, ct);
+        AlertContent content = await AlertFormatter.BuildAsync(kind, domainEvent, processes, runs, time, ct);
         string subject = $"[GapActivator] {Environment.MachineName}: {content.Title}";
         string body = string.Join('\n', [.. content.Lines, content.TimeLine]);
         await sender.SendAsync(email, new EmailMessage(subject, body), ct);

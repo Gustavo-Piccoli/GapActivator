@@ -13,6 +13,7 @@ using GapActivator.Domain.Processes;
 using GapActivator.Domain.Runs;
 using GapActivator.Domain.Settings;
 using GapActivator.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using MsLogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace GapActivator.Application.Tests.Notifications;
@@ -230,7 +231,7 @@ public class NotificationTests
     }
 
     [Fact]
-    public async Task Failure_ProcessDeleted_NamesDeletedProcess()
+    public async Task Failure_ProcessDeleted_NamesTheRunSnapshot()
     {
         await using ApplicationTestHost host = RunTestHost.Create();
         ConfigureEmail(host, true, AlertKind.RunFailed);
@@ -240,8 +241,26 @@ public class NotificationTests
 
         await host.Run<RecordRunExited, Unit>(new RecordRunExited(run.Id, 1, false));
 
-        host.Email.Sent.ShouldHaveSingleItem().Message.Subject
-            .ShouldEndWith("Run failed: (deleted process)");
+        EmailMessage message = host.Email.Sent.ShouldHaveSingleItem().Message;
+        message.Subject.ShouldEndWith($"Run failed: {run.ProcessNameSnapshot.Value}");
+        message.Body.Split('\n')[0].ShouldBe($"Process: {run.ProcessNameSnapshot.Value}");
+        host.AppNotifier.Notifications.ShouldHaveSingleItem().Title.ShouldBe($"Run failed: {run.ProcessNameSnapshot.Value}");
+    }
+
+    [Fact]
+    public async Task Failure_ProcessAndRunBothMissing_NamesDeletedProcess()
+    {
+        await using ApplicationTestHost host = RunTestHost.Create();
+        ConfigureEmail(host, true, AlertKind.RunFailed);
+        await using AsyncServiceScope scope = host.Services.CreateAsyncScope();
+        EventPublisher publisher = scope.ServiceProvider.GetRequiredService<EventPublisher>();
+
+        await publisher.PublishAsync([new RunCompleted(ARun, AProcess, RunOutcome.Failed, 1, false, At)], CancellationToken.None);
+
+        EmailMessage message = host.Email.Sent.ShouldHaveSingleItem().Message;
+        message.Subject.ShouldEndWith("Run failed: (deleted process)");
+        message.Body.Split('\n')[0].ShouldBe("Process: (deleted process)");
+        host.AppNotifier.Notifications.ShouldHaveSingleItem().Title.ShouldBe("Run failed: (deleted process)");
     }
 
     [Fact]
