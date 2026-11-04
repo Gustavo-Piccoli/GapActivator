@@ -79,6 +79,27 @@ public class RunSupervisorTests
         host.Supervisor().IsTracking(process.Id).ShouldBeFalse();
     }
 
+    // The test helper itself: a launch that fails at once can end the run before StartRunAsync reads the store (seen
+    // under full-suite load); the helper still returns that run.
+    [Fact]
+    public async Task StartRunAsync_RunEndsBeforeTheHelperReadsIt_ReturnsTheEndedRun()
+    {
+        await using ApplicationTestHost host = RunTestHost.Create();
+        Process process = host.AddProcess();
+        host.Launcher.QueueFail(Exe, "The file was not found.");
+        CommandHold hold = host.Dispatcher().HoldAfter<StartPendingRun>();
+
+        Task<Run> starting = host.StartRunAsync(process);
+        await hold.Reached.Within();
+        await host.Dispatcher().WaitForHandledAsync<RecordRunLaunchFailed>().Within();
+        hold.Release();
+        await starting.Within();
+        Run run = await starting;
+
+        run.ProcessId.ShouldBe(process.Id);
+        run.Outcome.ShouldBe(RunOutcome.FailedToStart);
+    }
+
     [Fact]
     public async Task Start_LauncherThrowsUnexpectedException_FailedToStartAndLoggedAtError()
     {
