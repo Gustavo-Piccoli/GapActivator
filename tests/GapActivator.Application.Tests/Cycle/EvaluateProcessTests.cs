@@ -188,7 +188,7 @@ public class EvaluateProcessTests
         host.Supervisor().IsTracking(process.Id).ShouldBeFalse();
     }
 
-    // BI-064, BI-044
+    // BI-064
     [Fact]
     public async Task Evaluate_ServiceRunningWithCounterAboveLoweredLimit_ResetsAndIsNotBlocked()
     {
