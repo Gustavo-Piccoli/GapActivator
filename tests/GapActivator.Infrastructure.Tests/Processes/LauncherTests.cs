@@ -349,6 +349,10 @@ public sealed partial class LauncherTests : IAsyncLifetime
             grandchildPid = int.Parse(File.ReadAllText(file), CultureInfo.InvariantCulture);
             (await WaitUntilGoneAsync(childPid)).ShouldBeTrue("the child survived");
             (await WaitUntilGoneAsync(grandchildPid)).ShouldBeTrue("the grandchild survived");
+
+            // Both are proven gone; a recycled PID must not be killed in the finally block.
+            childPid = 0;
+            grandchildPid = 0;
         }
         finally
         {
@@ -502,7 +506,7 @@ public sealed partial class LauncherTests : IAsyncLifetime
                 process.WaitForExit(TimeSpan.FromSeconds(5));
             }
         }
-        catch (Exception e) when (e is InvalidOperationException or Win32Exception)
+        catch (Exception e) when (e is InvalidOperationException or Win32Exception or AggregateException)
         {
             // Already gone.
         }
