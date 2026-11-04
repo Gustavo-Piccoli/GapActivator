@@ -54,6 +54,23 @@ public class LayeringTests
     }
 
     [Fact]
+    public void HostingWindowsServices_AcrossAllProjects_IsReferencedOnlyByService()
+    {
+        string root = FindSolutionRoot();
+        string service = Path.Combine(root, "src", "GapActivator.Service", "GapActivator.Service.csproj");
+        File.Exists(service).ShouldBeTrue($"Service project not found at '{service}'.");
+
+        string[] referencing = [.. Directory.EnumerateFiles(root, "*.csproj", SearchOption.AllDirectories)
+            .Where(file => !file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                        && !file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+            .Where(file => XDocument.Load(file).Descendants("PackageReference")
+                .Any(p => (string?)p.Attribute("Include") == "Microsoft.Extensions.Hosting.WindowsServices"))
+            .Select(file => Path.GetRelativePath(root, file))];
+
+        referencing.ShouldBe([Path.GetRelativePath(root, service)]);
+    }
+
+    [Fact]
     public void Domain_HasNoPackageOrProjectReferences()
     {
         string root = FindSolutionRoot();

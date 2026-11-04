@@ -1,6 +1,7 @@
 #pragma warning disable CA1848, CA1873 // Test code logs through the extension methods on purpose.
 using GapActivator.Infrastructure.Logging;
 using GapActivator.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using DomainLogLevel = GapActivator.Domain.Settings.LogLevel;
@@ -130,6 +131,22 @@ public sealed class FileLoggerTests : IAsyncLifetime
         Should.Throw<IOException>(() => File.Delete(file));
 
         provider.Dispose();
+        Should.NotThrow(() => File.Delete(file));
+    }
+
+    // The container owns the providers it was given, so disposing it (as the host does) closes the live file.
+    [Fact]
+    public void AddGapActivatorLogging_ServiceProviderDisposed_ClosesTheLiveFile()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.AddGapActivatorLogging(Paths, _level, _time, () => null));
+        ServiceProvider container = services.BuildServiceProvider();
+        container.GetRequiredService<ILoggerFactory>().CreateLogger("C").LogInformation("x");
+        string file = Path.Combine(Paths.LogsDirectory, "gapactivator-20300102.log");
+        File.Exists(file).ShouldBeTrue();
+
+        container.Dispose();
+
         Should.NotThrow(() => File.Delete(file));
     }
 

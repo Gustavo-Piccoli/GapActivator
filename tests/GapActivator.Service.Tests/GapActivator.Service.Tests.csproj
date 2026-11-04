@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\GapActivator.Domain\GapActivator.Domain.csproj" />
+    <ProjectReference Include="..\..\src\GapActivator.Application\GapActivator.Application.csproj" />
+    <ProjectReference Include="..\..\src\GapActivator.Infrastructure\GapActivator.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\GapActivator.Service\GapActivator.Service.csproj" />
+    <ProjectReference Include="..\GapActivator.TestChild\GapActivator.TestChild.csproj" />
+    <ProjectReference Include="..\GapActivator.Testing\GapActivator.Testing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="Shouldly" />
+  </ItemGroup>
+
+</Project>
