@@ -4,7 +4,14 @@ using Microsoft.Extensions.Logging;
 
 namespace GapActivator.Application.Runs;
 
-public sealed record RecordRunLaunched(RunId RunId, int Pid, DateTimeOffset StartTime) : IInternalCommand<Unit>;
+/// <param name="RunId">The run.</param>
+/// <param name="Pid">The child's process id.</param>
+/// <param name="StartTime">The child's start time as the operating system reports it (its identity for re-adoption).</param>
+/// <param name="LaunchedAt">
+/// The supervisor's clock right after the launch returned. It becomes the run's StartedAt, and the supervisor measures
+/// the time limit from it, so a launch recorded late (a busy write gate) never shortens the time limit.
+/// </param>
+public sealed record RecordRunLaunched(RunId RunId, int Pid, DateTimeOffset StartTime, DateTimeOffset LaunchedAt) : IInternalCommand<Unit>;
 
 /// <summary>
 /// Idempotent: a run that is missing or already past Launching is logged and left alone. A stop recorded before the
@@ -14,13 +21,11 @@ internal sealed partial class RecordRunLaunchedHandler(
     IRunRepository runs,
     AfterCommit afterCommit,
     RunSupervisor supervisor,
-    TimeProvider time,
     ILogger<RecordRunLaunchedHandler> logger) : ICommandHandler<RecordRunLaunched, Unit>
 {
     public async Task<Unit> HandleAsync(RecordRunLaunched command, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(command);
-        DateTimeOffset now = time.GetUtcNow();
 
         Run? run = await runs.GetByIdAsync(command.RunId, ct);
         if (run is not { State: RunState.Launching })
@@ -29,7 +34,7 @@ internal sealed partial class RecordRunLaunchedHandler(
             return Unit.Value;
         }
 
-        run.MarkRunning(command.Pid, command.StartTime, now);
+        run.MarkRunning(command.Pid, command.StartTime, command.LaunchedAt);
         if (run.State == RunState.Stopping)
         {
             afterCommit.Enqueue(_ =>

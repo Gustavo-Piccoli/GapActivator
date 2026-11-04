@@ -1,3 +1,4 @@
+using GapActivator.Application.Events;
 using GapActivator.Application.Messaging;
 using GapActivator.Application.Ports;
 using GapActivator.Application.Runs;
@@ -134,6 +135,38 @@ public class RunSupervisorTests
         run.Killed.ShouldBeTrue();
         run.ExitCode.ShouldBe(-1);
         process.ConsecutiveFailures.ShouldBe(1);
+    }
+
+    // The launch is recorded late (the write gate was busy): StartedAt is still the launch instant, and the time limit
+    // is measured from that same instant, so the run is never stopped before StartedAt + limit.
+    [Fact]
+    public async Task Start_LaunchRecordedLate_StartedAtAndDeadlineShareTheLaunchInstant()
+    {
+        TimeSpan recordDelay = TimeSpan.FromMinutes(5);
+        await using ApplicationTestHost host = RunTestHost.Create();
+        Process process = host.AddProcess(timeLimit: Limit, gracePeriod: Grace);
+        host.Launcher.QueueSucceed(Exe);
+        CommandHold hold = host.Dispatcher().HoldBefore<RecordRunLaunched>();
+
+        Run run = await host.StartRunAsync(process);
+        await hold.Reached.Within();
+        DateTimeOffset launchedAt = host.Time.GetUtcNow();
+        await host.AdvanceAfterTimerAsync(1, recordDelay);
+        hold.Release();
+        await host.Dispatcher().WaitForHandledAsync<RecordRunLaunched>().Within();
+
+        run.StartedAt.ShouldBe(launchedAt);
+
+        host.Time.Advance(Limit - recordDelay - TimeSpan.FromTicks(1));
+        await Task.Delay(TimeSpan.FromMilliseconds(50), TestContext.Current.CancellationToken);
+        host.Dispatcher().Attempts<StopRun>().ShouldBe(0);
+
+        host.Time.Advance(TimeSpan.FromTicks(1));
+        await host.Dispatcher().WaitForHandledAsync<StopRun>().Within();
+        run.StopReason.ShouldBe(StopReason.TimeLimit);
+        host.Store.History
+            .Single(h => h.Kind == HistoryEntryKind.RunStopRequested && h.RunId == run.Id)
+            .OccurredAt.ShouldBe(run.StartedAt.ShouldNotBeNull() + Limit);
     }
 
     [Fact]

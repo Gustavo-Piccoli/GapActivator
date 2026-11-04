@@ -87,7 +87,7 @@ public class RunRecordingTests
     {
         await using ApplicationTestHost host = RunTestHost.Create();
 
-        await host.Run<RecordRunLaunched, Unit>(new RecordRunLaunched(RunId.New(), 1, host.Time.GetUtcNow()));
+        await host.Run<RecordRunLaunched, Unit>(new RecordRunLaunched(RunId.New(), 1, host.Time.GetUtcNow(), host.Time.GetUtcNow()));
 
         host.LoggedAt(MsLogLevel.Warning, "RecordRunLaunchedHandler").ShouldBeTrue();
     }
@@ -102,7 +102,7 @@ public class RunRecordingTests
         Run run = new RunBuilder().InState(state).Build();
         host.Store.Runs[run.Id] = run;
 
-        await host.Run<RecordRunLaunched, Unit>(new RecordRunLaunched(run.Id, 99, host.Time.GetUtcNow()));
+        await host.Run<RecordRunLaunched, Unit>(new RecordRunLaunched(run.Id, 99, host.Time.GetUtcNow(), host.Time.GetUtcNow()));
 
         run.State.ShouldBe(state);
         run.Pid.ShouldBe(4242);
@@ -118,7 +118,7 @@ public class RunRecordingTests
         Run run = Run.Begin(process.Id, process.Name, process.Kind, RunTrigger.Manual, null, false, now);
         host.Store.Runs[run.Id] = run;
 
-        await host.Run<RecordRunLaunched, Unit>(new RecordRunLaunched(run.Id, 55, now.AddSeconds(-1)));
+        await host.Run<RecordRunLaunched, Unit>(new RecordRunLaunched(run.Id, 55, now.AddSeconds(-1), now));
 
         run.State.ShouldBe(RunState.Running);
         run.Pid.ShouldBe(55);
