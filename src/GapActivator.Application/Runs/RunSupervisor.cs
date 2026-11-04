@@ -298,7 +298,9 @@ public sealed partial class RunSupervisor(
             {
                 await using (process)
                 {
-                    var launched = new RecordRunLaunched(run.RunId, process.Pid, process.StartTime);
+                    // One instant: the recorded StartedAt and the start of the time limit.
+                    DateTimeOffset launchedAt = time.GetUtcNow();
+                    var launched = new RecordRunLaunched(run.RunId, process.Pid, process.StartTime, launchedAt);
                     await SuperviseAsync(run, process, ticket.TimeLimit, launched);
                 }
             }
@@ -424,6 +426,12 @@ public sealed partial class RunSupervisor(
         }
     }
 
+    /// <param name="run">The tracked run.</param>
+    /// <param name="process">The child.</param>
+    /// <param name="timeLimit">
+    /// The time limit, measured from <see cref="RecordRunLaunched.LaunchedAt"/> for a launch; for an adopted run it is the
+    /// remainder reconciliation computed from the persisted StartedAt, measured from now.
+    /// </param>
     /// <param name="launched">The launch to record, or null for an adopted run, whose launch is already recorded.</param>
     private async Task SuperviseAsync(
         TrackedRun run, IRunningProcess process, TimeSpan? timeLimit, RecordRunLaunched? launched)
@@ -438,7 +446,8 @@ public sealed partial class RunSupervisor(
                 ? Task.FromResult(true)
                 : SendAsync(launched, subject, retries.Token);
 
-            Task<bool> recordingStop = await WaitForExitStopOrDeadlineAsync(run, exited, timeLimit)
+            DateTimeOffset limitStart = launched?.LaunchedAt ?? time.GetUtcNow();
+            Task<bool> recordingStop = await WaitForExitStopOrDeadlineAsync(run, exited, timeLimit, limitStart)
                 ? SendAsync(timeLimitStop, subject, retries.Token)
                 : Task.FromResult(true);
 
@@ -473,7 +482,8 @@ public sealed partial class RunSupervisor(
     }
 
     /// <summary>Returns true only when the time limit expired while the child was still running and nothing else had stopped it.</summary>
-    private async Task<bool> WaitForExitStopOrDeadlineAsync(TrackedRun run, Task<int> exited, TimeSpan? timeLimit)
+    private async Task<bool> WaitForExitStopOrDeadlineAsync(
+        TrackedRun run, Task<int> exited, TimeSpan? timeLimit, DateTimeOffset limitStart)
     {
         if (timeLimit is not { } limit)
         {
@@ -482,8 +492,7 @@ public sealed partial class RunSupervisor(
         }
 
         // The deadline is fixed once: every wait below is measured against it, so one large clock move still fires.
-        DateTimeOffset now = time.GetUtcNow();
-        DateTimeOffset deadline = limit < DateTimeOffset.MaxValue - now ? now + limit : DateTimeOffset.MaxValue;
+        DateTimeOffset deadline = limit < DateTimeOffset.MaxValue - limitStart ? limitStart + limit : DateTimeOffset.MaxValue;
 
         using var cancellation = new CancellationTokenSource();
         await Task.WhenAny(exited, run.StopRequested, _lifetime.Ended, WaitUntilAsync(deadline, cancellation.Token));
