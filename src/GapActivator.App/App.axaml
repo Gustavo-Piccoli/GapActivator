@@ -1,0 +1,27 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="GapActivator.App.App"
+             RequestedThemeVariant="Default">
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://GapActivator/Styles/Tokens.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+      <CornerRadius x:Key="ControlCornerRadius">6</CornerRadius>
+      <CornerRadius x:Key="OverlayCornerRadius">8</CornerRadius>
+    </ResourceDictionary>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Dark" Accent="#2F6FED" RegionColor="#14161B" />
+        <ColorPaletteResources x:Key="Light" Accent="#2F5FD0" RegionColor="#F4F5F7" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
+    <StyleInclude Source="avares://GapActivator/Styles/Controls.axaml" />
+    <Style Selector="Window">
+      <Setter Property="FontFamily" Value="{DynamicResource GaFontText}" />
+      <Setter Property="Background" Value="{DynamicResource GaGroundBrush}" />
+    </Style>
+  </Application.Styles>
+</Application>

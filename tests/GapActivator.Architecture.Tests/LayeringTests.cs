@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using GapActivator.App;
 using GapActivator.Application;
 using GapActivator.Application.Messaging;
 using GapActivator.Domain;
@@ -212,7 +213,7 @@ public class LayeringTests
     public void Ipc_DependsOnNoGapActivatorLayer() =>
         Types.InAssembly(IpcAssembly.Reference).ShouldNot()
             .HaveDependencyOnAny("GapActivator.Domain", "GapActivator.Application",
-                                 "GapActivator.Infrastructure", "GapActivator.Service")
+                                 "GapActivator.Infrastructure", "GapActivator.Service", "GapActivator.App")
             .GetResult().IsSuccessful.ShouldBeTrue();
 
     [Fact]
@@ -232,6 +233,66 @@ public class LayeringTests
         project.Descendants("IsAotCompatible").Select(e => e.Value).ShouldBe(["true"]);
         project.Descendants("TargetFramework").Select(e => e.Value).ShouldBe(["net10.0-windows"]);
     }
+
+    [Fact]
+    public void App_ReferencesOnlyIpc()
+    {
+        XDocument project = XDocument.Load(AppCsproj());
+
+        string[] projects = [.. project.Descendants("ProjectReference")
+            .Select(p => Path.GetFileName(((string)p.Attribute("Include")!).Replace((char)92, '/')))];
+        projects.ShouldBe(["GapActivator.Ipc.csproj"]);
+    }
+
+    [Fact]
+    public void App_DependsOnNoServerLayer() =>
+        Types.InAssembly(AppAssembly.Reference).ShouldNot()
+            .HaveDependencyOnAny("GapActivator.Domain", "GapActivator.Application",
+                                 "GapActivator.Infrastructure", "GapActivator.Service")
+            .GetResult().IsSuccessful.ShouldBeTrue();
+
+    [Fact]
+    public void App_PackageReferencesAreTheJustifiedOnes()
+    {
+        XDocument project = XDocument.Load(AppCsproj());
+
+        string[] packages = [.. project.Descendants("PackageReference").Select(p => (string)p.Attribute("Include")!)];
+        packages.ShouldBe(
+        [
+            "Avalonia",
+            "Avalonia.Desktop",
+            "Avalonia.Themes.Fluent",
+            "CommunityToolkit.Mvvm",
+            "Microsoft.Extensions.DependencyInjection",
+            "Microsoft.Extensions.Logging.Abstractions",
+        ]);
+    }
+
+    [Fact]
+    public void App_IsAnAotWindowsExe()
+    {
+        XDocument project = XDocument.Load(AppCsproj());
+
+        project.Descendants("OutputType").Select(e => e.Value).ShouldBe(["WinExe"]);
+        project.Descendants("TargetFramework").Select(e => e.Value).ShouldBe(["net10.0-windows"]);
+        project.Descendants("AssemblyName").Select(e => e.Value).ShouldBe(["GapActivator"]);
+        project.Descendants("PublishAot").Select(e => e.Value).ShouldBe(["true"]);
+        project.Descendants("ApplicationManifest").Select(e => e.Value).ShouldBe(["app.manifest"]);
+    }
+
+    [Fact]
+    public void App_ViewModelsNeverUseTheClientDirectly()
+    {
+        // Guard: a rename of the client would otherwise silence the rule below.
+        typeof(GapActivatorClient).FullName.ShouldBe("GapActivator.Ipc.GapActivatorClient");
+
+        Types.InAssembly(AppAssembly.Reference).That().ResideInNamespace("GapActivator.App.ViewModels")
+            .ShouldNot().HaveDependencyOnAny("GapActivator.Ipc.GapActivatorClient", "GapActivator.Ipc.GapActivatorClientOptions")
+            .GetResult().IsSuccessful.ShouldBeTrue();
+    }
+
+    private static string AppCsproj() =>
+        Path.Combine(FindSolutionRoot(), "src", "GapActivator.App", "GapActivator.App.csproj");
 
     private static string IpcCsproj() =>
         Path.Combine(FindSolutionRoot(), "src", "GapActivator.Ipc", "GapActivator.Ipc.csproj");

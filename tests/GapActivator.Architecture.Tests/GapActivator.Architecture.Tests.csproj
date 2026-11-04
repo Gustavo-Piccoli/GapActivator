@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\GapActivator.Application\GapActivator.Application.csproj" />
     <ProjectReference Include="..\..\src\GapActivator.Infrastructure\GapActivator.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\GapActivator.Ipc\GapActivator.Ipc.csproj" />
+    <ProjectReference Include="..\..\src\GapActivator.App\GapActivator.App.csproj" />
   </ItemGroup>
 
   <ItemGroup>

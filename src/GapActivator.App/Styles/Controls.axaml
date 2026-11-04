@@ -1,0 +1,135 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:GapActivator.App.ViewModels">
+  <Style Selector="TextBlock.title">
+    <Setter Property="FontSize" Value="20" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.group">
+    <Setter Property="FontSize" Value="16" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.muted">
+    <Setter Property="Foreground" Value="{DynamicResource GaTextMutedBrush}" />
+  </Style>
+  <Style Selector="SelectableTextBlock.muted">
+    <Setter Property="Foreground" Value="{DynamicResource GaTextMutedBrush}" />
+  </Style>
+  <Style Selector="TextBlock.caption">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{DynamicResource GaTextMutedBrush}" />
+  </Style>
+  <Style Selector="TextBlock.error">
+    <Setter Property="Foreground" Value="{DynamicResource GaCriticalTextBrush}" />
+  </Style>
+  <Style Selector="TextBlock.warning">
+    <Setter Property="Foreground" Value="{DynamicResource GaWarningTextBrush}" />
+  </Style>
+  <Style Selector="Border.card">
+    <Setter Property="Background" Value="{DynamicResource GaSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource GaHairlineBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="CornerRadius" Value="{DynamicResource GaCardRadius}" />
+  </Style>
+  <Style Selector="Border.divider">
+    <Setter Property="Height" Value="1" />
+    <Setter Property="Background" Value="{DynamicResource GaHairlineBrush}" />
+  </Style>
+  <Style Selector="Grid.row">
+    <Setter Property="Margin" Value="16,12" />
+    <Setter Property="MinHeight" Value="44" />
+  </Style>
+  <Style Selector="Border.badge">
+    <Setter Property="CornerRadius" Value="10" />
+    <Setter Property="Padding" Value="8,2" />
+  </Style>
+  <Style Selector="Border.badge.enabled">
+    <Setter Property="Background" Value="{DynamicResource GaBadgeEnabledBrush}" />
+  </Style>
+  <Style Selector="Border.badge.enabled TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource GaBadgeEnabledInkBrush}" />
+  </Style>
+  <Style Selector="Border.badge.disabled">
+    <Setter Property="Background" Value="{DynamicResource GaBadgeDisabledBrush}" />
+  </Style>
+  <Style Selector="Border.badge.disabled TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource GaBadgeDisabledInkBrush}" />
+  </Style>
+  <Style Selector="Border.badge.blocked">
+    <Setter Property="Background" Value="{DynamicResource GaBadgeBlockedBrush}" />
+  </Style>
+  <Style Selector="Border.badge.blocked TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource GaBadgeBlockedInkBrush}" />
+  </Style>
+  <Style Selector="Button:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="BorderBrush" Value="{DynamicResource GaFocusBrush}" />
+    <Setter Property="BorderThickness" Value="2" />
+  </Style>
+  <Style Selector="TabControl.rail">
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Background" Value="{DynamicResource GaGroundBrush}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid ColumnDefinitions="184,*" Background="{TemplateBinding Background}">
+          <Border Grid.Column="0" Background="{DynamicResource GaRailBrush}">
+            <DockPanel LastChildFill="True">
+              <TextBlock DockPanel.Dock="Top" x:DataType="vm:ViewModelBase" Text="{Binding L.AppName}"
+                         FontWeight="SemiBold" Margin="16,18,16,14" />
+              <ItemsPresenter Name="PART_ItemsPresenter" Margin="8,0" ItemsPanel="{TemplateBinding ItemsPanel}" />
+            </DockPanel>
+          </Border>
+          <ContentPresenter Grid.Column="1" Name="PART_SelectedContentHost"
+                            Background="{DynamicResource GaGroundBrush}"
+                            Content="{TemplateBinding SelectedContent}"
+                            ContentTemplate="{TemplateBinding SelectedContentTemplate}" />
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="TabControl.rail > TabItem">
+    <Setter Property="Height" Value="40" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="Margin" Value="0,0,0,2" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource GaTextBrush}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="PART_LayoutRoot" Background="Transparent" BorderBrush="Transparent"
+                BorderThickness="2" CornerRadius="{DynamicResource GaControlRadius}">
+          <Grid ColumnDefinitions="8,*">
+            <Border Name="PART_Indicator" Width="3" Height="16" Margin="4,0,0,0"
+                    CornerRadius="1.5" Background="{DynamicResource GaAccentBrush}"
+                    VerticalAlignment="Center" IsVisible="False" />
+            <ContentPresenter Grid.Column="1" Name="PART_ContentPresenter" Margin="10,0,8,0"
+                              Content="{TemplateBinding Header}"
+                              ContentTemplate="{TemplateBinding HeaderTemplate}"
+                              Foreground="{TemplateBinding Foreground}"
+                              VerticalContentAlignment="Center" />
+          </Grid>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="TabControl.rail > TabItem:pointerover /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource GaSurfaceHoverBrush}" />
+  </Style>
+  <Style Selector="TabControl.rail > TabItem:selected /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource GaSurfaceHoverBrush}" />
+  </Style>
+  <Style Selector="TabControl.rail > TabItem:selected /template/ Border#PART_Indicator">
+    <Setter Property="IsVisible" Value="True" />
+  </Style>
+  <Style Selector="TabControl.rail > TabItem:focus-visible /template/ Border#PART_LayoutRoot">
+    <Setter Property="BorderBrush" Value="{DynamicResource GaFocusBrush}" />
+  </Style>
+  <Style Selector="TextBlock.railIcon">
+    <Setter Property="FontFamily" Value="Segoe Fluent Icons, Segoe MDL2 Assets" />
+    <Setter Property="FontSize" Value="16" />
+    <Setter Property="Width" Value="20" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="AutomationProperties.AccessibilityView" Value="Raw" />
+  </Style>
+</Styles>

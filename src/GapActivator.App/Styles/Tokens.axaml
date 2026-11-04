@@ -1,0 +1,70 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!--
+    Three layers: palette values live only in this file, semantic brushes (Ground, Surface, Text, State...) carry
+    meaning, and Controls.axaml binds them to controls. Ink brushes pair with a fill brush for text on top of it.
+  -->
+  <ResourceDictionary.ThemeDictionaries>
+    <ResourceDictionary x:Key="Dark">
+      <SolidColorBrush x:Key="GaGroundBrush" Color="#14161B" />
+      <SolidColorBrush x:Key="GaRailBrush" Color="#0F1115" />
+      <SolidColorBrush x:Key="GaSurfaceBrush" Color="#1B1E25" />
+      <SolidColorBrush x:Key="GaSurfaceHoverBrush" Color="#232731" />
+      <SolidColorBrush x:Key="GaHairlineBrush" Color="#2C313C" />
+      <SolidColorBrush x:Key="GaTextBrush" Color="#ECEEF2" />
+      <SolidColorBrush x:Key="GaTextMutedBrush" Color="#A0A8B6" />
+      <SolidColorBrush x:Key="GaAccentBrush" Color="#2F6FED" />
+      <SolidColorBrush x:Key="GaAccentTextBrush" Color="#8FB0FF" />
+      <SolidColorBrush x:Key="GaFocusBrush" Color="#8FB0FF" />
+      <SolidColorBrush x:Key="GaCriticalTextBrush" Color="#F87171" />
+      <SolidColorBrush x:Key="GaWarningTextBrush" Color="#FBBF24" />
+      <SolidColorBrush x:Key="GaStateHealthyBrush" Color="#1F9D55" />
+      <SolidColorBrush x:Key="GaStateBusyBrush" Color="#2F6FED" />
+      <SolidColorBrush x:Key="GaStateAttentionBrush" Color="#D93636" />
+      <SolidColorBrush x:Key="GaStateUnreachableBrush" Color="#8A8F98" />
+      <SolidColorBrush x:Key="GaBadgeEnabledBrush" Color="#157545" />
+      <SolidColorBrush x:Key="GaBadgeEnabledInkBrush" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="GaBadgeDisabledBrush" Color="#3A404C" />
+      <SolidColorBrush x:Key="GaBadgeDisabledInkBrush" Color="#ECEEF2" />
+      <SolidColorBrush x:Key="GaBadgeBlockedBrush" Color="#B42318" />
+      <SolidColorBrush x:Key="GaBadgeBlockedInkBrush" Color="#FFFFFF" />
+    </ResourceDictionary>
+    <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="GaGroundBrush" Color="#F4F5F7" />
+      <SolidColorBrush x:Key="GaRailBrush" Color="#E6E9F0" />
+      <SolidColorBrush x:Key="GaSurfaceBrush" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="GaSurfaceHoverBrush" Color="#EEF0F4" />
+      <SolidColorBrush x:Key="GaHairlineBrush" Color="#D8DCE3" />
+      <SolidColorBrush x:Key="GaTextBrush" Color="#16181D" />
+      <SolidColorBrush x:Key="GaTextMutedBrush" Color="#576070" />
+      <SolidColorBrush x:Key="GaAccentBrush" Color="#2F5FD0" />
+      <SolidColorBrush x:Key="GaAccentTextBrush" Color="#2350B8" />
+      <SolidColorBrush x:Key="GaFocusBrush" Color="#2350B8" />
+      <SolidColorBrush x:Key="GaCriticalTextBrush" Color="#B42318" />
+      <SolidColorBrush x:Key="GaWarningTextBrush" Color="#9A5B00" />
+      <SolidColorBrush x:Key="GaStateHealthyBrush" Color="#1F9D55" />
+      <SolidColorBrush x:Key="GaStateBusyBrush" Color="#2F6FED" />
+      <SolidColorBrush x:Key="GaStateAttentionBrush" Color="#D93636" />
+      <SolidColorBrush x:Key="GaStateUnreachableBrush" Color="#8A8F98" />
+      <SolidColorBrush x:Key="GaBadgeEnabledBrush" Color="#157545" />
+      <SolidColorBrush x:Key="GaBadgeEnabledInkBrush" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="GaBadgeDisabledBrush" Color="#E1E4EA" />
+      <SolidColorBrush x:Key="GaBadgeDisabledInkBrush" Color="#3A4150" />
+      <SolidColorBrush x:Key="GaBadgeBlockedBrush" Color="#B42318" />
+      <SolidColorBrush x:Key="GaBadgeBlockedInkBrush" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="ButtonBackground" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#F6F7F9" />
+      <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#EEF0F4" />
+      <SolidColorBrush x:Key="ButtonBorderBrush" Color="#D8DCE3" />
+      <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#D8DCE3" />
+      <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#D8DCE3" />
+      <Thickness x:Key="ButtonBorderThemeThickness">1</Thickness>
+    </ResourceDictionary>
+  </ResourceDictionary.ThemeDictionaries>
+
+  <CornerRadius x:Key="GaControlRadius">6</CornerRadius>
+  <CornerRadius x:Key="GaCardRadius">12</CornerRadius>
+  <FontFamily x:Key="GaFontText">Segoe UI Variable Text, Segoe UI</FontFamily>
+  <FontFamily x:Key="GaFontDisplay">Segoe UI Variable Display, Segoe UI</FontFamily>
+  <FontFamily x:Key="GaFontMono">Cascadia Mono, Consolas</FontFamily>
+</ResourceDictionary>

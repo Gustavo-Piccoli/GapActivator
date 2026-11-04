@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/GapActivator.App/GapActivator.App.csproj" />
     <Project Path="src/GapActivator.Application/GapActivator.Application.csproj" />
     <Project Path="src/GapActivator.Domain/GapActivator.Domain.csproj" />
     <Project Path="src/GapActivator.Infrastructure/GapActivator.Infrastructure.csproj" />
@@ -10,6 +11,7 @@
     <Project Path="samples/GapActivator.SampleChild/GapActivator.SampleChild.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/GapActivator.App.Tests/GapActivator.App.Tests.csproj" />
     <Project Path="tests/GapActivator.Application.Tests/GapActivator.Application.Tests.csproj" />
     <Project Path="tests/GapActivator.Architecture.Tests/GapActivator.Architecture.Tests.csproj" />
     <Project Path="tests/GapActivator.Domain.Tests/GapActivator.Domain.Tests.csproj" />
