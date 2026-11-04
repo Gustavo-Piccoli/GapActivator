@@ -20,14 +20,14 @@ Stop it with Ctrl+C. The same setting can come from the environment variable `Ga
 
 ## Pipe and authorization
 
-The service listens on the named pipe `GapActivator`. The name comes from the configuration key `GapActivator:Ipc:PipeName` (command line `--GapActivator:Ipc:PipeName=<name>` or environment variable `GapActivator__Ipc__PipeName`). A name that is empty, contains a backslash or is longer than 200 characters stops the service at startup with exit code `1`. The pipe opens only after the startup reconciliation has finished, so a client that connects earlier waits or fails and tries again.
+The service listens on the named pipe `GapActivator`. The name comes from the configuration key `GapActivator:Ipc:PipeName` (command line `--GapActivator:Ipc:PipeName=<name>` or environment variable `GapActivator__Ipc__PipeName`). A name that is empty or blank, contains a backslash or is longer than 200 characters stops the service at startup with exit code `1`. The pipe opens only after the startup reconciliation has finished, so a client that connects earlier waits or fails and tries again.
 
 Who may do what:
 
-- Anyone who can log on to the machine may view: read state, runs and settings.
+- Anyone with an interactive logon (a console or Remote Desktop session) may view: read state, runs and settings. Batch and service logons get no access to the pipe.
 - Only Administrators and, when enabled, members of the local group `GapActivator Operators` may change state.
 
-The configuration key `GapActivator:Authorization:OperatorsGroup` takes `Auto`, `Enabled` or `Disabled`; the default is `Auto`. `Auto` enables the operators group only when the service runs under its virtual account (`NT SERVICE\GapActivator`); in console mode and under any other account, only Administrators may change state. An invalid value stops the service at startup with exit code `1`.
+The configuration key `GapActivator:Authorization:OperatorsGroup` takes `Auto`, `Enabled` or `Disabled`; the default is `Auto`. `Auto` enables the operators group only when the service runs under a virtual service account (a `S-1-5-80-*` SID, such as `NT SERVICE\GapActivator`); in console mode and under any other account, only Administrators may change state. An invalid value stops the service at startup with exit code `1`.
 
 If the pipe name is already in use by another process, the service logs a Critical entry and stops with exit code `1`, instead of running without a pipe.
 
