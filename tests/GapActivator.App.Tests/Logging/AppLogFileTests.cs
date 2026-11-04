@@ -79,6 +79,20 @@ public class AppLogFileTests
     }
 
     [Fact]
+    public void Append_RetentionCannotDeleteAnOldFile_StillWritesTheLine()
+    {
+        using var dir = new TempDirectory();
+        var now = new DateTimeOffset(2026, 11, 20, 12, 0, 0, TimeSpan.Zero);
+        var locked = Path.Combine(dir.Path, "app-20261001.log");
+        File.WriteAllText(locked, "old");
+        using var hold = new FileStream(locked, FileMode.Open, FileAccess.Read, FileShare.None);
+
+        new AppLogFile(dir.Path, NewTime(now)).Append(now, LogLevel.Error, "C", "kept", null);
+
+        File.ReadAllText(Path.Combine(dir.Path, "app-20261120.log")).ShouldContain("[ERR] C: kept");
+    }
+
+    [Fact]
     public void Append_UnwritableDirectory_DoesNotThrow()
     {
         using var dir = new TempDirectory();

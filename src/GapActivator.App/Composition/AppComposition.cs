@@ -58,7 +58,8 @@ public static class AppComposition
         });
         services.AddSingleton(sp => new ThemeApplier(
             sp.GetRequiredService<Localizer>(),
-            sp.GetRequiredService<IAppSettingsService>()));
+            sp.GetRequiredService<IAppSettingsService>(),
+            sp.GetRequiredService<IUiDispatcher>()));
     }
 
     private static void AddGateway(IServiceCollection services)

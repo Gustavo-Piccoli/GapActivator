@@ -23,7 +23,7 @@ public class ThemeApplierTests(HeadlessFixture fixture)
         using var dir = new TempDirectory();
         var other = theme == AppTheme.Dark ? AppTheme.Light : AppTheme.Dark;
         var service = NewService(dir, AppSettings.Defaults(English) with { Theme = other });
-        var applier = new ThemeApplier(new Localizer(AppLanguage.English), service);
+        var applier = new ThemeApplier(new Localizer(AppLanguage.English), service, new ImmediateUiDispatcher());
 
         var variant = await fixture.Session.Dispatch(
             () =>
@@ -49,7 +49,7 @@ public class ThemeApplierTests(HeadlessFixture fixture)
         using var dir = new TempDirectory();
         var service = NewService(dir, AppSettings.Defaults(English));
         var localizer = new Localizer(AppLanguage.English);
-        var applier = new ThemeApplier(localizer, service);
+        var applier = new ThemeApplier(localizer, service, new ImmediateUiDispatcher());
         var refreshed = 0;
         localizer.PropertyChanged += (_, _) => refreshed++;
 
@@ -64,5 +64,46 @@ public class ThemeApplierTests(HeadlessFixture fixture)
 
         localizer.Language.ShouldBe(AppLanguage.Portuguese);
         refreshed.ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task ThemeApplier_ChangeFromAnotherThread_IsAppliedOnlyThroughTheDispatcher()
+    {
+        using var dir = new TempDirectory();
+        var service = NewService(dir, AppSettings.Defaults(English));
+        var localizer = new Localizer(AppLanguage.English);
+        var queue = new QueueingDispatcher();
+        var applier = new ThemeApplier(localizer, service, queue);
+        applier.Start();
+
+        await Task.Run(() => service.Update(s => s with { Language = AppLanguage.Portuguese }), TestContext.Current.CancellationToken);
+
+        localizer.Language.ShouldBe(AppLanguage.English);
+        queue.Run();
+        localizer.Language.ShouldBe(AppLanguage.Portuguese);
+    }
+
+    private sealed class QueueingDispatcher : IUiDispatcher
+    {
+        private readonly Queue<Action> _pending = new();
+
+        public void Post(Action action)
+        {
+            lock (_pending)
+            {
+                _pending.Enqueue(action);
+            }
+        }
+
+        public void Run()
+        {
+            lock (_pending)
+            {
+                while (_pending.Count > 0)
+                {
+                    _pending.Dequeue()();
+                }
+            }
+        }
     }
 }

@@ -70,22 +70,29 @@ public sealed partial class AppLogFile(string directory, TimeProvider time)
         var today = Today();
         _lastRetentionDay = today;
         var cutoff = today.AddDays(-RetentionDays);
-        foreach (var file in Directory.EnumerateFiles(directory))
+        try
         {
-            var match = LogFileName().Match(Path.GetFileName(file));
-            if (match.Success
-                && DateOnly.TryParseExact(match.Groups[1].Value, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
-                && date < cutoff)
+            foreach (var file in Directory.EnumerateFiles(directory))
             {
-                try
+                var match = LogFileName().Match(Path.GetFileName(file));
+                if (match.Success
+                    && DateOnly.TryParseExact(match.Groups[1].Value, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+                    && date < cutoff)
                 {
-                    File.Delete(file);
-                }
-                catch (Exception ex) when (IsFileSystemFailure(ex))
-                {
-                    // One undeletable file must not stop the rest of the cleanup.
+                    try
+                    {
+                        File.Delete(file);
+                    }
+                    catch (Exception ex) when (IsFileSystemFailure(ex))
+                    {
+                        // One undeletable file must not stop the rest of the cleanup.
+                    }
                 }
             }
+        }
+        catch (Exception ex) when (IsFileSystemFailure(ex))
+        {
+            // A failing sweep must never drop the line being written.
         }
     }
 }

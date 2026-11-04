@@ -5,7 +5,7 @@ using GapActivator.App.Settings;
 namespace GapActivator.App.Services;
 
 /// <summary>Applies the theme and language from the settings now and whenever they change.</summary>
-public sealed class ThemeApplier(Localizer localizer, IAppSettingsService settings)
+public sealed class ThemeApplier(Localizer localizer, IAppSettingsService settings, IUiDispatcher ui)
 {
     private bool _started;
 
@@ -18,7 +18,8 @@ public sealed class ThemeApplier(Localizer localizer, IAppSettingsService settin
 
         _started = true;
         Apply(settings.Current);
-        settings.Changed += (_, current) => Apply(current);
+        // Changed can be raised from any thread; Avalonia and the localizer's bindings need the UI thread.
+        settings.Changed += (_, current) => ui.Post(() => Apply(current));
     }
 
     private void Apply(AppSettings current)

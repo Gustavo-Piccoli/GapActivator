@@ -125,13 +125,17 @@ public class AppSettingsStoreTests
     {
         using var dir = new TempDirectory();
         var path = Path.Combine(dir.Path, "app-settings.json");
-        File.WriteAllText(path + ".tmp", "half written garbage that is much longer than the real document will ever be, really, really long");
+        File.WriteAllText(path + ".tmp", new string('x', 2000));
         var store = NewStore(path);
+        var saved = AppSettings.Defaults(English) with { Theme = AppTheme.Dark, Language = AppLanguage.Portuguese, Notifications = false };
 
-        store.Save(AppSettings.Defaults(English)).ShouldBeTrue();
+        store.Save(saved).ShouldBeTrue();
 
         File.Exists(path + ".tmp").ShouldBeFalse();
-        store.Load().ShouldBe(AppSettings.Defaults(English));
+        File.Exists(path + ".corrupt").ShouldBeFalse();
+        File.ReadAllText(path).ShouldBe(
+            """{"schemaVersion":1,"theme":"Dark","language":"Portuguese","notifications":false,"checkForUpdates":true,"lastUpdateCheck":null,"window":null}""");
+        store.Load().ShouldBe(saved);
     }
 
     [Fact]
