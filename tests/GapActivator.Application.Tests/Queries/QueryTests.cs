@@ -109,6 +109,31 @@ public class QueryTests
     }
 
     [Fact]
+    public async Task ListProcessIds_TwoProcesses_ReturnsBothIds()
+    {
+        await using var host = new ApplicationTestHost();
+        Process first = AddProcess(host, "First");
+        Process second = AddProcess(host, "Second");
+
+        IReadOnlyList<ProcessId> ids = await host.Ask<ListProcessIds, IReadOnlyList<ProcessId>>(new ListProcessIds(), Viewer);
+
+        ids.ShouldBe([first.Id, second.Id], ignoreOrder: true);
+    }
+
+    // BI-039
+    [Fact]
+    public async Task ListProcessIds_ProcessFailingToLoad_IsStillListed()
+    {
+        await using var host = new ApplicationTestHost();
+        Process broken = AddProcess(host, "Broken");
+        host.Store.FailOnLoad(broken.Id);
+
+        IReadOnlyList<ProcessId> ids = await host.Ask<ListProcessIds, IReadOnlyList<ProcessId>>(new ListProcessIds(), Viewer);
+
+        ids.ShouldBe([broken.Id]);
+    }
+
+    [Fact]
     public async Task ListProcesses_IncludesActiveRunAndLastOutcome()
     {
         await using var host = new ApplicationTestHost();

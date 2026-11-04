@@ -24,7 +24,15 @@ public sealed partial class SchedulerLoop(
 {
     private static readonly TimeSpan ShutdownMargin = TimeSpan.FromSeconds(15);
 
+    private readonly TaskCompletionSource _reconciled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     private TimeSpan _lastInterval = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Completes when the startup reconciliation has committed, before the first cycle; faults with the reconciliation
+    /// exception; is cancelled when the stopping token ends the loop first.
+    /// </summary>
+    public Task Reconciled => _reconciled.Task;
 
     public async Task RunAsync(CancellationToken stoppingToken)
     {
@@ -61,6 +69,8 @@ public sealed partial class SchedulerLoop(
         }
         finally
         {
+            // No-op when the reconciliation already settled it; otherwise the loop ended before it did.
+            _reconciled.TrySetCanceled(stoppingToken);
             await StopRunsAsync();
         }
     }
@@ -70,10 +80,12 @@ public sealed partial class SchedulerLoop(
         try
         {
             await commands.SendAsync<ReconcileOnStartup, Unit>(new ReconcileOnStartup(), Caller.System, stoppingToken);
+            _reconciled.TrySetResult();
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
         {
             LogReconcileFailed(ex);
+            _reconciled.TrySetException(ex);
             throw;
         }
     }
