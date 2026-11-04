@@ -44,6 +44,10 @@ public sealed class FakeProcessLauncher(TimeProvider time) : IProcessLauncher
     public void QueueFail(string executable, string message = "Simulated launch failure.") =>
         Enqueue(executable, _ => throw new LaunchFailedException(message));
 
+    /// <summary>Queues a launch that fails with any exception, which simulates a bug in the launcher.</summary>
+    public void QueueThrow(string executable, Exception error) =>
+        Enqueue(executable, _ => Task.FromException<IRunningProcess>(error));
+
     /// <summary>Queues a launch that blocks until its token is cancelled, then throws <see cref="OperationCanceledException"/>.</summary>
     public void QueueBlockUntilCancelled(string executable) =>
         Enqueue(executable, async ct =>
