@@ -323,6 +323,7 @@ public sealed partial class LauncherTests : IAsyncLifetime
         string file = Path.Combine(_root.Path, "gc.txt");
         int childPid = 0;
         int grandchildPid = 0;
+        bool provenGone = false;
         var launcher = new WindowsProcessLauncher(new InfrastructureOptions(Paths), new RecordingLogger<WindowsProcessLauncher>(_logs))
         {
             AfterResume = pid =>
@@ -353,11 +354,12 @@ public sealed partial class LauncherTests : IAsyncLifetime
             // Both are proven gone; a recycled PID must not be killed in the finally block.
             childPid = 0;
             grandchildPid = 0;
+            provenGone = true;
         }
         finally
         {
             KillByPid(childPid);
-            if (grandchildPid == 0 && File.Exists(file)
+            if (!provenGone && grandchildPid == 0 && File.Exists(file)
                 && int.TryParse(File.ReadAllText(file), CultureInfo.InvariantCulture, out int fromFile))
             {
                 grandchildPid = fromFile;
