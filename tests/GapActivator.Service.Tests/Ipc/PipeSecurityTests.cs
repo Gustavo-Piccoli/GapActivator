@@ -11,7 +11,8 @@ public sealed class PipeSecurityTests
     [Trait("Category", "Integration")]
     public void PipeSecurity_CreatedPipe_ReadsBackTheExpectedRules()
     {
-        SecurityIdentifier me = WindowsIdentity.GetCurrent().User!;
+        using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+        SecurityIdentifier me = identity.User!;
         string name = $"GapActivator.Tests.{Guid.NewGuid():N}";
         using NamedPipeServerStream pipe = NamedPipeServerStreamAcl.Create(
             name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 0, 0,
@@ -22,11 +23,16 @@ public sealed class PipeSecurityTests
             .Cast<PipeAccessRule>().ToList();
 
         security.AreAccessRulesProtected.ShouldBeTrue();
+        security.AreAccessRulesCanonical.ShouldBeTrue();
+        rules.Select(r => r.IdentityReference.Value).Distinct().Order().ShouldBe(
+            new[] { "S-1-5-18", "S-1-5-32-544", "S-1-5-4", "S-1-5-2", me.Value }.Distinct().Order());
 
         List<PipeAccessRule> For(string sid) =>
             rules.Where(r => r.IdentityReference.Value == sid).ToList();
 
-        For("S-1-5-2").ShouldHaveSingleItem().AccessControlType.ShouldBe(AccessControlType.Deny);
+        PipeAccessRule network = For("S-1-5-2").ShouldHaveSingleItem();
+        network.AccessControlType.ShouldBe(AccessControlType.Deny);
+        network.PipeAccessRights.ShouldBe(PipeAccessRights.FullControl);
 
         PipeAccessRule interactive = For("S-1-5-4").ShouldHaveSingleItem();
         interactive.AccessControlType.ShouldBe(AccessControlType.Allow);

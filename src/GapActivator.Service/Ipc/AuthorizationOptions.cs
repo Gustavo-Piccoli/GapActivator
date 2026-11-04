@@ -25,12 +25,15 @@ public sealed record AuthorizationOptions(OperatorsGroupSetting OperatorsGroup)
             return new AuthorizationOptions(OperatorsGroupSetting.Auto);
         }
 
-        if (!Enum.TryParse(raw, ignoreCase: true, out OperatorsGroupSetting setting) || !Enum.IsDefined(setting))
+        // Exact name only (ignoring case): Enum.TryParse would also accept numbers and comma lists.
+        string? exact = Enum.GetNames<OperatorsGroupSetting>()
+            .FirstOrDefault(n => string.Equals(n, raw, StringComparison.OrdinalIgnoreCase));
+        if (exact is null)
         {
             throw new InvalidOperationException(
                 $"Invalid value '{raw}' for {OperatorsGroupKey}. Expected one of: Auto, Enabled, Disabled.");
         }
 
-        return new AuthorizationOptions(setting);
+        return new AuthorizationOptions(Enum.Parse<OperatorsGroupSetting>(exact));
     }
 }

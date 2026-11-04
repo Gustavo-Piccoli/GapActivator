@@ -1,6 +1,7 @@
 using System.IO.Pipes;
 using System.Security.Principal;
 using GapActivator.Application.Messaging;
+using GapActivator.Ipc;
 using GapActivator.Service.Ipc;
 using Microsoft.Extensions.Configuration;
 
@@ -48,11 +49,15 @@ public sealed class CallerResolverTests
         AuthorizationOptions.FromConfiguration(configuration).OperatorsGroup.ShouldBe(expected);
     }
 
-    [Fact]
-    public void AuthorizationOptions_FromConfiguration_InvalidValue_ThrowsNamingTheKey()
+    [Theory]
+    [InlineData("Sometimes")]
+    [InlineData("1")]
+    [InlineData("Auto, Enabled")]
+    [InlineData("")]
+    public void AuthorizationOptions_FromConfiguration_InvalidValue_ThrowsNamingTheKey(string value)
     {
         IConfiguration configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { [AuthorizationOptions.OperatorsGroupKey] = "Sometimes" })
+            .AddInMemoryCollection(new Dictionary<string, string?> { [AuthorizationOptions.OperatorsGroupKey] = value })
             .Build();
 
         InvalidOperationException ex =
@@ -66,7 +71,10 @@ public sealed class CallerResolverTests
     [Trait("Category", "Integration")]
     public async Task Resolve_RealCurrentUserOverARealPipe_ReturnsTheUserAndTheirAdminStatus()
     {
-        Caller caller = await ResolveOverRealPipeAsync(OperatorsGroupSetting.Disabled);
+        await using ConnectedPipe pipe = await ConnectedPipe.OpenAsync(TokenImpersonationLevel.Identification);
+        await pipe.ClientSendsOneFrameAsync();
+
+        Caller caller = new WindowsCallerResolver(new AuthorizationOptions(OperatorsGroupSetting.Disabled)).Resolve(pipe.Server);
 
         using WindowsIdentity me = WindowsIdentity.GetCurrent();
         caller.Name.ShouldBe(me.Name);
@@ -92,33 +100,88 @@ public sealed class CallerResolverTests
 
         Assert.SkipWhen(groupExists, "This machine has a 'GapActivator Operators' group.");
 
-        Caller caller = await ResolveOverRealPipeAsync(OperatorsGroupSetting.Enabled);
+        await using ConnectedPipe pipe = await ConnectedPipe.OpenAsync(TokenImpersonationLevel.Identification);
+        await pipe.ClientSendsOneFrameAsync();
+
+        Caller caller = new WindowsCallerResolver(new AuthorizationOptions(OperatorsGroupSetting.Enabled)).Resolve(pipe.Server);
 
         using WindowsIdentity me = WindowsIdentity.GetCurrent();
         caller.CanChange.ShouldBe(new WindowsPrincipal(me)
             .IsInRole(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null)));
     }
 
-    private static async Task<Caller> ResolveOverRealPipeAsync(OperatorsGroupSetting setting)
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Resolve_AfterReturning_LeavesNoImpersonationInTheAsyncFlow()
     {
-        CancellationToken ct = TestContext.Current.CancellationToken;
-        string name = $"GapActivator.Tests.{Guid.NewGuid():N}";
-        await using var server = new NamedPipeServerStream(
-            name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-        await using var client = new NamedPipeClientStream(
-            ".", name, PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
+        await using ConnectedPipe pipe = await ConnectedPipe.OpenAsync(TokenImpersonationLevel.Identification);
+        await pipe.ClientSendsOneFrameAsync();
 
-        TimeSpan limit = TimeSpan.FromSeconds(10);
-        Task accept = server.WaitForConnectionAsync(ct);
-        await client.ConnectAsync(ct).WaitAsync(limit, ct);
-        await accept.WaitAsync(limit, ct);
+        _ = new WindowsCallerResolver(new AuthorizationOptions(OperatorsGroupSetting.Disabled)).Resolve(pipe.Server);
 
-        // Unbuffered pipe: the write completes only once the server reads, so start the read first.
-        byte[] buffer = new byte[1];
-        ValueTask<int> read = server.ReadAsync(buffer, ct);
-        await client.WriteAsync(new byte[] { 1 }, ct).AsTask().WaitAsync(limit, ct);
-        (await read.AsTask().WaitAsync(limit, ct)).ShouldBe(1);
+        WindowsIdentity.GetCurrent(ifImpersonating: true).ShouldBeNull();
+        await Task.Yield();
+        WindowsIdentity.GetCurrent(ifImpersonating: true).ShouldBeNull();
+        await Task.Run(() =>
+        {
+            WindowsIdentity.GetCurrent(ifImpersonating: true).ShouldBeNull();
+            using var another = new NamedPipeServerStream(
+                $"GapActivator.Tests.{Guid.NewGuid():N}", PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+        }, TestContext.Current.CancellationToken);
+    }
 
-        return new WindowsCallerResolver(new AuthorizationOptions(setting)).Resolve(server);
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task Resolve_AnonymousClient_ThrowsUnauthorizedAccess()
+    {
+        await using ConnectedPipe pipe = await ConnectedPipe.OpenAsync(TokenImpersonationLevel.Anonymous);
+        await pipe.ClientSendsOneFrameAsync();
+
+        var resolver = new WindowsCallerResolver(new AuthorizationOptions(OperatorsGroupSetting.Disabled));
+
+        Should.Throw<UnauthorizedAccessException>(() => resolver.Resolve(pipe.Server));
+    }
+
+    private sealed class ConnectedPipe : IAsyncDisposable
+    {
+        private ConnectedPipe(NamedPipeServerStream server, NamedPipeClientStream client)
+        {
+            Server = server;
+            Client = client;
+        }
+
+        public NamedPipeServerStream Server { get; }
+
+        public NamedPipeClientStream Client { get; }
+
+        public static async Task<ConnectedPipe> OpenAsync(TokenImpersonationLevel level)
+        {
+            CancellationToken ct = TestContext.Current.CancellationToken;
+            string name = $"GapActivator.Tests.{Guid.NewGuid():N}";
+            var server = new NamedPipeServerStream(
+                name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            var client = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous, level);
+            Task accept = server.WaitForConnectionAsync(ct);
+            await client.ConnectAsync(ct).WaitAsync(TimeSpan.FromSeconds(10), ct);
+            await accept.WaitAsync(TimeSpan.FromSeconds(10), ct);
+            return new ConnectedPipe(server, client);
+        }
+
+        public async Task ClientSendsOneFrameAsync()
+        {
+            CancellationToken ct = TestContext.Current.CancellationToken;
+            TimeSpan limit = TimeSpan.FromSeconds(10);
+
+            // Unbuffered pipe: the write completes only once the server reads, so start the read first.
+            ValueTask<byte[]?> read = IpcFrame.ReadAsync(Server, ct);
+            await IpcFrame.WriteAsync(Client, "{}"u8.ToArray(), ct).AsTask().WaitAsync(limit, ct);
+            (await read.AsTask().WaitAsync(limit, ct)).ShouldNotBeNull();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await Client.DisposeAsync();
+            await Server.DisposeAsync();
+        }
     }
 }
