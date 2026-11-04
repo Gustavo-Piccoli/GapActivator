@@ -1,5 +1,10 @@
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
+using GapActivator.App.Composition;
+using GapActivator.App.Services;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace GapActivator.App;
 
@@ -16,8 +21,17 @@ public sealed class App : Avalonia.Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime)
         {
+            var services = s_services ?? throw new InvalidOperationException("Services were not composed.");
+            var uiLogger = services.GetRequiredService<ILogger<App>>();
+            Dispatcher.UIThread.UnhandledException += (_, e) =>
+            {
+                AppLog.UnhandledUiException(uiLogger, e.Exception);
+                e.Handled = true;
+            };
+
+            services.GetRequiredService<ThemeApplier>().Start();
+
             // The window is not shown yet; later tasks resolve the shell from here.
-            _ = s_services ?? throw new InvalidOperationException("Services were not composed.");
         }
 
         base.OnFrameworkInitializationCompleted();
