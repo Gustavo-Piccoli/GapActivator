@@ -27,6 +27,10 @@ internal static class ServiceHostFactory
 
         // The last rule of equal specificity wins, so these switch the Event Log and the console off entirely.
         builder.Logging.AddFilter<SafeEventLogLoggerProvider>(null, LogLevel.None);
+        foreach (string category in GapActivatorLogging.EventLogErrorCategories)
+        {
+            builder.Logging.AddFilter<SafeEventLogLoggerProvider>(category, LogLevel.None);
+        }
         builder.Logging.AddFilter<ConsoleLoggerProvider>(null, LogLevel.None);
 
         if (logs is not null)

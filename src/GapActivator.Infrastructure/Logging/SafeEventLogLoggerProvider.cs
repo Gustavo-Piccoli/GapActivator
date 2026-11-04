@@ -4,17 +4,17 @@ namespace GapActivator.Infrastructure.Logging;
 
 /// <summary>Wraps the Event Log provider so that a missing source or a denied write never reaches the caller.</summary>
 [ProviderAlias("EventLog")]
-internal sealed class SafeEventLogLoggerProvider(ILoggerProvider inner) : ILoggerProvider
+internal sealed class SafeEventLogLoggerProvider(ILoggerProvider inner, EventLogRateLimiter limiter) : ILoggerProvider
 {
     public ILogger CreateLogger(string categoryName)
     {
         try
         {
-            return new SafeLogger(inner.CreateLogger(categoryName));
+            return new SafeLogger(inner.CreateLogger(categoryName), categoryName, limiter);
         }
         catch (Exception)
         {
-            return new SafeLogger(null);
+            return new SafeLogger(null, categoryName, limiter);
         }
     }
 
@@ -30,7 +30,7 @@ internal sealed class SafeEventLogLoggerProvider(ILoggerProvider inner) : ILogge
         }
     }
 
-    private sealed class SafeLogger(ILogger? inner) : ILogger
+    private sealed class SafeLogger(ILogger? inner, string category, EventLogRateLimiter limiter) : ILogger
     {
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull
@@ -61,7 +61,17 @@ internal sealed class SafeEventLogLoggerProvider(ILoggerProvider inner) : ILogge
         {
             try
             {
-                inner?.Log(logLevel, eventId, state, exception, formatter);
+                if (inner is null || !IsEnabled(logLevel))
+                {
+                    return;
+                }
+
+                // The key leaves out the exception, so a repeated failure with a new stack is still one entry.
+                string text = formatter(state, exception);
+                if (limiter.TryAcquire(category, text))
+                {
+                    inner.Log(logLevel, eventId, state, exception, formatter);
+                }
             }
             catch (Exception)
             {

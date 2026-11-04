@@ -14,12 +14,33 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using DomainLogLevel = GapActivator.Domain.Settings.LogLevel;
+using LoggingLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace GapActivator.Service.Tests;
 
 [Trait("Category", "Integration")]
 public sealed class HostConfigurationTests
 {
+    // BI-090
+    [Fact]
+    public async Task ServiceHostFactory_EventLog_IsOffForEveryCategory()
+    {
+        await using var root = new TempDataRoot();
+        using IHost host = ServiceHostFactory.CreateBuilder(root.Path, []).Build();
+
+        IList<LoggerFilterRule> rules = host.Services.GetRequiredService<IOptions<LoggerFilterOptions>>().Value.Rules.ToList();
+        string eventLog = typeof(SafeEventLogLoggerProvider).FullName!;
+
+        rules.ShouldContain(r => r.ProviderName == eventLog && r.CategoryName == null && r.LogLevel == LoggingLevel.None);
+        GapActivatorLogging.EventLogErrorCategories.ShouldNotBeEmpty();
+        foreach (string category in GapActivatorLogging.EventLogErrorCategories)
+        {
+            // The last rule of equal specificity wins, so the None rule must come after the policy's Error rule.
+            LoggerFilterRule last = rules.Last(r => r.ProviderName == eventLog && r.CategoryName == category);
+            last.LogLevel.ShouldBe(LoggingLevel.None);
+        }
+    }
+
     // BI-075 (addition a)
     [Fact]
     public async Task HostOptions_Built_ShutdownTimeoutCoversTheLargestGracePeriodPlus15Seconds()

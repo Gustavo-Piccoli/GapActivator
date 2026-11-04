@@ -154,7 +154,7 @@ public sealed class FileLoggerTests : IAsyncLifetime
     [Fact]
     public void SafeEventLog_InnerThrows_IsSwallowed()
     {
-        var provider = new SafeEventLogLoggerProvider(new ThrowingProvider());
+        var provider = new SafeEventLogLoggerProvider(new ThrowingProvider(), new EventLogRateLimiter(TimeProvider.System));
         ILogger logger = provider.CreateLogger("C");
 
         Should.NotThrow(() => logger.LogError("x"));

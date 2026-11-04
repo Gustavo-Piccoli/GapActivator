@@ -5,12 +5,14 @@ using Microsoft.Extensions.Logging.EventLog;
 
 namespace GapActivator.Infrastructure.Logging;
 
-/// <summary>Registers the service logging: the daily file and, for severe errors only, the Windows Event Log.</summary>
+/// <summary>Registers the service logging: the daily file and, for critical and curated errors only, the Windows Event Log.</summary>
 public static class GapActivatorLogging
 {
     public const string EventSource = "GapActivator";
 
-    internal const string NotifierCategory = "GapActivator.Infrastructure.Notifications.LoggingAppNotifier";
+    /// <summary>Error entries of these categories reach the Event Log; every other category only Critical (BI-090).</summary>
+    public static readonly IReadOnlyList<string> EventLogErrorCategories =
+        ["GapActivator.Application.Cycle.SchedulerLoop", "GapActivator.Application.Runs.RunSupervisor"];
 
     /// <remarks>Adds no console logger: the host decides about console output.</remarks>
     public static ILoggingBuilder AddGapActivatorLogging(
@@ -46,11 +48,15 @@ public static class GapActivatorLogging
         // The inner provider is created inside the factory, so each container gets (and disposes) its own. When it
         // cannot be created, the wrapper logs nowhere.
         logging.Services.AddSingleton<ILoggerProvider>(_ =>
-            new SafeEventLogLoggerProvider(createEventLog() ?? NullLoggerProvider.Instance));
+            new SafeEventLogLoggerProvider(createEventLog() ?? NullLoggerProvider.Instance, new EventLogRateLimiter(time)));
 
         // The rules are added in every case, so the policy is the same everywhere (BI-090, spec section 9).
-        logging.AddFilter<SafeEventLogLoggerProvider>(null, LogLevel.Error);
-        logging.AddFilter<SafeEventLogLoggerProvider>(NotifierCategory, LogLevel.None);
+        logging.AddFilter<SafeEventLogLoggerProvider>(null, LogLevel.Critical);
+        foreach (string category in EventLogErrorCategories)
+        {
+            logging.AddFilter<SafeEventLogLoggerProvider>(category, LogLevel.Error);
+        }
+
         return logging;
     }
 
