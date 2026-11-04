@@ -174,7 +174,7 @@ Terminal outcomes (exactly one, recorded with reason, exit code, duration, and w
 | TimedOut | time limit expired | yes |
 | Cancelled | requested by the user | no |
 | Interrupted (new) | GapActivator stopped or restarted during the run | no |
-| Abandoned (new) | GapActivator died during the run and the process is gone when it comes back | yes (legacy: orphan counted as failure) |
+| Abandoned (new) | GapActivator died during the run, with no stop requested, and the process is gone when it comes back | yes (legacy: orphan counted as failure) |
 | Skipped (new) | the schedule came due while a previous run was still active | no |
 
 Service-kind processes use the same states plus:
@@ -259,7 +259,7 @@ The app asks: "The process is already running. Do you want to cancel the current
 | Cancel during Launching | Abort the launch; if the executable already started, signal it immediately. |
 | Cancel with nothing running | Command rejected: nothing to cancel. |
 | GapActivator stops or restarts during runs | Graceful cancel → **Interrupted**, not a failure. |
-| GapActivator crashes or power loss | On start, for each non-terminal run: if PID + start time still match a live process, **re-adopt** and keep supervising; otherwise **Abandoned** (failure). |
+| GapActivator crashes or power loss | On start, for each non-terminal run: if PID + start time still match a live process, **re-adopt** and keep supervising; otherwise **Abandoned** (failure), or, when a stop was already requested, the outcome of that stop (**Interrupted** for a shutdown). |
 | Schedule due while still running | **Skipped**, recorded. |
 | Executable missing | **FailedToStart**, failure, clear message. |
 | Same executable in two registrations | Allowed with a warning at save time; supervision is per PID, so registrations never confuse each other. |

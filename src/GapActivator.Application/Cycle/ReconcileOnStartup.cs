@@ -13,7 +13,8 @@ public sealed record ReconcileOnStartup : IInternalCommand<Unit>;
 
 /// <summary>
 /// Runs once per start (BI-073): every active run left by the previous instance is re-adopted when its child is still
-/// alive (BI-072) or abandoned when it is gone (BI-071; a Service-kind run ends Interrupted, BI-066). One command and
+/// alive (BI-072) or abandoned when it is gone (BI-071; a Service-kind run ends Interrupted, BI-066; a run already
+/// being stopped ends with that stop's outcome, BI-074). One command and
 /// one commit; the adoptions happen after the commit. An exception from the launcher is not taken to mean "gone", since
 /// abandoning a child that may be alive could start a duplicate: it fails the command. Handles that were attached but
 /// not adopted, because the command failed, are disposed with the handler's scope.

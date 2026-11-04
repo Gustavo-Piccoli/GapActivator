@@ -151,10 +151,18 @@ public sealed class Run : AggregateRoot<RunId>
         Complete(ResolveOutcome(exitCode), exitCode, killed, now);
     }
 
+    /// <summary>
+    /// Closes a run whose child is gone when GapActivator starts again. A run whose stop was already requested ends
+    /// with that stop's outcome (Interrupted for a shutdown, BI-074). Otherwise a RunToCompletion run ends Abandoned
+    /// (BI-071) and a Service-kind run ends Interrupted (BI-066). No exit code is known and nothing was killed.
+    /// </summary>
     public void Abandon(DateTimeOffset now)
     {
         RequireState("abandon", RunState.Launching, RunState.Running, RunState.Stopping);
-        Complete(Kind == ProcessKind.Service ? RunOutcome.Interrupted : RunOutcome.Abandoned, null, false, now);
+        RunOutcome outcome = StopReason is { } reason
+            ? OutcomeForStop(reason)
+            : Kind == ProcessKind.Service ? RunOutcome.Interrupted : RunOutcome.Abandoned;
+        Complete(outcome, null, false, now);
     }
 
     private RunOutcome ResolveOutcome(int exitCode)

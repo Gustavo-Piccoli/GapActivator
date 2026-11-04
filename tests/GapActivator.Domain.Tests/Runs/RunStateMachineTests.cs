@@ -382,7 +382,7 @@ public class RunStateMachineTests
     [Fact]
     public void Abandon_RunToCompletion_IsAbandoned()
     {
-        var run = Build(RunState.Stopping);
+        var run = Build(RunState.Running);
 
         run.Abandon(T1);
 
@@ -398,6 +398,32 @@ public class RunStateMachineTests
         run.Abandon(T1);
 
         run.State.ShouldBe(RunState.Completed);
+        run.Outcome.ShouldBe(RunOutcome.Abandoned);
+    }
+
+    // BI-074
+    [Theory]
+    [InlineData(RunState.Running, StopReason.Shutdown, ProcessKind.RunToCompletion, RunOutcome.Interrupted)]
+    [InlineData(RunState.Running, StopReason.Shutdown, ProcessKind.Service, RunOutcome.Interrupted)]
+    [InlineData(RunState.Running, StopReason.TimeLimit, ProcessKind.RunToCompletion, RunOutcome.TimedOut)]
+    [InlineData(RunState.Running, StopReason.UserCancel, ProcessKind.RunToCompletion, RunOutcome.Cancelled)]
+    [InlineData(RunState.Running, StopReason.UserCancel, ProcessKind.Service, RunOutcome.Stopped)]
+    [InlineData(RunState.Launching, StopReason.Shutdown, ProcessKind.RunToCompletion, RunOutcome.Interrupted)]
+    public void Abandon_AfterStopRequest_CompletesWithTheStopOutcome(
+        RunState state, StopReason reason, ProcessKind kind, RunOutcome expected)
+    {
+        var run = Build(state, kind);
+        run.RequestStop(reason, T0);
+        run.ClearDomainEvents();
+
+        run.Abandon(T1);
+
+        run.State.ShouldBe(RunState.Completed);
+        run.Outcome.ShouldBe(expected);
+        run.Killed.ShouldBeFalse();
+        run.ExitCode.ShouldBeNull();
+        run.EndedAt.ShouldBe(T1);
+        run.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<RunCompleted>().Outcome.ShouldBe(expected);
     }
 
     [Fact]
