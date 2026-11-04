@@ -45,7 +45,7 @@ catch (ArgumentException)
 
 The comparison is exact: the two values are equal when the process is the same one.
 
-A child may stop when GapActivator is gone, but it does not need to. A restarted GapActivator re-adopts live children (see "After a GapActivator crash").
+A child may stop when GapActivator is gone, but it does not need to: after a crash, a restarted GapActivator re-adopts live children (see "After a GapActivator crash").
 
 ## Cancellation
 
@@ -55,15 +55,17 @@ A child that wants to stop gracefully opens the event with `EventWaitHandle.TryO
 
 GapActivator then waits for the grace period. It is configured per process and defaults to 30 seconds. If the child has not exited when the grace period ends, GapActivator kills the whole process tree. It does this through a job object, `Local\GapActivator.Job.{childPid}.{startTimeUtcTicks}`, that holds the child and the processes it starts. The job object does not kill anything when GapActivator closes it.
 
+A service stop or restart sets the cancel event of every running child. Each child gets its grace period, and GapActivator kills the ones still running when it ends. The run ends Interrupted. Re-adoption happens only after a crash (or when the shutdown time limit cuts a stop short).
+
 ## Output
 
 Standard output and standard error go to one file, in the order the child wrote them. Write UTF-8. A run's output file is capped at 50 MiB: after the cap, GapActivator stops writing to the file and appends the line `[GapActivator] Output truncated after 52428800 bytes.` once. It keeps reading the pipe, so the child never blocks. The output is visible to everyone who can use the GapActivator app, so never print secrets.
 
 ## After a GapActivator crash
 
-If the service crashes or loses power while a child runs, the child is not stopped. When the service starts again it re-adopts every live child by process ID and start time and keeps supervising it. The output the child writes after the crash is not captured: the pipe to the old service is broken, writes to it fail, and .NET ignores those failures. A child that outlives the service must tolerate failed writes to standard output and standard error. This also happens on a normal stop or restart of the service, because the pipe closes then too.
+If the service crashes or loses power while a child runs, the child is not stopped. When the service starts again it re-adopts every live child by process ID and start time and keeps supervising it. The output the child writes after the crash is not captured: the pipe to the old service is broken, writes to it fail, and .NET ignores those failures. A child that outlives the service must tolerate failed writes to standard output and standard error.
 
-A child that started between its creation and the first commit of its run record is not seen by the restarted service. It keeps running unsupervised. This is the "crash window". Its run ends as Abandoned.
+A child created after the run record was committed, but before `RecordRunLaunched` stores its PID and start time, is not seen by the restarted service. This is the "crash window": it runs from the creation of the process to the commit of `RecordRunLaunched`. The run record itself is committed before the child is created. GapActivator creates the child suspended, so a crash before it resumes the child's thread leaves a suspended process that never runs; a crash after that leaves a child that runs unsupervised. In both cases the run has no PID, so it cannot be matched to a process. At the next start a RunToCompletion run with no recorded stop ends Abandoned, a Service-kind run ends Interrupted, and a run with a recorded stop ends with that stop's outcome.
 
 Known limitation: after a crash, GapActivator stops a re-adopted child by walking parent links to find its process tree. Descendants whose parent has already exited are not reached and keep running. Durable job ownership across service crashes is listed as future work.
 

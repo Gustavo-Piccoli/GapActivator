@@ -31,3 +31,7 @@ sc.exe failureflag GapActivator 1
 `failureflag 1` makes the Service Control Manager apply the recovery actions also when the service stops with a non-zero exit code, which is how a requested restart (exit code `3`) and a fatal failure (exit code `1`) come back. A requested restart takes effect only after the Service Control Manager's recovery delay of 60 seconds.
 
 Remove it with `sc.exe delete GapActivator`.
+
+> **Warning: this is for a developer install only.** Without the installer, nothing sets access rights on the data root, so it inherits `Users: Read` from ProgramData and any local user can read the database and the run output. Secrets are protected with machine-scope DPAPI, which lets any local user decrypt them. `sc.exe create` without `obj=` runs the service, and every child it starts, as LocalSystem. Never store real SMTP passwords or secret variables in a developer install. The installer (Plan 5) sets the access rights.
+
+When the system shuts down or reboots, Windows does not wait the 10 min 45 s the service asks for. The operating system may kill the children. Runs whose stop was already recorded end Interrupted, and the others end Abandoned at the next start.
