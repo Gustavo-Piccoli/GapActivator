@@ -29,6 +29,7 @@ public static class AppComposition
         AddLogging(services);
         AddSettings(services);
         AddGateway(services);
+        AddShell(services);
 
         overrides?.Invoke(services);
         return services.BuildServiceProvider();
@@ -74,5 +75,13 @@ public static class AppComposition
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<ILogger<ServiceGateway>>()));
         services.AddSingleton<IServiceGateway>(sp => sp.GetRequiredService<ServiceGateway>());
+    }
+
+    private static void AddShell(IServiceCollection services)
+    {
+        services.AddSingleton(_ => new ShellWindow());
+        services.AddSingleton<ITrayIcon>(sp => new Win32TrayIcon(
+            sp.GetRequiredService<ShellWindow>(),
+            TrayIconImages.Colors.ToDictionary(c => c.Key, c => TrayIconImages.Create(c.Value))));
     }
 }
