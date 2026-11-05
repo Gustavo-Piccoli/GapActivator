@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:GapActivator.App.ViewModels"
+             xmlns:views="using:GapActivator.App.Views"
              x:Class="GapActivator.App.Views.ProcessesView"
              x:DataType="vm:ProcessesViewModel">
   <!--
@@ -10,8 +11,21 @@
     action keeps the reason as tooltip. While not connected the list is marked as the last known state, and nothing claims
     "no processes" before the service has reported once.
   -->
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+  <Grid>
+  <ScrollViewer x:Name="ListHost" HorizontalScrollBarVisibility="Disabled"
+                IsVisible="{Binding Editor, Converter={x:Static ObjectConverters.IsNull}}">
     <StackPanel Spacing="16" MaxWidth="880" HorizontalAlignment="Stretch">
+
+      <!-- The one creating action of the page sits first, so it is the first stop after the rail. -->
+      <Button x:Name="NewProcessButton" Classes="accent" HorizontalAlignment="Left" Content="{Binding L.NewProcess}"
+              Command="{Binding NewProcessCommand}" ToolTip.Tip="{Binding NewDeniedReason}" ToolTip.ShowOnDisabled="True" />
+
+      <!-- After a save the editor is gone; what it had to say (the executable is shared) stays here. -->
+      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding NoticeText, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE73E;" />
+        <TextBlock x:Name="NoticeLine" Grid.Column="1" Text="{Binding NoticeText}" TextWrapping="Wrap" VerticalAlignment="Center"
+                   AutomationProperties.LiveSetting="Polite" />
+      </Grid>
 
       <TextBlock Classes="error" Text="{Binding ErrorText}" TextWrapping="Wrap"
                  IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}"
@@ -74,6 +88,8 @@
                       </WrapPanel>
                     </StackPanel>
                     <WrapPanel Grid.Row="1" Orientation="Horizontal">
+                      <Button x:Name="EditButton" Margin="0,2,8,2" Content="{Binding L.Edit}" Command="{Binding EditCommand}"
+                              AutomationProperties.Name="{Binding EditAutomationName}" />
                       <Button x:Name="RunNowButton" Margin="0,2,8,2" Content="{Binding L.RunNow}" Command="{Binding RunNowCommand}"
                               AutomationProperties.Name="{Binding RunNowAutomationName}"
                               ToolTip.Tip="{Binding DeniedReason}" ToolTip.ShowOnDisabled="True" />
@@ -112,4 +128,15 @@
       </Border>
     </StackPanel>
   </ScrollViewer>
+
+  <!-- The editor takes the place of the list; the list and its state stay behind it. -->
+  <ContentControl x:Name="EditorHost" Content="{Binding Editor}"
+                  IsVisible="{Binding Editor, Converter={x:Static ObjectConverters.IsNotNull}}">
+    <ContentControl.DataTemplates>
+      <DataTemplate DataType="vm:ProcessEditorViewModel">
+        <views:ProcessEditorView />
+      </DataTemplate>
+    </ContentControl.DataTemplates>
+  </ContentControl>
+  </Grid>
 </UserControl>

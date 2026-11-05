@@ -262,6 +262,9 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
         return ScheduleRules.ToInput(Current(), id, _zone, Today());
     }
 
+    /// <summary>True once <see cref="Dispose"/> has run.</summary>
+    public bool IsDisposed => _disposed;
+
     public void Dispose()
     {
         if (_disposed)

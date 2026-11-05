@@ -305,4 +305,77 @@ public class ProcessesViewModelTests
         Vm.StaleText.ShouldBe("Not connected: showing the last known state.");
         Vm.Items.Count.ShouldBe(1);
     }
+
+    [Fact]
+    public async Task NewProcessCommand_OpensAnEmptyEditor_AndClosingItClearsIt()
+    {
+        await LoadAsync();
+
+        Vm.NewProcessCommand.Execute(null);
+
+        Vm.Editor.ShouldNotBeNull();
+        Vm.Editor.IsNew.ShouldBeTrue();
+        Vm.Editor.CloseCommand.Execute(null);
+        Vm.Editor.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task EditCommand_OpensTheEditorOfThatProcess_AndMarksItsFailuresSeen()
+    {
+        var summary = Dtos.Summary("Alpha");
+        _h.Gateway.Details[summary.Id] = Dtos.Details(summary);
+        await LoadAsync(summary);
+        var failure = Dtos.RunRow(processId: summary.Id, outcome: RunOutcome.Failed, endedAt: Dtos.Epoch);
+
+        await ((IAsyncRelayCommand)Row("Alpha").EditCommand).ExecuteAsync(null);
+
+        Vm.Editor.ShouldNotBeNull();
+        Vm.Editor.IsNew.ShouldBeFalse();
+        Vm.Editor.Name.ShouldBe("Alpha");
+        _h.Seen.IsUnseen(failure).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Navigator_OpenProcess_OpensItsEditor()
+    {
+        var summary = Dtos.Summary("Alpha");
+        _h.Gateway.Details[summary.Id] = Dtos.Details(summary);
+        await LoadAsync(summary);
+
+        _h.Navigator.OpenProcess(summary.Id);
+
+        // The editor opens at once and fills when the service answers.
+        Vm.Editor.ShouldNotBeNull();
+        for (var i = 0; i < 500 && Vm.Editor.Name.Length == 0; i++)
+        {
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+
+        Vm.Editor.Name.ShouldBe("Alpha");
+    }
+
+    [Fact]
+    public async Task EditorSaved_ClosesItAndKeepsTheSharedExecutableNote()
+    {
+        await LoadAsync();
+        _h.Gateway.Saved = new ProcessSavedDto(Guid.NewGuid(), ["Sibling"]);
+        Vm.NewProcessCommand.Execute(null);
+        Vm.Editor!.Name = "New";
+        Vm.Editor.Executable = "C:\\x.exe";
+
+        await Vm.Editor.SaveCommand.ExecuteAsync(null);
+
+        Vm.Editor.ShouldBeNull();
+        Vm.NoticeText.ShouldBe("Saved. Also used by: Sibling.");
+    }
+
+    [Fact]
+    public async Task NewProcessCommand_NeedsTheRightToChange()
+    {
+        _h.Gateway.SetStatus(FakeServiceGateway.Viewer());
+        await LoadAsync();
+
+        Vm.NewProcessCommand.CanExecute(null).ShouldBeFalse();
+    }
 }
+

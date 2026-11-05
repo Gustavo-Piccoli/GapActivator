@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using GapActivator.App.Localization;
 using GapActivator.App.Services;
 using GapActivator.Ipc.Contracts;
@@ -6,16 +8,14 @@ using GapActivator.Ipc.Contracts;
 namespace GapActivator.App.ViewModels;
 
 /// <summary>The process list: one row per registered process, ordered by name, with the actions of each.</summary>
-public sealed class ProcessesViewModel : PageViewModel
+public sealed partial class ProcessesViewModel : PageViewModel
 {
     private readonly LiveState _live;
     private readonly Permissions _permissions;
     private readonly TimeDisplay _times;
     private readonly LiveFreshness _freshness;
 
-    // The editor (a later task) opens a process from here and marks its failures as seen.
-    private readonly FailureAcknowledgements _seen;
-    private readonly INavigator _navigator;
+    private readonly Func<ProcessEditorViewModel> _editors;
 
     public ProcessesViewModel(
         Localizer l,
@@ -24,24 +24,34 @@ public sealed class ProcessesViewModel : PageViewModel
         Permissions permissions,
         ProcessActions actions,
         RunActions runs,
-        FailureAcknowledgements seen,
         INavigator navigator,
-        TimeDisplay times)
+        TimeDisplay times,
+        Func<ProcessEditorViewModel> editors)
         : base(l)
     {
         _live = live;
         _permissions = permissions;
         Actions = actions;
         Runs = runs;
-        _seen = seen;
-        _navigator = navigator;
+        _editors = editors;
         _times = times;
         _freshness = new LiveFreshness(l, gateway, live);
+
+        NewProcessCommand = new RelayCommand(OpenNewEditor, () => permissions.CanChange);
+        navigator.Requested += (_, request) =>
+        {
+            if (request.Page == AppPage.Processes && request.Id is { } id)
+            {
+                _ = OpenEditorAsync(id);
+            }
+        };
 
         live.Changed += (_, _) => Rebuild();
         gateway.ConnectionChanged += (_, _) => NotifyFreshness();
         permissions.PropertyChanged += (_, _) =>
         {
+            NewProcessCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(NewDeniedReason));
             foreach (ProcessRowViewModel row in Items)
             {
                 row.RefreshPermissions();
@@ -63,6 +73,18 @@ public sealed class ProcessesViewModel : PageViewModel
     }
 
     public ObservableCollection<ProcessRowViewModel> Items { get; } = [];
+
+    /// <summary>The editor shown instead of the list, or null.</summary>
+    [ObservableProperty]
+    public partial ProcessEditorViewModel? Editor { get; private set; }
+
+    /// <summary>What the last saved editor wanted the user to know ("also used by"); shown above the list.</summary>
+    [ObservableProperty]
+    public partial string? NoticeText { get; private set; }
+
+    public IRelayCommand NewProcessCommand { get; }
+
+    public string? NewDeniedReason => _permissions.DeniedReason;
 
     internal ProcessActions Actions { get; }
 
@@ -111,6 +133,48 @@ public sealed class ProcessesViewModel : PageViewModel
                 SetStopping(null);
             }
         }).ConfigureAwait(true);
+
+    /// <summary>Opens the editor for the process and reads it from the service; the form is on screen while it loads.</summary>
+    internal async Task OpenEditorAsync(Guid processId)
+    {
+        ProcessEditorViewModel editor = ShowEditor();
+        await editor.LoadAsync(processId).ConfigureAwait(true);
+    }
+
+    private void OpenNewEditor() => ShowEditor().LoadNew();
+
+    private ProcessEditorViewModel ShowEditor()
+    {
+        CloseEditor();
+        NoticeText = null;
+        ProcessEditorViewModel editor = _editors();
+        editor.Closed += OnEditorClosed;
+        Editor = editor;
+        return editor;
+    }
+
+    private void CloseEditor()
+    {
+        ProcessEditorViewModel? editor = Editor;
+        if (editor is null)
+        {
+            return;
+        }
+
+        editor.Closed -= OnEditorClosed;
+        Editor = null;
+        editor.Dispose();
+    }
+
+    private void OnEditorClosed(object? sender, bool saved)
+    {
+        if (sender is ProcessEditorViewModel editor)
+        {
+            NoticeText = saved ? editor.NoticeText : null;
+        }
+
+        CloseEditor();
+    }
 
     private void SetStopping(string? name)
     {

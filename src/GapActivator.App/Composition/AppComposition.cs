@@ -128,6 +128,25 @@ public static class AppComposition
             sp.GetRequiredService<FailureAcknowledgements>(),
             sp.GetRequiredService<INavigator>(),
             sp.GetRequiredService<TimeDisplay>()));
+        services.AddSingleton<IFilePicker>(sp =>
+            new AvaloniaFilePicker(sp.GetRequiredService<Localizer>(), () => sp.GetRequiredService<MainWindowService>().Window));
+        services.AddSingleton<Func<ScheduleEditorViewModel>>(sp => () => new ScheduleEditorViewModel(
+            sp.GetRequiredService<Localizer>(),
+            sp.GetRequiredService<IServiceGateway>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<TimeZoneInfo>(),
+            sp.GetRequiredService<TimeDisplay>(),
+            sp.GetRequiredService<IUiDispatcher>()));
+        services.AddSingleton<Func<ProcessEditorViewModel>>(sp => () => new ProcessEditorViewModel(
+            sp.GetRequiredService<Localizer>(),
+            sp.GetRequiredService<IServiceGateway>(),
+            sp.GetRequiredService<Permissions>(),
+            sp.GetRequiredService<IDialogService>(),
+            sp.GetRequiredService<FailureAcknowledgements>(),
+            sp.GetRequiredService<TimeDisplay>(),
+            sp.GetRequiredService<TimeZoneInfo>(),
+            sp.GetRequiredService<Func<ScheduleEditorViewModel>>(),
+            sp.GetRequiredService<IFilePicker>()));
         services.AddSingleton(sp => new ProcessesViewModel(
             sp.GetRequiredService<Localizer>(),
             sp.GetRequiredService<IServiceGateway>(),
@@ -135,9 +154,9 @@ public static class AppComposition
             sp.GetRequiredService<Permissions>(),
             sp.GetRequiredService<ProcessActions>(),
             sp.GetRequiredService<RunActions>(),
-            sp.GetRequiredService<FailureAcknowledgements>(),
             sp.GetRequiredService<INavigator>(),
-            sp.GetRequiredService<TimeDisplay>()));
+            sp.GetRequiredService<TimeDisplay>(),
+            sp.GetRequiredService<Func<ProcessEditorViewModel>>()));
         services.AddSingleton(sp => new MainWindowViewModel(
             sp.GetRequiredService<Localizer>(),
             sp.GetRequiredService<INavigator>(),

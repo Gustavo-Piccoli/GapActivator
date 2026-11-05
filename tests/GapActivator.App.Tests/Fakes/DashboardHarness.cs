@@ -20,8 +20,22 @@ internal sealed class DashboardHarness
         Runs = new RunActions(L, Gateway, Dialogs);
         Dashboard = new DashboardViewModel(L, Gateway, Live, Permissions, Runs, Seen, Navigator, Times);
         Actions = new ProcessActions(L, Gateway, Dialogs, Runs, Time);
-        Processes = new ProcessesViewModel(L, Gateway, Live, Permissions, Actions, Runs, Seen, Navigator, Times);
+        Processes = new ProcessesViewModel(L, Gateway, Live, Permissions, Actions, Runs, Navigator, Times, NewEditor);
     }
+
+    private ProcessEditorViewModel NewEditor() =>
+        new(
+            L,
+            Gateway,
+            Permissions,
+            Dialogs,
+            Seen,
+            Times,
+            TimeZoneInfo.Utc,
+            () => new ScheduleEditorViewModel(L, Gateway, Time, TimeZoneInfo.Utc, Times, new ImmediateUiDispatcher()),
+            Files);
+
+    public FakeFilePicker Files { get; } = new();
 
     public Localizer L { get; }
 

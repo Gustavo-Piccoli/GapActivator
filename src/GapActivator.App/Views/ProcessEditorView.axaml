@@ -1,0 +1,254 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:GapActivator.App.ViewModels"
+             xmlns:views="using:GapActivator.App.Views"
+             x:Class="GapActivator.App.Views.ProcessEditorView"
+             x:DataType="vm:ProcessEditorViewModel">
+  <!--
+    Operate surface, one column in four cards (general, environment variables, limits, schedules), each a short list of fields with
+    its label above it so that long pt-BR labels wrap instead of clipping. The footer (the state line, the error and the two
+    buttons) stays below the scrolling form, so the answer to "Save" is always on screen, and it comes last in the tab order after
+    the form. Every state has words and a glyph: loading, saving, the error that keeps the entries, the note after a save, the
+    viewer's read-only form with the reason as the Save tooltip. Secrets are write-only: a password box with the stored hint. All
+    wrapping text sits in a Grid with an Auto column for its glyph and a star column for the text, never in a horizontal StackPanel.
+  -->
+  <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12">
+
+    <TextBlock x:Name="EditorTitle" Grid.Row="0" Classes="title" Text="{Binding TitleText}" TextWrapping="Wrap"
+               MaxWidth="880" HorizontalAlignment="Left" AutomationProperties.HeadingLevel="1" />
+
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Spacing="16" MaxWidth="880" HorizontalAlignment="Stretch" Margin="0,0,12,0">
+
+        <!-- Loading and the failed load: the form is empty, so say why and offer the way out. -->
+        <Grid x:Name="LoadingLine" ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding IsLoading}">
+          <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE895;" />
+          <TextBlock Grid.Column="1" Text="{Binding L.EditorLoading}" TextWrapping="Wrap" VerticalAlignment="Center"
+                     AutomationProperties.LiveSetting="Polite" />
+        </Grid>
+        <Button x:Name="RetryLoadButton" HorizontalAlignment="Left" Content="{Binding L.TryAgain}" Command="{Binding RetryLoadCommand}"
+                IsVisible="{Binding LoadFailed}" />
+
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding SensitiveNote, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE946;" />
+          <TextBlock x:Name="SensitiveNoteText" Grid.Column="1" Classes="muted" Text="{Binding SensitiveNote}" TextWrapping="Wrap"
+                     VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- General -->
+        <Border Classes="card" Padding="16">
+          <StackPanel Spacing="14">
+            <TextBlock Classes="group" Text="{Binding L.SectionGeneral}" TextWrapping="Wrap" AutomationProperties.HeadingLevel="2" />
+
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding L.NameLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <TextBox x:Name="NameBox" Text="{Binding Name}" IsReadOnly="{Binding IsLocked}"
+                       AutomationProperties.Name="{Binding L.NameLabel}" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding L.DescriptionLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <TextBox x:Name="DescriptionBox" Text="{Binding Description}" IsReadOnly="{Binding IsLocked}" AcceptsReturn="True"
+                       TextWrapping="Wrap" MinHeight="64" MaxHeight="160" AutomationProperties.Name="{Binding L.DescriptionLabel}" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding L.KindLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <ComboBox x:Name="KindBox" ItemsSource="{Binding KindOptions}" SelectedItem="{Binding SelectedKindOption}"
+                        IsEnabled="{Binding IsUnlocked}" HorizontalAlignment="Stretch" MaxWidth="360"
+                        AutomationProperties.Name="{Binding L.KindLabel}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:KindOption">
+                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding IsServiceKind}">
+                <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE946;" />
+                <TextBlock x:Name="ServiceKindHintText" Grid.Column="1" Classes="muted" Text="{Binding L.ServiceKindHint}"
+                           TextWrapping="Wrap" VerticalAlignment="Center" />
+              </Grid>
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding L.ExecutableLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                <TextBox x:Name="ExecutableBox" Grid.Column="0" Text="{Binding Executable}" IsReadOnly="{Binding IsLocked}"
+                         AutomationProperties.Name="{Binding L.ExecutableLabel}" />
+                <Button x:Name="BrowseButton" Grid.Column="1" Content="{Binding L.Browse}" Command="{Binding BrowseExecutableCommand}"
+                        AutomationProperties.Name="{Binding L.Browse}" />
+              </Grid>
+              <Grid x:Name="VariableHintRow" ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding ShowVariableHint}">
+                <TextBlock Grid.Column="0" Classes="railIcon warning" Text="&#xE7BA;" />
+                <TextBlock x:Name="VariableHint" Grid.Column="1" Classes="warning" Text="{Binding L.ExecutableHintNoExpansion}"
+                           TextWrapping="Wrap" VerticalAlignment="Center" IsVisible="{Binding ShowVariableHint}" />
+              </Grid>
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding L.ArgumentsLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <TextBox x:Name="ArgumentsBox" Text="{Binding Arguments}" IsReadOnly="{Binding IsLocked}"
+                       AutomationProperties.Name="{Binding L.ArgumentsLabel}" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding L.WorkingDirectoryLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <TextBox x:Name="WorkingDirectoryBox" Text="{Binding WorkingDirectory}" IsReadOnly="{Binding IsLocked}"
+                       AutomationProperties.Name="{Binding L.WorkingDirectoryLabel}" />
+              <TextBlock Classes="caption" Text="{Binding L.WorkingDirectoryHint}" TextWrapping="Wrap" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- Environment variables -->
+        <Border x:Name="EnvironmentSection" Classes="card" Padding="16">
+          <StackPanel Spacing="14">
+            <TextBlock Classes="group" Text="{Binding L.SectionEnvironment}" TextWrapping="Wrap" AutomationProperties.HeadingLevel="2" />
+            <TextBlock Classes="muted" Text="{Binding L.NoVariables}" TextWrapping="Wrap" IsVisible="{Binding HasNoVariables}" />
+            <ItemsControl x:Name="VariableList" ItemsSource="{Binding Environment}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:EnvironmentVariableRowViewModel">
+                  <StackPanel Spacing="8" Margin="0,0,0,14">
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                      <StackPanel Grid.Column="0" Spacing="6">
+                        <TextBlock Text="{Binding L.VariableNameLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBox x:Name="VariableNameBox" Text="{Binding Name}" IsReadOnly="{Binding IsLocked}"
+                                 AutomationProperties.Name="{Binding L.VariableNameLabel}" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Spacing="6">
+                        <TextBlock Text="{Binding L.VariableValueLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBox x:Name="VariableValueBox" Text="{Binding Value}" PasswordChar="{Binding MaskChar}"
+                                 PlaceholderText="{Binding Placeholder}" IsReadOnly="{Binding IsLocked}"
+                                 AutomationProperties.Name="{Binding AutomationName}" />
+                      </StackPanel>
+                    </Grid>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                      <CheckBox x:Name="SecretCheck" Grid.Column="0" IsChecked="{Binding IsSecret}" IsEnabled="{Binding IsUnlocked}"
+                                AutomationProperties.Name="{Binding SecretAutomationName}">
+                        <TextBlock Text="{Binding L.SecretLabel}" TextWrapping="Wrap" />
+                      </CheckBox>
+                      <Button x:Name="RemoveVariableButton" Grid.Column="1" Content="{Binding L.RemoveVariable}"
+                              IsEnabled="{Binding IsUnlocked}"
+                              Command="{Binding $parent[ItemsControl].((vm:ProcessEditorViewModel)DataContext).RemoveVariableCommand}"
+                              CommandParameter="{Binding}" AutomationProperties.Name="{Binding RemoveAutomationName}" />
+                    </Grid>
+                    <Border Classes="divider" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Button x:Name="AddVariableButton" HorizontalAlignment="Left" Content="{Binding L.AddVariable}" Command="{Binding AddVariableCommand}" />
+          </StackPanel>
+        </Border>
+
+        <!-- Limits -->
+        <Border x:Name="LimitsSection" Classes="card" Padding="16">
+          <StackPanel Spacing="14">
+            <TextBlock Classes="group" Text="{Binding L.SectionLimits}" TextWrapping="Wrap" AutomationProperties.HeadingLevel="2" />
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding L.TimeLimitLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <NumericUpDown x:Name="TimeLimitBox" HorizontalAlignment="Left" Width="200" Minimum="1" Increment="1" FormatString="0"
+                             ParsingNumberStyle="Integer" Value="{Binding TimeLimitSeconds}" IsReadOnly="{Binding IsLocked}"
+                             IsEnabled="{Binding TimeLimitApplies}" AutomationProperties.Name="{Binding L.TimeLimitLabel}" />
+            </StackPanel>
+            <StackPanel Spacing="6">
+              <TextBlock Text="{Binding L.GracePeriodLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+              <NumericUpDown x:Name="GracePeriodBox" HorizontalAlignment="Left" Width="200" Minimum="0" Increment="1" FormatString="0"
+                             ParsingNumberStyle="Integer" Value="{Binding GracePeriodSeconds}" IsReadOnly="{Binding IsLocked}"
+                             AutomationProperties.Name="{Binding L.GracePeriodLabel}" />
+            </StackPanel>
+            <TextBlock Classes="caption" Text="{Binding L.LimitsHint}" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+
+        <!-- Schedules: not for a service-kind process. -->
+        <Border x:Name="SchedulesSection" Classes="card" Padding="16" IsVisible="{Binding ShowSchedules}">
+          <StackPanel Spacing="14">
+            <TextBlock Classes="group" Text="{Binding L.SectionSchedules}" TextWrapping="Wrap" AutomationProperties.HeadingLevel="2" />
+            <TextBlock Classes="muted" Text="{Binding L.NoSchedules}" TextWrapping="Wrap" IsVisible="{Binding HasNoSchedules}" />
+
+            <ItemsControl x:Name="ScheduleList" ItemsSource="{Binding Schedules}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:ScheduleItemViewModel">
+                  <StackPanel Spacing="8" Margin="0,0,0,12">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                      <StackPanel Grid.Column="0" Spacing="2">
+                        <TextBlock Text="{Binding SummaryText}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                        <TextBlock Classes="caption" Text="{Binding StatusText}" TextWrapping="Wrap" />
+                      </StackPanel>
+                      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+                        <Button x:Name="EditScheduleButton" Content="{Binding L.Edit}" AutomationProperties.Name="{Binding EditAutomationName}"
+                                Command="{Binding $parent[ItemsControl].((vm:ProcessEditorViewModel)DataContext).EditScheduleCommand}"
+                                CommandParameter="{Binding}" />
+                        <Button x:Name="RemoveScheduleButton" Content="{Binding L.RemoveVariable}" AutomationProperties.Name="{Binding RemoveAutomationName}"
+                                Command="{Binding $parent[ItemsControl].((vm:ProcessEditorViewModel)DataContext).RemoveScheduleCommand}"
+                                CommandParameter="{Binding}" />
+                      </StackPanel>
+                    </Grid>
+                    <Border Classes="divider" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- "A one-time schedule must be in the future" belongs to the schedules, so it shows here, not only in the footer. -->
+            <Grid x:Name="ScheduleErrorLine" ColumnDefinitions="Auto,*" ColumnSpacing="10"
+                  IsVisible="{Binding ScheduleErrorText, Converter={x:Static ObjectConverters.IsNotNull}}">
+              <TextBlock Grid.Column="0" Classes="railIcon error" Text="&#xE7BA;" />
+              <TextBlock Grid.Column="1" Classes="error" Text="{Binding ScheduleErrorText}" TextWrapping="Wrap" VerticalAlignment="Center"
+                         AutomationProperties.LiveSetting="Assertive" />
+            </Grid>
+
+            <Button x:Name="AddScheduleButton" HorizontalAlignment="Left" Content="{Binding L.AddSchedule}" Command="{Binding AddScheduleCommand}" />
+
+            <Border x:Name="ScheduleEditorCard" Classes="card" Padding="16" IsVisible="{Binding ScheduleEditor, Converter={x:Static ObjectConverters.IsNotNull}}">
+              <StackPanel Spacing="16">
+                <ContentControl Content="{Binding ScheduleEditor}">
+                  <ContentControl.DataTemplates>
+                    <DataTemplate DataType="vm:ScheduleEditorViewModel">
+                      <views:ScheduleEditorView />
+                    </DataTemplate>
+                  </ContentControl.DataTemplates>
+                </ContentControl>
+                <WrapPanel Orientation="Horizontal">
+                  <Button x:Name="ApplyScheduleButton" Classes="accent" Margin="0,0,8,0" Content="{Binding L.ApplySchedule}"
+                          Command="{Binding ApplyScheduleCommand}" />
+                  <Button x:Name="CancelScheduleButton" Content="{Binding L.CancelSchedule}" Command="{Binding CancelScheduleCommand}" />
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Footer: always visible, after the form in the tab order. -->
+    <Border Grid.Row="2" MaxWidth="880" HorizontalAlignment="Stretch" Classes="divider" Height="1" VerticalAlignment="Top" />
+    <StackPanel Grid.Row="2" Spacing="10" MaxWidth="880" HorizontalAlignment="Stretch" Margin="0,12,0,0">
+      <Grid x:Name="SavingLine" ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding IsSaving}">
+        <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE895;" />
+        <TextBlock Grid.Column="1" Text="{Binding L.EditorSaving}" TextWrapping="Wrap" VerticalAlignment="Center"
+                   AutomationProperties.LiveSetting="Polite" />
+      </Grid>
+      <Grid x:Name="ErrorLine" ColumnDefinitions="Auto,*" ColumnSpacing="10"
+            IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock Grid.Column="0" Classes="railIcon error" Text="&#xE7BA;" />
+        <StackPanel Grid.Column="1" Spacing="2">
+          <TextBlock x:Name="ErrorMessage" Classes="error" Text="{Binding ErrorText}" TextWrapping="Wrap"
+                     AutomationProperties.LiveSetting="Assertive" />
+          <TextBlock Classes="caption" Text="{Binding L.EditorKeptInput}" TextWrapping="Wrap" IsVisible="{Binding ShowKeptInput}" />
+        </StackPanel>
+      </Grid>
+      <Grid x:Name="NoticeLine" ColumnDefinitions="Auto,*" ColumnSpacing="10"
+            IsVisible="{Binding NoticeText, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE73E;" />
+        <TextBlock Grid.Column="1" Text="{Binding NoticeText}" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+      </Grid>
+      <WrapPanel Orientation="Horizontal">
+        <Button x:Name="SaveButton" Classes="accent" Margin="0,0,8,0" Content="{Binding L.Save}" Command="{Binding SaveCommand}"
+                ToolTip.Tip="{Binding SaveDeniedReason}" ToolTip.ShowOnDisabled="True" />
+        <Button x:Name="CancelButton" Content="{Binding L.Cancel}" Command="{Binding CloseCommand}" />
+      </WrapPanel>
+    </StackPanel>
+  </Grid>
+</UserControl>

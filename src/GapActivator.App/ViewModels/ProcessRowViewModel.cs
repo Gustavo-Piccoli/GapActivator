@@ -36,6 +36,7 @@ public sealed partial class ProcessRowViewModel : ViewModelBase
         UnblockCommand = new AsyncRelayCommand(() => owner.RunAsync(() => owner.Actions.UnblockAsync(Id, false)), CanChange);
         UnblockAndRunCommand = new AsyncRelayCommand(() => owner.RunAsync(() => owner.Actions.UnblockAsync(Id, true)), CanChange);
         DeleteCommand = new AsyncRelayCommand(() => owner.DeleteAsync(this), CanChange);
+        EditCommand = new AsyncRelayCommand(() => owner.OpenEditorAsync(Id));
         Update(summary);
     }
 
@@ -139,6 +140,12 @@ public sealed partial class ProcessRowViewModel : ViewModelBase
 
     public IAsyncRelayCommand DeleteCommand { get; }
 
+    /// <summary>Opens the editor of this process; a viewer can open it too, read-only.</summary>
+    public IRelayCommand EditCommand { get; }
+
+    [ObservableProperty]
+    public partial string EditAutomationName { get; private set; } = string.Empty;
+
     /// <summary>Recomputes every text and flag from the process; also the way to follow a language switch.</summary>
     public void Update(ProcessSummaryDto summary)
     {
@@ -163,6 +170,7 @@ public sealed partial class ProcessRowViewModel : ViewModelBase
         UnblockAutomationName = L.UnblockFor(summary.Name);
         UnblockAndRunAutomationName = L.UnblockAndRunFor(summary.Name);
         DeleteAutomationName = L.DeleteFor(summary.Name);
+        EditAutomationName = L.EditLabelFor(summary.Name);
 
         OnPropertyChanged(nameof(Lifecycle));
         OnPropertyChanged(nameof(IsRunning));
