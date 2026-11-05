@@ -76,10 +76,12 @@ internal static class TrayIconImages
                 var dy = y + 0.5 - center;
                 var d = Math.Sqrt((dx * dx) + (dy * dy));
                 var alpha = Math.Clamp(r - d + 0.5, 0, 1);
-                writer.Write((byte)Math.Round(blue * alpha));
-                writer.Write((byte)Math.Round(green * alpha));
-                writer.Write((byte)Math.Round(red * alpha));
-                writer.Write((byte)Math.Round(alpha * 255));
+                // Windows treats 32-bit icon pixels as straight alpha, so the color is stored unchanged.
+                var a = (byte)Math.Round(alpha * 255);
+                writer.Write(a == 0 ? (byte)0 : (byte)blue);
+                writer.Write(a == 0 ? (byte)0 : (byte)green);
+                writer.Write(a == 0 ? (byte)0 : (byte)red);
+                writer.Write(a);
             }
         }
 

@@ -1,4 +1,5 @@
 using GapActivator.App.Shell;
+using static GapActivator.App.Shell.ShellNativeMethods;
 
 namespace GapActivator.App.Tests.Shell;
 
@@ -43,5 +44,46 @@ public sealed class TrayIconImagesTests
         TrayIconImages.Colors[TrayIconState.Attention].ShouldBe(0xD93636u);
         TrayIconImages.Colors[TrayIconState.Busy].ShouldBe(0x2F6FEDu);
         TrayIconImages.Colors[TrayIconState.Healthy].ShouldBe(0x1F9D55u);
+    }
+
+    [Fact]
+    public void Create_EdgePixels_StoreTheFullColorWithStraightAlpha()
+    {
+        var image = IcoImage.SelectImage(TrayIconImages.Create(0x2F6FED), 32);
+        var edge = 0;
+        for (var i = 40; i + 3 < 40 + (32 * 32 * 4); i += 4)
+        {
+            var alpha = image[i + 3];
+            if (alpha is > 0 and < 255)
+            {
+                edge++;
+                image[i].ShouldBe((byte)0xED);
+                image[i + 1].ShouldBe((byte)0x6F);
+                image[i + 2].ShouldBe((byte)0x2F);
+            }
+            else if (alpha == 0)
+            {
+                image[i].ShouldBe((byte)0);
+                image[i + 1].ShouldBe((byte)0);
+                image[i + 2].ShouldBe((byte)0);
+            }
+        }
+
+        edge.ShouldBeGreaterThan(0);
+    }
+
+    [Theory]
+    [InlineData(16)]
+    [InlineData(20)]
+    [InlineData(24)]
+    [InlineData(32)]
+    public void Create_EachSize_LoadsAsAnIcon(int size)
+    {
+        var image = IcoImage.SelectImage(TrayIconImages.Create(0x1F9D55), size);
+
+        var icon = CreateIconFromResourceEx(image, (uint)image.Length, true, 0x00030000, size, size, 0);
+
+        icon.ShouldNotBe(0);
+        DestroyIcon(icon);
     }
 }

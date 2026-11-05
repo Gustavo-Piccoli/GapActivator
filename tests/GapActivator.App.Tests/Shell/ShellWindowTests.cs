@@ -72,7 +72,18 @@ public sealed class ShellWindowTests
         window.HandlerFailed += _ => throw new InvalidOperationException("reporter fails too");
         ShellTestNative.SendMessageW(window.Handle, Activate, 0, 0);
         failure.ShouldNotBeNull();
+
+        // A throwing observer during WM_QUERYENDSESSION must still let Windows proceed.
+        failure = null;
+        window.MessageReceived += (msg, _, _) =>
+        {
+            if (msg == ShellTestNative.WM_QUERYENDSESSION)
+            {
+                throw new InvalidOperationException("observer fails");
+            }
+        };
         ShellTestNative.SendMessageW(window.Handle, ShellTestNative.WM_QUERYENDSESSION, 0, 0).ShouldBe(1);
+        failure.ShouldBeOfType<InvalidOperationException>();
     }
 
     [Fact]
