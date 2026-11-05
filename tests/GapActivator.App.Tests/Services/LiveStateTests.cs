@@ -37,45 +37,100 @@ public class LiveStateTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Start_AlreadyConnected_RefreshesRightAway()
+    public void Start_AlreadyConnected_RefreshesRightAway()
     {
         var live = new LiveState(_gateway, _logger);
 
         live.Start();
-        await live.RefreshAsync();
 
-        Count(nameof(IServiceGateway.GetDashboardAsync)).ShouldBeGreaterThanOrEqualTo(1);
+        // The fake answers synchronously, so the refresh Start began is already done.
+        Count(nameof(IServiceGateway.GetDashboardAsync)).ShouldBe(1);
+        Count(nameof(IServiceGateway.ListProcessesAsync)).ShouldBe(1);
+        live.Dashboard.ShouldNotBeNull();
     }
 
     [Fact]
-    public async Task StateChanged_RefreshesTheSnapshot()
+    public void StateChanged_RefreshesTheSnapshot()
     {
         var live = new LiveState(_gateway, _logger);
         live.Start();
-        await live.RefreshAsync();
         var before = Count(nameof(IServiceGateway.GetDashboardAsync));
+        _gateway.Dashboard = Dtos.Dashboard(isPaused: true);
 
         _gateway.RaiseStateChanged(new StateChangedDto(null, null));
-        await live.RefreshAsync();
 
-        Count(nameof(IServiceGateway.GetDashboardAsync)).ShouldBeGreaterThan(before);
+        Count(nameof(IServiceGateway.GetDashboardAsync)).ShouldBe(before + 1);
+        live.Dashboard.ShouldNotBeNull().IsPaused.ShouldBeTrue();
     }
 
     [Fact]
     public async Task StateChanged_DuringARefresh_RefreshesExactlyOnceMore()
     {
         var live = new LiveState(_gateway, _logger);
+        var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var changes = 0;
+        live.Changed += (_, _) =>
+        {
+            if (Interlocked.Increment(ref changes) == 2)
+            {
+                finished.SetResult();
+            }
+        };
         TaskCompletionSource hold = _gateway.Hold(nameof(IServiceGateway.GetDashboardAsync));
+        live.Start(); // the connected gateway starts the first refresh, which waits on the hold
 
-        Task first = live.RefreshAsync();
-        Task second = live.RefreshAsync();
-        Task third = live.RefreshAsync();
-        Task fourth = live.RefreshAsync();
+        _gateway.RaiseStateChanged(new StateChangedDto(null, null));
+        _gateway.RaiseStateChanged(new StateChangedDto(null, null));
+        _gateway.RaiseStateChanged(new StateChangedDto(null, null));
         hold.SetResult();
-        await Task.WhenAll(first, second, third, fourth).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await finished.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Count(nameof(IServiceGateway.GetDashboardAsync)).ShouldBe(2);
         Count(nameof(IServiceGateway.ListProcessesAsync)).ShouldBe(2);
+        changes.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Subscriber_Throws_IsLoggedAndLaterRefreshesStillRun()
+    {
+        var live = new LiveState(_gateway, _logger);
+        live.Changed += (_, _) => throw new InvalidOperationException("subscriber");
+        var other = 0;
+        live.Changed += (_, _) => other++;
+
+        live.Start();
+        _gateway.RaiseStateChanged(new StateChangedDto(null, null));
+        await live.RefreshAsync(); // completes successfully: callers wait for the refresh, the failure is logged
+
+        _logger.Levels.Count(l => l == LogLevel.Error).ShouldBe(3);
+        other.ShouldBe(3);
+        Count(nameof(IServiceGateway.GetDashboardAsync)).ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task Subscriber_ThrowsDuringARefresh_DoesNotDropTheQueuedRefresh()
+    {
+        var live = new LiveState(_gateway, _logger);
+        var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var changes = 0;
+        live.Changed += (_, _) =>
+        {
+            if (Interlocked.Increment(ref changes) == 2)
+            {
+                finished.SetResult();
+            }
+
+            throw new InvalidOperationException("subscriber");
+        };
+        TaskCompletionSource hold = _gateway.Hold(nameof(IServiceGateway.GetDashboardAsync));
+        live.Start();
+        _gateway.RaiseStateChanged(new StateChangedDto(null, null));
+
+        hold.SetResult();
+        await finished.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        Count(nameof(IServiceGateway.GetDashboardAsync)).ShouldBe(2);
+        _logger.Levels.ShouldContain(LogLevel.Error);
     }
 
     [Fact]
@@ -90,6 +145,7 @@ public class LiveStateTests : IAsyncDisposable
         await live.RefreshAsync();
 
         live.Dashboard.ShouldBeSameAs(kept);
+        live.RefreshFailed.ShouldBeTrue();
         _logger.Levels.ShouldContain(LogLevel.Warning);
     }
 
@@ -106,6 +162,21 @@ public class LiveStateTests : IAsyncDisposable
 
         raised.ShouldBe(1);
         live.Dashboard.ShouldNotBeNull();
+        live.RefreshFailed.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RefreshFails_RaisesChangedSoPagesLearnOfIt()
+    {
+        var live = new LiveState(_gateway, _logger);
+        var raised = 0;
+        live.Changed += (_, _) => raised++;
+        _gateway.FailNext(nameof(IServiceGateway.GetDashboardAsync), new TimeoutException());
+
+        await live.RefreshAsync();
+
+        raised.ShouldBe(1);
+        live.RefreshFailed.ShouldBeTrue();
     }
 
     [Fact]

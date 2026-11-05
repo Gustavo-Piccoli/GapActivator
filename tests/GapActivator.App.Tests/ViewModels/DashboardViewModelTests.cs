@@ -238,6 +238,75 @@ public class DashboardViewModelTests
     }
 
     [Fact]
+    public async Task Freshness_ConnectedWithData_ShowsNeitherStaleNorWaitingNorError()
+    {
+        await LoadAsync(Dtos.Dashboard());
+
+        Vm.HasData.ShouldBeTrue();
+        Vm.IsStale.ShouldBeFalse();
+        Vm.ShowWaiting.ShouldBeFalse();
+        Vm.HasRefreshError.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Freshness_DisconnectedWithData_MarksTheListsAsLastKnown()
+    {
+        await LoadAsync(Dtos.Dashboard(activeRuns: [Dtos.RunRow(state: RunState.Running, outcome: null)]));
+        var raised = new List<string?>();
+        Vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        _h.Gateway.SetStatus(FakeServiceGateway.Stopped);
+
+        Vm.IsStale.ShouldBeTrue();
+        Vm.StaleText.ShouldBe("Not connected: showing the last known state.");
+        Vm.ShowWaiting.ShouldBeFalse();
+        raised.ShouldContain(nameof(DashboardViewModel.IsStale));
+
+        _h.Gateway.SetStatus(FakeServiceGateway.Operator());
+
+        Vm.IsStale.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Freshness_DisconnectedWithoutData_HidesTheWaitingLineAndTheStaleCaption()
+    {
+        _h.Gateway.SetStatus(FakeServiceGateway.Stopped);
+
+        Vm.HasData.ShouldBeFalse();
+        Vm.ShowWaiting.ShouldBeFalse();
+        Vm.IsStale.ShouldBeFalse();
+        Vm.ConnectionText.ShouldBe("The GapActivator service is stopped.");
+    }
+
+    [Fact]
+    public void Freshness_ConnectedWithoutDataYet_ShowsTheWaitingLine()
+    {
+        Vm.HasData.ShouldBeFalse();
+        Vm.ShowWaiting.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Freshness_FirstRefreshFailed_ShowsTheErrorInsteadOfWaiting()
+    {
+        _h.Gateway.FailNext(nameof(IServiceGateway.GetDashboardAsync), new TimeoutException());
+
+        await _h.Live.RefreshAsync();
+
+        Vm.HasRefreshError.ShouldBeTrue();
+        Vm.RefreshErrorText.ShouldBe("Could not read the service state. The data shown may be out of date.");
+        Vm.ShowWaiting.ShouldBeFalse();
+
+        _h.L.SetLanguage(AppLanguage.Portuguese);
+
+        Vm.RefreshErrorText.ShouldBe("Não foi possível ler o estado do serviço. Os dados exibidos podem estar desatualizados.");
+
+        await _h.Live.RefreshAsync();
+
+        Vm.HasRefreshError.ShouldBeFalse();
+        Vm.HasData.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task Language_Switched_RebuildsTheCachedTexts()
     {
         var upcoming = new UpcomingRunDto(Guid.NewGuid(), "Backup", Dtos.Epoch);

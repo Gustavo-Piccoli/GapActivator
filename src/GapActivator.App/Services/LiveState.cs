@@ -27,7 +27,10 @@ public sealed class LiveState(IServiceGateway gateway, ILogger<LiveState> logger
 
     public IReadOnlyList<ProcessSummaryDto> Processes { get; private set; } = [];
 
-    /// <summary>Raised after a refresh stored a new snapshot, on the thread that finished it (the UI thread in the app).</summary>
+    /// <summary>True when the last refresh failed; the snapshot is then the one from before. Cleared by the next refresh that works.</summary>
+    public bool RefreshFailed { get; private set; }
+
+    /// <summary>Raised after every refresh, whether it stored a new snapshot or failed (see <see cref="RefreshFailed"/>), on the thread that finished it (the UI thread in the app).</summary>
     public event EventHandler? Changed;
 
     /// <summary>Starts following the gateway; a second call does nothing.</summary>
@@ -78,6 +81,9 @@ public sealed class LiveState(IServiceGateway gateway, ILogger<LiveState> logger
         return done.Task;
     }
 
+    // FetchAsync never throws, so the loop cannot end early: a queued refresh is never dropped and "running" is never left set.
+    // Callers of RefreshAsync wait for the refresh to finish, not for its subscribers to be healthy, so the task completes
+    // successfully after a failure; the failure is logged, and RefreshFailed tells the pages.
     private async Task LoopAsync(TaskCompletionSource done)
     {
         try
@@ -101,16 +107,6 @@ public sealed class LiveState(IServiceGateway gateway, ILogger<LiveState> logger
                 }
             }
         }
-        catch
-        {
-            // A subscriber threw: do not leave the refresh marked as running for ever.
-            lock (_gate)
-            {
-                _running = false;
-            }
-
-            throw;
-        }
         finally
         {
             done.TrySetResult();
@@ -125,13 +121,26 @@ public sealed class LiveState(IServiceGateway gateway, ILogger<LiveState> logger
             IReadOnlyList<ProcessSummaryDto> processes = await gateway.ListProcessesAsync().ConfigureAwait(true);
             Dashboard = dashboard;
             Processes = processes;
+            RefreshFailed = false;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
+            // The last snapshot stays. Cancellation is a failure too: nothing here passes a token, so it is unexpected.
             AppLog.RefreshingLiveStateFailed(logger, ex);
-            return;
+            RefreshFailed = true;
         }
 
-        Changed?.Invoke(this, EventArgs.Empty);
+        // Also raised after a failure, so the pages learn about RefreshFailed. One throwing subscriber must not stop the others.
+        foreach (Delegate subscriber in Changed?.GetInvocationList() ?? [])
+        {
+            try
+            {
+                ((EventHandler)subscriber)(this, EventArgs.Empty);
+            }
+            catch (Exception ex)
+            {
+                AppLog.LiveStateSubscriberFailed(logger, ex);
+            }
+        }
     }
 }

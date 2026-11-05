@@ -120,6 +120,26 @@ public class DashboardViewTests(HeadlessFixture fixture)
     }
 
     [Fact]
+    public async Task DashboardView_Disconnected_SaysTheListsAreTheLastKnownState()
+    {
+        var h = await WithTwoActiveRunsAsync();
+        h.Gateway.SetStatus(FakeServiceGateway.Stopped);
+
+        string[] texts = await fixture.Session.Dispatch(
+            () =>
+            {
+                var window = Show(h);
+                var visible = window.GetVisualDescendants().OfType<TextBlock>().Where(t => t.IsEffectivelyVisible).Select(t => t.Text ?? string.Empty).ToArray();
+                window.Close();
+                return visible;
+            },
+            TestContext.Current.CancellationToken);
+
+        texts.ShouldContain("Not connected: showing the last known state.");
+        texts.ShouldNotContain("Waiting for the service to report its state…");
+    }
+
+    [Fact]
     public async Task DashboardView_NothingToShow_SaysSoInEachSection()
     {
         var h = new DashboardHarness();

@@ -44,6 +44,12 @@ public sealed partial class Localizer
 
     public string NoRecentFailures => T("No recent failures.", "Nenhuma falha recente.");
 
+    public string StaleNote => T("Not connected: showing the last known state.", "Sem conexão: exibindo o último estado conhecido.");
+
+    public string RefreshFailedText => T(
+        "Could not read the service state. The data shown may be out of date.",
+        "Não foi possível ler o estado do serviço. Os dados exibidos podem estar desatualizados.");
+
     public string WaitingForService => T("Waiting for the service to report its state…", "Aguardando o serviço informar o estado…");
 
     public string CancelRunFor(string name) => string.Format(Culture, T("Cancel {0}", "Cancelar {0}"), name);

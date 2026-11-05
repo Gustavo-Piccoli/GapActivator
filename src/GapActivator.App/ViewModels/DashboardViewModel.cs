@@ -87,6 +87,19 @@ public sealed partial class DashboardViewModel : PageViewModel
     /// <summary>False until the service has reported once; before that the lists would claim "nothing" when the answer is "unknown".</summary>
     public bool HasData => _live.Dashboard is not null;
 
+    /// <summary>True while the lists show the last known state because the service is not connected; the view dims them and says so.</summary>
+    public bool IsStale => HasData && !IsConnected;
+
+    public string StaleText => L.StaleNote;
+
+    /// <summary>True when the last refresh failed, so the lists may be out of date even though the connection is up.</summary>
+    public bool HasRefreshError => _live.RefreshFailed;
+
+    public string RefreshErrorText => L.RefreshFailedText;
+
+    /// <summary>The "waiting" line is only for a connected page with no answer yet; while disconnected the connection text speaks, and after a failure the error does.</summary>
+    public bool ShowWaiting => !HasData && IsConnected && !_live.RefreshFailed;
+
     public bool HasActiveRuns => ActiveRuns.Count > 0;
 
     public bool HasUpcoming => Upcoming.Count > 0;
@@ -114,7 +127,17 @@ public sealed partial class DashboardViewModel : PageViewModel
         OnPropertyChanged(nameof(CallerText));
         OnPropertyChanged(nameof(OperatorsModeText));
         OnPropertyChanged(nameof(PausedText));
+        NotifyFreshness();
         RefreshPermissions();
+    }
+
+    private void NotifyFreshness()
+    {
+        OnPropertyChanged(nameof(IsStale));
+        OnPropertyChanged(nameof(StaleText));
+        OnPropertyChanged(nameof(HasRefreshError));
+        OnPropertyChanged(nameof(RefreshErrorText));
+        OnPropertyChanged(nameof(ShowWaiting));
     }
 
     private void RefreshPermissions()
@@ -155,6 +178,7 @@ public sealed partial class DashboardViewModel : PageViewModel
         OnPropertyChanged(nameof(HasUpcoming));
         OnPropertyChanged(nameof(HasRecentFailures));
         OnPropertyChanged(nameof(IsPaused));
+        NotifyFreshness();
         PauseCommand.NotifyCanExecuteChanged();
         ResumeCommand.NotifyCanExecuteChanged();
     }
