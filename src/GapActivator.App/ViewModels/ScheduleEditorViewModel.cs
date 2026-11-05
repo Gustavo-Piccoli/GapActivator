@@ -75,6 +75,7 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
     private Validation _validation;
     private IReadOnlyList<DateTimeOffset> _instants = [];
     private Func<string>? _previewErrorText;
+    private CancellationTokenSource? _previewCts;
 
     public ScheduleEditorViewModel(Localizer l, IServiceGateway gateway, TimeProvider time, TimeZoneInfo zone, TimeDisplay times, IUiDispatcher ui)
         : base(l)
@@ -105,6 +106,7 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
         _suspend = false;
         Revalidate();
         L.PropertyChanged += OnLanguageChanged;
+        _gateway.ConnectionChanged += OnConnectionChanged;
     }
 
     public static TimeSpan PreviewDelay { get; } = TimeSpan.FromMilliseconds(300);
@@ -113,7 +115,7 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
     public partial ScheduleMode Mode { get; set; }
 
     [ObservableProperty]
-    public partial decimal Interval { get; set; }
+    public partial decimal? Interval { get; set; }
 
     [ObservableProperty]
     public partial TimeSpan Time { get; set; }
@@ -140,7 +142,7 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
     public partial bool Sunday { get; set; }
 
     [ObservableProperty]
-    public partial decimal DayOfMonth { get; set; }
+    public partial decimal? DayOfMonth { get; set; }
 
     [ObservableProperty]
     public partial DateTime? StartDate { get; set; }
@@ -200,6 +202,9 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
 
     public string IntervalUnitText => Mode == ScheduleMode.EveryHours ? L.HoursUnit : L.MinutesUnit;
 
+    /// <summary>The clock the time pickers show: 12-hour when the language's short time pattern uses <c>h</c>, as the preview text does.</summary>
+    public string ClockIdentifier => L.Culture.DateTimeFormat.ShortTimePattern.Contains('h') ? "12HourClock" : "24HourClock";
+
     public string StartLabelText => IsOnce ? L.OnceLabel : L.StartingLabel;
 
     public bool HasPreviewError => PreviewError is not null;
@@ -214,6 +219,7 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
         NoWeekday,
         RuleRequired,
         DateRequired,
+        NumberRequired,
     }
 
     /// <summary>Shows <paramref name="existing"/> (null: a new schedule, Daily at the next full hour).</summary>
@@ -265,7 +271,9 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
 
         _disposed = true;
         L.PropertyChanged -= OnLanguageChanged;
+        _gateway.ConnectionChanged -= OnConnectionChanged;
         _debouncer.Dispose();
+        CancelPreview();
     }
 
     protected override void OnPropertyChanged(PropertyChangedEventArgs e)
@@ -364,10 +372,10 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
         List<DayOfWeek> days = [.. MondayFirst.Where(GetDay)];
         return new FriendlySchedule(
             Mode,
-            (int)Math.Clamp(Interval, 1, IntervalMaximum),
+            (int)Math.Clamp(Math.Round(Interval ?? 1, MidpointRounding.AwayFromZero), 1, IntervalMaximum),
             TimeOnly.FromTimeSpan(Time),
             days,
-            (int)Math.Clamp(DayOfMonth, 1, 31),
+            (int)Math.Clamp(Math.Round(DayOfMonth ?? 1, MidpointRounding.AwayFromZero), 1, 31),
             DateTime.SpecifyKind(start, DateTimeKind.Unspecified),
             Mode == ScheduleMode.Advanced ? RawRule : null);
     }
@@ -397,6 +405,8 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
 
     private Validation Validate() => Mode switch
     {
+        ScheduleMode.EveryMinutes or ScheduleMode.EveryHours when Interval is null => Validation.NumberRequired,
+        ScheduleMode.Monthly when DayOfMonth is null => Validation.NumberRequired,
         ScheduleMode.Weekly when !MondayFirst.Any(GetDay) => Validation.NoWeekday,
         ScheduleMode.Advanced when string.IsNullOrWhiteSpace(RawRule) => Validation.RuleRequired,
         ScheduleMode.EveryMinutes or ScheduleMode.EveryHours or ScheduleMode.Once or ScheduleMode.Advanced when StartDate is null => Validation.DateRequired,
@@ -408,6 +418,7 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
         Validation.NoWeekday => L.NoWeekday,
         Validation.RuleRequired => L.RuleRequired,
         Validation.DateRequired => L.DateRequired,
+        Validation.NumberRequired => L.NumberRequired,
         _ => null,
     };
 
@@ -457,16 +468,17 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
         }
 
         int generation = _generation;
-        ScheduleInputDto input = Build(null);
-        if (input.Kind == ScheduleInputKind.OneTime)
-        {
-            ShowOnce(input.At);
-            return;
-        }
-
+        CancellationTokenSource cts = NewPreviewRequest();
         try
         {
-            IReadOnlyList<DateTimeOffset> result = await _gateway.PreviewScheduleAsync(input.Rule!, input.At, PreviewCount).ConfigureAwait(true);
+            ScheduleInputDto input = Build(null);
+            if (input.Kind == ScheduleInputKind.OneTime)
+            {
+                ShowOnce(input.At);
+                return;
+            }
+
+            IReadOnlyList<DateTimeOffset> result = await _gateway.PreviewScheduleAsync(input.Rule!, input.At, PreviewCount, cts.Token).ConfigureAwait(true);
             if (generation != _generation || _disposed)
             {
                 return;
@@ -476,7 +488,19 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
             _previewReady = true;
             SetPreviewError(null);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            // Superseded by a newer request (which keeps the loading state) or disposed: nothing to show. Only a request that
+            // nobody replaced clears the state, so "Calculating" never sticks.
+            if (!_disposed && ReferenceEquals(_previewCts, cts))
+            {
+                IsPreviewLoading = false;
+                NotifyPreviewState();
+            }
+
+            return;
+        }
+        catch (Exception ex)
         {
             if (generation != _generation || _disposed)
             {
@@ -490,6 +514,36 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
 
         IsPreviewLoading = false;
         RebuildPreview();
+    }
+
+    private CancellationTokenSource NewPreviewRequest()
+    {
+        CancellationTokenSource cts = new();
+        CancellationTokenSource? previous = Interlocked.Exchange(ref _previewCts, cts);
+        CancelAndDispose(previous);
+        return cts;
+    }
+
+    private void CancelPreview() => CancelAndDispose(Interlocked.Exchange(ref _previewCts, null));
+
+    private static void CancelAndDispose(CancellationTokenSource? cts)
+    {
+        if (cts is null)
+        {
+            return;
+        }
+
+        cts.Cancel();
+        cts.Dispose();
+    }
+
+    // The connection loop raises this on its own thread; coming back means a failed preview can work now.
+    private void OnConnectionChanged(object? sender, GatewayStatus status)
+    {
+        if (status.State == ConnectionState.Connected)
+        {
+            _ui.Post(Touch);
+        }
     }
 
     private void ShowOnce(DateTimeOffset at)

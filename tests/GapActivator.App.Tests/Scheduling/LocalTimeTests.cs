@@ -52,6 +52,30 @@ public class LocalTimeTests
     }
 
     [Fact]
+    public void ToOffset_NonexistentLocalTime_InANegativeDstZone_UsesThePreGapOffset()
+    {
+        // 2030-03-31 is the last Sunday of March: 01:00 (+00:00) jumps to 02:00 (+01:00). GetUtcOffset of the missing time says +01:00.
+        DateTime local = Local(2030, 3, 31, 1, 30);
+        Zones.NegativeDeltaLike.IsInvalidTime(local).ShouldBeTrue();
+
+        DateTimeOffset at = LocalTime.ToOffset(local, Zones.NegativeDeltaLike);
+
+        at.Offset.ShouldBe(TimeSpan.Zero);
+    }
+
+    [Fact]
+    public void ToOffset_NonexistentLocalTime_InAGapOfTwoHours_UsesThePreGapOffset()
+    {
+        // 01:00 jumps to 03:00. One hour before 02:30 is 01:30, which is itself missing, so a fixed step back is not enough.
+        DateTime local = Local(2030, 3, 31, 2, 30);
+        Zones.TwoHourGapLike.IsInvalidTime(local.AddHours(-1)).ShouldBeTrue();
+
+        DateTimeOffset at = LocalTime.ToOffset(local, Zones.TwoHourGapLike);
+
+        at.Offset.ShouldBe(TimeSpan.Zero);
+    }
+
+    [Fact]
     public void ToOffset_LocalKind_IsReadAsTheWallClockOfTheZone()
     {
         DateTime local = new(2030, 7, 15, 12, 0, 0, DateTimeKind.Local);

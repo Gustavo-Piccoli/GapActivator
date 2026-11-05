@@ -383,6 +383,167 @@ public sealed class ScheduleEditorViewModelTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task Dispose_CancelsTheInFlightPreviewRequest()
+    {
+        _vm.Load(null);
+        TaskCompletionSource hold = _gateway.Hold(nameof(IServiceGateway.PreviewScheduleAsync));
+        _time.Advance(Delay);
+        CancellationToken token = _gateway.LastPreviewToken;
+        token.IsCancellationRequested.ShouldBeFalse();
+
+        _vm.Dispose();
+
+        token.IsCancellationRequested.ShouldBeTrue();
+        hold.SetResult();
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        _vm.Preview.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Preview_NewRequest_CancelsTheOlderOne()
+    {
+        _vm.Load(null);
+        TaskCompletionSource hold = _gateway.Hold(nameof(IServiceGateway.PreviewScheduleAsync));
+        _time.Advance(Delay);
+        CancellationToken first = _gateway.LastPreviewToken;
+        _vm.Time = TimeSpan.FromHours(13);
+        _time.Advance(Delay);
+
+        first.IsCancellationRequested.ShouldBeTrue();
+        _gateway.LastPreviewToken.IsCancellationRequested.ShouldBeFalse();
+        hold.SetResult();
+        await EventuallyAsync(() => !_vm.IsPreviewLoading);
+        _vm.Preview.Count.ShouldBe(5);
+    }
+
+    [Fact]
+    public async Task Preview_CancellationNotFromTheEditor_ClearsLoadingAndShowsTheUnexpectedError()
+    {
+        _vm.Load(null);
+        _gateway.FailNext(nameof(IServiceGateway.PreviewScheduleAsync), new OperationCanceledException());
+
+        _time.Advance(Delay);
+        await EventuallyAsync(() => !_vm.IsPreviewLoading);
+
+        _vm.PreviewError.ShouldStartWith("Unexpected error:");
+    }
+
+    [Fact]
+    public void Preview_WhenBuildThrows_ClearsLoadingAndShowsTheUnexpectedError()
+    {
+        _vm.Mode = ScheduleMode.EveryMinutes;
+        _vm.StartDate = DateTime.MaxValue.Date;
+        _vm.StartTime = TimeSpan.FromHours(23); // plus the 3 h offset, past the largest instant
+        _vm.IsPreviewLoading.ShouldBeTrue();
+
+        _time.Advance(Delay);
+
+        PreviewCalls().ShouldBe(0);
+        _vm.IsPreviewLoading.ShouldBeFalse();
+        _vm.PreviewError.ShouldStartWith("Unexpected error:");
+    }
+
+    [Fact]
+    public void Interval_Cleared_IsInvalidWithTheRequiredText()
+    {
+        _vm.Load(null);
+        _vm.Mode = ScheduleMode.EveryMinutes;
+
+        _vm.Interval = null;
+
+        _vm.IsValid.ShouldBeFalse();
+        _vm.ValidationText.ShouldBe("Enter a whole number.");
+        _time.Advance(Delay);
+        PreviewCalls().ShouldBe(0);
+
+        _vm.Interval = 5;
+
+        _vm.IsValid.ShouldBeTrue();
+        _vm.ValidationText.ShouldBeNull();
+    }
+
+    [Fact]
+    public void DayOfMonth_Cleared_IsInvalidWithTheRequiredText()
+    {
+        _vm.Load(null);
+        _vm.Mode = ScheduleMode.Monthly;
+
+        _vm.DayOfMonth = null;
+
+        _vm.IsValid.ShouldBeFalse();
+        _vm.ValidationText.ShouldBe("Enter a whole number.");
+    }
+
+    [Fact]
+    public void Build_FractionalNumbers_AreRoundedAsTheBoxesShowThem()
+    {
+        _vm.Load(null);
+        _vm.Mode = ScheduleMode.EveryMinutes;
+        _vm.Interval = 2.5m;
+        _vm.Build(null).Rule.ShouldBe("FREQ=MINUTELY;INTERVAL=3");
+
+        _vm.Mode = ScheduleMode.Monthly;
+        _vm.DayOfMonth = 14.5m;
+        _vm.Build(null).Rule.ShouldBe("FREQ=MONTHLY;BYMONTHDAY=15;BYHOUR=10;BYMINUTE=0");
+    }
+
+    [Fact]
+    public void Preview_AfterReconnect_IsRequestedAgain()
+    {
+        _vm.Load(null);
+        _gateway.FailNext(nameof(IServiceGateway.PreviewScheduleAsync), new GapActivatorRequestException(IpcErrorCodes.Disconnected, "x", retryable: true));
+        _time.Advance(Delay);
+        _vm.PreviewError.ShouldBe("Not connected to the service.");
+
+        _gateway.SetStatus(FakeServiceGateway.Operator());
+        _vm.IsPreviewLoading.ShouldBeTrue();
+        _time.Advance(Delay);
+
+        PreviewCalls().ShouldBe(2);
+        _vm.PreviewError.ShouldBeNull();
+        _vm.Preview.Count.ShouldBe(5);
+    }
+
+    [Fact]
+    public void Preview_NotConnectedStatus_DoesNotRequestAgain()
+    {
+        _vm.Load(null);
+        _time.Advance(Delay);
+
+        _gateway.SetStatus(FakeServiceGateway.Stopped);
+        _time.Advance(Delay);
+
+        PreviewCalls().ShouldBe(1);
+    }
+
+    [Fact]
+    public void Dispose_StopsListeningToTheConnection()
+    {
+        _vm.Load(null);
+        _time.Advance(Delay);
+        _vm.Dispose();
+
+        _gateway.SetStatus(FakeServiceGateway.Operator());
+        _time.Advance(Delay);
+
+        PreviewCalls().ShouldBe(1);
+    }
+
+    [Fact]
+    public void ClockIdentifier_FollowsTheLanguage()
+    {
+        _vm.ClockIdentifier.ShouldBe("12HourClock");
+
+        _l.SetLanguage(AppLanguage.Portuguese);
+
+        _vm.ClockIdentifier.ShouldBe("24HourClock");
+
+        _l.SetLanguage(AppLanguage.English);
+
+        _vm.ClockIdentifier.ShouldBe("12HourClock");
+    }
+
+    [Fact]
     public void Dispose_CancelsAPendingPreview()
     {
         _vm.Load(null);

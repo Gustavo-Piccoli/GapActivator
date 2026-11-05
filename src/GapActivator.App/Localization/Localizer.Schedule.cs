@@ -99,6 +99,8 @@ public sealed partial class Localizer
 
     public string DateRequired => T("Choose a date.", "Escolha uma data.");
 
+    public string NumberRequired => T("Enter a whole number.", "Informe um número inteiro.");
+
     public string PreviewLoading => T("Calculating the next runs…", "Calculando as próximas execuções…");
 
     public string LocalTimeNote => T("Times use this computer's time zone.", "Os horários usam o fuso horário deste computador.");

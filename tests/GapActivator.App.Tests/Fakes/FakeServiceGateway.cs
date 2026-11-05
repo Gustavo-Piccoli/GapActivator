@@ -47,6 +47,9 @@ internal sealed class FakeServiceGateway : IServiceGateway
 
     public Func<string, DateTimeOffset, int, IReadOnlyList<DateTimeOffset>> Preview { get; set; } = (_, _, _) => [];
 
+    /// <summary>The token the last preview call received.</summary>
+    public CancellationToken LastPreviewToken { get; private set; }
+
     public Guid NextRunId { get; set; } = Guid.NewGuid();
 
     /// <summary>The result of register and update; when null, the new id with no shared executables.</summary>
@@ -184,6 +187,7 @@ internal sealed class FakeServiceGateway : IServiceGateway
 
     public async Task<IReadOnlyList<DateTimeOffset>> PreviewScheduleAsync(string rule, DateTimeOffset anchor, int count, CancellationToken ct = default)
     {
+        LastPreviewToken = ct;
         await Record(nameof(PreviewScheduleAsync), rule, anchor, count).ConfigureAwait(false);
         return Preview(rule, anchor, count);
     }

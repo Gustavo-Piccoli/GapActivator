@@ -50,7 +50,7 @@
       <TextBlock Text="{Binding L.EveryLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
       <Grid ColumnDefinitions="Auto,*">
         <NumericUpDown x:Name="IntervalBox" Grid.Column="0" Width="160" Minimum="1" Maximum="{Binding IntervalMaximum}"
-                       Increment="1" FormatString="0" Value="{Binding Interval}"
+                       Increment="1" FormatString="0" ParsingNumberStyle="Integer" Value="{Binding Interval}"
                        AutomationProperties.Name="{Binding L.EveryLabel}" />
         <TextBlock Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding IntervalUnitText}" />
       </Grid>
@@ -58,7 +58,7 @@
 
     <StackPanel x:Name="TimePanel" Spacing="6" IsVisible="{Binding IsTimeMode}">
       <TextBlock Text="{Binding L.TimeLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
-      <TimePicker x:Name="TimeBox" HorizontalAlignment="Left" ClockIdentifier="24HourClock" MinuteIncrement="1"
+      <TimePicker x:Name="TimeBox" HorizontalAlignment="Left" ClockIdentifier="{Binding ClockIdentifier}" MinuteIncrement="1"
                   SelectedTime="{Binding Time}" AutomationProperties.Name="{Binding L.TimeLabel}" />
     </StackPanel>
 
@@ -88,7 +88,7 @@
     <StackPanel x:Name="MonthDayPanel" Spacing="6" IsVisible="{Binding IsMonthly}">
       <TextBlock Text="{Binding L.DayOfMonthLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
       <NumericUpDown x:Name="DayOfMonthBox" HorizontalAlignment="Left" Width="160" Minimum="1" Maximum="31" Increment="1"
-                     FormatString="0" Value="{Binding DayOfMonth}" AutomationProperties.Name="{Binding L.DayOfMonthLabel}" />
+                     FormatString="0" ParsingNumberStyle="Integer" Value="{Binding DayOfMonth}" AutomationProperties.Name="{Binding L.DayOfMonthLabel}" />
       <TextBlock x:Name="MonthDayHint" Classes="caption" TextWrapping="Wrap" Text="{Binding L.MonthDayHint}" IsVisible="{Binding IsMonthly}" />
     </StackPanel>
 
@@ -97,7 +97,7 @@
       <WrapPanel Orientation="Horizontal">
         <CalendarDatePicker x:Name="StartDateBox" Margin="0,0,10,8" SelectedDate="{Binding StartDate}"
                             AutomationProperties.Name="{Binding L.DateLabel}" />
-        <TimePicker x:Name="StartTimeBox" Margin="0,0,10,8" ClockIdentifier="24HourClock" MinuteIncrement="1"
+        <TimePicker x:Name="StartTimeBox" Margin="0,0,10,8" ClockIdentifier="{Binding ClockIdentifier}" MinuteIncrement="1"
                     SelectedTime="{Binding StartTime}" AutomationProperties.Name="{Binding L.StartTimeLabel}" />
       </WrapPanel>
     </StackPanel>

@@ -190,6 +190,16 @@ public class ScheduleRulesTests
     }
 
     [Fact]
+    public void ToInput_DailyInANegativeDstZoneGap_UsesThePreGapOffset()
+    {
+        var schedule = new FriendlySchedule(ScheduleMode.Daily, 1, new TimeOnly(1, 30), [], 1, Start, null);
+
+        ScheduleInputDto input = ScheduleRules.ToInput(schedule, null, Zones.NegativeDeltaLike, new DateOnly(2030, 3, 31));
+
+        input.At.ShouldBe(new DateTimeOffset(2030, 3, 31, 1, 30, 0, TimeSpan.Zero));
+    }
+
+    [Fact]
     public void FromView_AnchorInTheGap_ReadsBackAFriendlyDailySchedule()
     {
         var at = new DateTimeOffset(2030, 3, 10, 2, 30, 0, TimeSpan.FromHours(-5));

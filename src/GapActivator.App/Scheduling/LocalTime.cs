@@ -14,7 +14,7 @@ internal static class LocalTime
         TimeSpan offset;
         if (zone.IsInvalidTime(wall))
         {
-            offset = zone.GetUtcOffset(wall.AddHours(-1));
+            offset = PreGapOffset(wall, zone);
         }
         else if (zone.IsAmbiguousTime(wall))
         {
@@ -26,5 +26,18 @@ internal static class LocalTime
         }
 
         return new DateTimeOffset(wall, offset);
+    }
+
+    // The offset in effect just before a spring-forward gap, found as the service finds it (a minute at a time, so a gap of any length
+    // works). It is not GetUtcOffset of the missing time: in a zone whose daylight delta is negative that returns the wrong side.
+    private static TimeSpan PreGapOffset(DateTime nonexistent, TimeZoneInfo zone)
+    {
+        DateTime beforeGap = nonexistent;
+        while (zone.IsInvalidTime(beforeGap))
+        {
+            beforeGap = beforeGap.AddMinutes(-1);
+        }
+
+        return zone.GetUtcOffset(beforeGap);
     }
 }
