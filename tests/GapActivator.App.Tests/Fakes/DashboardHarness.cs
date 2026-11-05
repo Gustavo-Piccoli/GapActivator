@@ -36,7 +36,9 @@ internal sealed class DashboardHarness
             () => new ScheduleEditorViewModel(L, Gateway, Time, TimeZoneInfo.Utc, Times, new ImmediateUiDispatcher()),
             Files);
 
-    private RunDetailViewModel NewDetail() => new(L, Gateway, Time, Times, new ImmediateUiDispatcher());
+    private RunDetailViewModel NewDetail() => new(L, Gateway, Time, Times, Clipboard, new ImmediateUiDispatcher());
+
+    public FakeClipboardService Clipboard { get; } = new();
 
     public FakeFilePicker Files { get; } = new();
 

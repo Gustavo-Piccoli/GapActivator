@@ -12,14 +12,23 @@ public abstract partial class PageViewModel(Localizer l) : ViewModelBase(l)
     [ObservableProperty]
     public partial string? ErrorText { get; protected set; }
 
-    /// <summary>Clears <see cref="ErrorText"/>, runs the call, and returns false (with the error text set) when the service refused it or was unreachable.</summary>
+    /// <summary>
+    /// Runs the call and returns false (with the error text set) when the service refused it or was unreachable. The text is not
+    /// cleared before the call, so a call that keeps failing (a refresh every second while disconnected) does not blank and re-announce
+    /// it each time; it is cleared after a call that worked, unless the call itself set a new one.
+    /// </summary>
     protected async Task<bool> TryAsync(Func<Task> action)
     {
         ArgumentNullException.ThrowIfNull(action);
-        ErrorText = null;
+        var before = ErrorText;
         try
         {
             await action().ConfigureAwait(true);
+            if (string.Equals(ErrorText, before, StringComparison.Ordinal))
+            {
+                ErrorText = null;
+            }
+
             return true;
         }
         catch (Exception ex) when (ex is GapActivatorRequestException or TimeoutException)

@@ -28,7 +28,7 @@
       </Grid>
 
       <!-- The failed call, a failed refresh, the delete in progress, the wait for a first answer and "last known state" are one shared control. -->
-      <views:FreshnessNotes />
+      <views:FreshnessNotes Spacing="16" />
 
       <Border Classes="card" IsVisible="{Binding HasData}">
         <StackPanel Classes.stale="{Binding IsStale}">

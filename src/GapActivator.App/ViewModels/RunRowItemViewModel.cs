@@ -80,7 +80,7 @@ public sealed partial class RunRowItemViewModel : ViewModelBase
         StatusText = !IsActive && run.Outcome is { } outcome ? L.OutcomeText(outcome) : L.StateText(run.State);
         IsFailure = !IsActive && run.Outcome is { } o && RunOutcomes.Failures.Contains(o);
         IsNeutral = !IsActive && !IsFailure;
-        StatusGlyph = IsActive ? "" : IsFailure ? "" : run.Outcome == RunOutcome.Succeeded ? "" : "";
+        StatusGlyph = IsActive ? "\uE895" : IsFailure ? "\uE7BA" : run.Outcome == RunOutcome.Succeeded ? "\uE73E" : "\uE711";
         IsLate = run.IsLate;
         CreatedText = _times.DateTime(run.CreatedAt);
         DurationText = run.StartedAt is { } start && run.EndedAt is { } end ? Durations.Format(end - start, L) : null;

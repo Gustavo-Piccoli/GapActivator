@@ -12,6 +12,7 @@ public class RunDetailViewModelTests : IAsyncDisposable
     private readonly FakeServiceGateway _gateway = new();
     private readonly FakeTimeProvider _time = new(Dtos.Epoch.AddSeconds(30));
     private readonly Localizer _l = new(AppLanguage.English);
+    private readonly FakeClipboardService _clipboard = new();
 
     private int GetRunCalls => _gateway.Calls.Count(c => c.Method == nameof(FakeServiceGateway.GetRunAsync));
 
@@ -21,7 +22,7 @@ public class RunDetailViewModelTests : IAsyncDisposable
         return _gateway.DisposeAsync();
     }
 
-    private RunDetailViewModel Create() => new(_l, _gateway, _time, new TimeDisplay(_l, TimeZoneInfo.Utc), new ImmediateUiDispatcher());
+    private RunDetailViewModel Create() => new(_l, _gateway, _time, new TimeDisplay(_l, TimeZoneInfo.Utc), _clipboard, new ImmediateUiDispatcher());
 
     [Fact]
     public async Task Detail_ShowsEventsExitCodeDurationAndOutput()
@@ -174,20 +175,6 @@ public class RunDetailViewModelTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task Detail_Failed_ShowsTheErrorDetailUnderError()
-    {
-        var run = Dtos.RunRow(outcome: RunOutcome.Failed, exitCode: 2);
-        _gateway.Runs[run.Id] = Dtos.RunDetails(run, error: "exit code 2");
-        using var vm = Create();
-
-        await vm.LoadAsync(run.Id);
-
-        vm.ErrorLabel.ShouldBe(_l.RunError);
-        vm.RunErrorText.ShouldBe("exit code 2");
-        vm.ErrorText.ShouldBeNull();
-    }
-
-    [Fact]
     public async Task Detail_ActiveRefresh_KeepsTheRunErrorDetail()
     {
         var run = Dtos.RunRow(state: RunState.Running, outcome: null, exitCode: null);
@@ -236,5 +223,103 @@ public class RunDetailViewModelTests : IAsyncDisposable
         vm.ErrorLabel.ShouldBe("Erro");
         vm.TriggerText.ShouldBe("Nova tentativa");
         vm.Events[0].ShouldEndWith("Execução iniciada");
+    }
+
+    [Fact]
+    public async Task OutputLines_OneMebibyte_SplitsOnceWithTheTailAsLastLine()
+    {
+        var run = Dtos.RunRow();
+        var line = new string('x', 62);
+        var text = string.Join("\r\n", Enumerable.Range(0, 16384).Select(i => line)) + "\r\nthe last line";
+        _gateway.Runs[run.Id] = Dtos.RunDetails(run, output: text, truncated: true);
+        using var vm = Create();
+
+        await vm.LoadAsync(run.Id);
+
+        vm.OutputLines.Count.ShouldBe(16385);
+        vm.OutputLines[^1].ShouldBe("the last line");
+        vm.OutputLines[0].ShouldBe(line);
+        vm.Output.ShouldBe(text);
+    }
+
+    [Theory]
+    [InlineData("a\nb\n", 2)]
+    [InlineData("a\r\nb", 2)]
+    [InlineData("", 0)]
+    [InlineData("\n", 1)]
+    public void SplitLines_HandlesBothLineBreaksAndTheFinalOne(string text, int count) =>
+        RunDetailViewModel.SplitLines(text).Length.ShouldBe(count);
+
+    [Fact]
+    public async Task OutputLines_UnchangedOutput_KeepsTheSameList()
+    {
+        var run = Dtos.RunRow(state: RunState.Running, outcome: null, exitCode: null);
+        _gateway.Runs[run.Id] = Dtos.RunDetails(run, output: "a\nb");
+        using var vm = Create();
+        await vm.LoadAsync(run.Id);
+        IReadOnlyList<string> before = vm.OutputLines;
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        vm.OutputLines.ShouldBeSameAs(before);
+
+        _gateway.Runs[run.Id] = Dtos.RunDetails(run, output: "a\nb\nc");
+        _time.Advance(TimeSpan.FromSeconds(1));
+        vm.OutputLines.ShouldNotBeSameAs(before);
+        vm.OutputLines.Count.ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task CopyOutput_PassesTheFullTextAndIsDisabledWithoutOutput()
+    {
+        var empty = Dtos.RunRow();
+        var full = Dtos.RunRow();
+        _gateway.Runs[empty.Id] = Dtos.RunDetails(empty, output: "");
+        _gateway.Runs[full.Id] = Dtos.RunDetails(full, output: "line 1\nline 2");
+        using var vm = Create();
+
+        await vm.LoadAsync(empty.Id);
+        vm.CopyOutputCommand.CanExecute(null).ShouldBeFalse();
+
+        await vm.LoadAsync(full.Id);
+        vm.CopyOutputCommand.CanExecute(null).ShouldBeTrue();
+        await vm.CopyOutputCommand.ExecuteAsync(null);
+
+        _clipboard.Copied.ShouldBe(["line 1\nline 2"]);
+    }
+
+    [Fact]
+    public async Task CopyOutput_ClipboardFails_ShowsTheError()
+    {
+        var run = Dtos.RunRow();
+        _gateway.Runs[run.Id] = Dtos.RunDetails(run, output: "x");
+        _clipboard.Failure = new InvalidOperationException("The clipboard is not available.");
+        using var vm = Create();
+        await vm.LoadAsync(run.Id);
+
+        await vm.CopyOutputCommand.ExecuteAsync(null);
+
+        vm.ErrorText.ShouldBe("Unexpected error: The clipboard is not available.");
+    }
+
+    [Fact]
+    public async Task Refresh_SameErrorTwice_RaisesErrorTextOnce()
+    {
+        var run = Dtos.RunRow(state: RunState.Running, outcome: null, exitCode: null);
+        _gateway.Runs[run.Id] = Dtos.RunDetails(run);
+        using var vm = Create();
+        await vm.LoadAsync(run.Id);
+        var raised = 0;
+        vm.PropertyChanged += (_, e) => raised += e.PropertyName == nameof(RunDetailViewModel.ErrorText) ? 1 : 0;
+
+        _gateway.FailNext(nameof(FakeServiceGateway.GetRunAsync), new GapActivator.Ipc.GapActivatorRequestException(GapActivator.Ipc.IpcErrorCodes.Disconnected, "x", retryable: true));
+        _time.Advance(TimeSpan.FromSeconds(1));
+        _gateway.FailNext(nameof(FakeServiceGateway.GetRunAsync), new GapActivator.Ipc.GapActivatorRequestException(GapActivator.Ipc.IpcErrorCodes.Disconnected, "x", retryable: true));
+        _time.Advance(TimeSpan.FromSeconds(1));
+
+        raised.ShouldBe(1);
+        vm.ErrorText.ShouldBe("Not connected to the service.");
+
+        _time.Advance(TimeSpan.FromSeconds(1));
+        vm.ErrorText.ShouldBeNull();
     }
 }

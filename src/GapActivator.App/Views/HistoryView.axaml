@@ -60,11 +60,11 @@
           </StackPanel>
         </Border>
 
-        <views:FreshnessNotes />
+        <views:FreshnessNotes Spacing="16" />
 
         <Border Classes="card" IsVisible="{Binding HasData}">
           <StackPanel Classes.stale="{Binding IsStale}">
-            <TextBlock x:Name="NoRunsLine" Classes="muted" Text="{Binding L.NoRuns}" TextWrapping="Wrap" Margin="16,16"
+            <TextBlock x:Name="NoRunsLine" Classes="muted" Text="{Binding EmptyText}" TextWrapping="Wrap" Margin="16,16"
                        IsVisible="{Binding ShowEmpty}" />
             <ItemsControl x:Name="RunList" ItemsSource="{Binding Items}" AutomationProperties.Name="{Binding L.RunsList}">
               <ItemsControl.ItemTemplate>

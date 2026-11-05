@@ -154,4 +154,32 @@ public class ProcessesViewTests(HeadlessFixture fixture)
         window.Close();
         return result;
     }
+
+    [Fact]
+    public async Task ProcessesView_DeleteWaitingForTheRunToStop_ShowsTheProgressLineThroughFreshnessNotes()
+    {
+        var h = new DashboardHarness();
+        var process = Dtos.Summary("Busy", activeRun: new ActiveRunViewDto(Guid.NewGuid(), RunState.Running, RunTrigger.Manual, Dtos.Epoch, 1));
+        h.Gateway.Processes = [process];
+        h.Gateway.Details[process.Id] = Dtos.Details(process);
+        await h.Live.RefreshAsync();
+        h.Dialogs.Enqueue(GapActivator.App.Services.DialogChoice.Primary);
+
+        string[] texts = await fixture.Session.Dispatch(
+            () =>
+            {
+                var window = Show(h);
+                _ = h.Processes.Items.Single().DeleteCommand.ExecuteAsync(null);
+                Dispatcher.UIThread.RunJobs();
+                var visible = window.GetVisualDescendants().OfType<TextBlock>().Where(t => t.IsEffectivelyVisible).Select(t => t.Text ?? string.Empty).ToArray();
+                var inNotes = window.GetVisualDescendants().OfType<FreshnessNotes>().Single().GetVisualDescendants().OfType<TextBlock>().Any(t => t.Name == "ProgressLine" && t.IsEffectivelyVisible);
+                h.Gateway.Details[process.Id] = Dtos.Details(process with { ActiveRun = null });
+                h.Time.Advance(GapActivator.App.Services.ProcessActions.DeletePollInterval);
+                window.Close();
+                return inNotes ? visible : [];
+            },
+            TestContext.Current.CancellationToken);
+
+        texts.ShouldContain("Stopping the run before deleting \"Busy\"…");
+    }
 }

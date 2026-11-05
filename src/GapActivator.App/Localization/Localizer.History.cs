@@ -41,6 +41,10 @@ public sealed partial class Localizer
 
     public string NextPage => T("Next page", "Próxima página");
 
+    public string NoRunsYet => T("No runs yet.", "Nenhuma execução ainda.");
+
+    public string CopyOutput => T("Copy output", "Copiar saída");
+
     public string NoRuns => T("No runs match the filters.", "Nenhuma execução corresponde aos filtros.");
 
     public string LoadingRuns => T("Loading runs…", "Carregando execuções…");

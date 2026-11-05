@@ -25,6 +25,7 @@ public sealed partial class HistoryViewModel : PageViewModel, IFreshnessNotes
     private readonly IServiceGateway _gateway;
     private readonly LiveState _live;
     private readonly FailureAcknowledgements _seen;
+    private readonly INavigator _navigator;
     private readonly TimeDisplay _times;
     private readonly TimeZoneInfo _zone;
     private readonly Func<RunDetailViewModel> _details;
@@ -33,8 +34,8 @@ public sealed partial class HistoryViewModel : PageViewModel, IFreshnessNotes
     private ProcessOption _selectedProcess = null!;
     private OutcomeOption _selectedOutcome = null!;
     private bool _rebuilding;
-    private bool _opened;
     private bool _userLoad;
+    private int _userInFlight;
     private int _loadVersion;
     private int _totalCount;
 
@@ -52,27 +53,29 @@ public sealed partial class HistoryViewModel : PageViewModel, IFreshnessNotes
         _gateway = gateway;
         _live = live;
         _seen = seen;
+        _navigator = navigator;
         _times = times;
         _zone = zone;
         _details = details;
 
         RebuildOutcomeOptions();
-        RebuildProcessOptions();
+        RebuildProcessOptions(force: true);
 
-        live.Changed += (_, _) => RebuildProcessOptions();
+        live.Changed += (_, _) => RebuildProcessOptions(force: false);
         gateway.ConnectionChanged += (_, status) =>
         {
             NotifyFreshness();
-            if (status.IsConnected && _opened)
+            if (status.IsConnected && navigator.Current == AppPage.History)
             {
-                Refreshing = LoadAsync(Page, userInitiated: false);
+                RefreshInBackground();
             }
         };
         gateway.StateChanged += (_, _) =>
         {
-            if (HasLoaded && Page == 1)
+            // Only while the history is on screen (coming back reloads), and only the first page, which is the one that grows.
+            if (HasLoaded && Page == 1 && navigator.Current == AppPage.History)
             {
-                Refreshing = LoadAsync(1, userInitiated: false);
+                RefreshInBackground();
             }
         };
         navigator.Requested += (_, request) => OnRequested(request);
@@ -81,7 +84,7 @@ public sealed partial class HistoryViewModel : PageViewModel, IFreshnessNotes
         l.PropertyChanged += (_, _) =>
         {
             RebuildOutcomeOptions();
-            RebuildProcessOptions();
+            RebuildProcessOptions(force: true);
             foreach (RunRowItemViewModel row in Items)
             {
                 row.Refresh();
@@ -178,6 +181,9 @@ public sealed partial class HistoryViewModel : PageViewModel, IFreshnessNotes
 
     public bool ShowEmpty => HasLoaded && Items.Count == 0;
 
+    /// <summary>"No runs yet" when nothing is filtered, otherwise "no runs match": an empty history is not a filter that excluded everything.</summary>
+    public string EmptyText => _applied is { ProcessId: null, Outcomes: null, From: null, To: null } ? L.NoRunsYet : L.NoRuns;
+
     public bool ShowPaging => HasLoaded && _totalCount > 0;
 
     /// <summary>The page read that the last navigation started; tests await it, the screen does not need to.</summary>
@@ -240,13 +246,11 @@ public sealed partial class HistoryViewModel : PageViewModel, IFreshnessNotes
             return;
         }
 
-        _opened = true;
-
         // Opening the history counts as having seen the failures that came before.
         _seen.MarkHistorySeen();
         if (_gateway.Status.IsConnected)
         {
-            Refreshing = LoadAsync(Page, userInitiated: false);
+            RefreshInBackground();
         }
 
         if (request.Id is { } runId)
@@ -263,7 +267,37 @@ public sealed partial class HistoryViewModel : PageViewModel, IFreshnessNotes
         await detail.LoadAsync(runId).ConfigureAwait(true);
     }
 
+    // A refresh nobody asked for must not run over a page click that is still in flight: the newer read would win and the click's
+    // result would be lost.
+    private void RefreshInBackground()
+    {
+        if (_userInFlight == 0)
+        {
+            Refreshing = LoadAsync(Page, userInitiated: false);
+        }
+    }
+
     private async Task LoadAsync(int page, bool userInitiated)
+    {
+        if (userInitiated)
+        {
+            _userInFlight++;
+        }
+
+        try
+        {
+            await ReadPageAsync(page, userInitiated).ConfigureAwait(true);
+        }
+        finally
+        {
+            if (userInitiated)
+            {
+                _userInFlight--;
+            }
+        }
+    }
+
+    private async Task ReadPageAsync(int page, bool userInitiated)
     {
         var version = ++_loadVersion;
         _userLoad = userInitiated;
@@ -277,6 +311,13 @@ public sealed partial class HistoryViewModel : PageViewModel, IFreshnessNotes
         // Only the latest read counts: an older answer that arrives late must not replace a newer one.
         if (version != _loadVersion)
         {
+            return;
+        }
+
+        if (ok && result is not null && page > 1 && page > Math.Max(1, (int)Math.Ceiling(result.TotalCount / (double)PageSize)))
+        {
+            // The page is past the end now (runs were purged): read the last one instead of showing an empty list.
+            await ReadPageAsync(Math.Max(1, (int)Math.Ceiling(result.TotalCount / (double)PageSize)), userInitiated).ConfigureAwait(true);
             return;
         }
 
@@ -336,15 +377,25 @@ public sealed partial class HistoryViewModel : PageViewModel, IFreshnessNotes
         }
     }
 
-    private void RebuildProcessOptions()
+    private void RebuildProcessOptions(bool force)
     {
+        List<ProcessSummaryDto> processes = [.. _live.Processes.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)];
+
+        // The live state changes on every hint; the options (and the open combo box) only when the processes do.
+        if (!force
+            && ProcessOptions.Count == processes.Count + 1
+            && processes.Select((p, i) => ProcessOptions[i + 1] == new ProcessOption(p.Id, p.Name)).All(same => same))
+        {
+            return;
+        }
+
         Guid? keep = _selectedProcess?.Id;
         _rebuilding = true;
         try
         {
             ProcessOptions.Clear();
             ProcessOptions.Add(new ProcessOption(null, L.FilterAllProcesses));
-            foreach (ProcessSummaryDto process in _live.Processes.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase))
+            foreach (ProcessSummaryDto process in processes)
             {
                 ProcessOptions.Add(new ProcessOption(process.Id, process.Name));
             }
@@ -395,6 +446,7 @@ public sealed partial class HistoryViewModel : PageViewModel, IFreshnessNotes
         OnPropertyChanged(nameof(WaitingText));
         OnPropertyChanged(nameof(ProgressText));
         OnPropertyChanged(nameof(ShowEmpty));
+        OnPropertyChanged(nameof(EmptyText));
         OnPropertyChanged(nameof(ShowPaging));
     }
 

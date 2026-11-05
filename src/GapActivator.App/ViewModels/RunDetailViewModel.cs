@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using GapActivator.App.Localization;
 using GapActivator.App.Services;
 using GapActivator.Ipc.Contracts;
@@ -17,6 +18,7 @@ public sealed partial class RunDetailViewModel : PageViewModel, IDisposable
     private readonly IServiceGateway _gateway;
     private readonly TimeProvider _time;
     private readonly TimeDisplay _times;
+    private readonly IClipboardService _clipboard;
     private readonly IUiDispatcher _ui;
     private ITimer? _timer;
     private Guid _runId;
@@ -25,12 +27,13 @@ public sealed partial class RunDetailViewModel : PageViewModel, IDisposable
     private bool _refreshing;
     private bool _closed;
 
-    public RunDetailViewModel(Localizer l, IServiceGateway gateway, TimeProvider time, TimeDisplay times, IUiDispatcher ui)
+    public RunDetailViewModel(Localizer l, IServiceGateway gateway, TimeProvider time, TimeDisplay times, IClipboardService clipboard, IUiDispatcher ui)
         : base(l)
     {
         _gateway = gateway;
         _time = time;
         _times = times;
+        _clipboard = clipboard;
         _ui = ui;
         l.PropertyChanged += OnLanguageChanged;
     }
@@ -74,6 +77,13 @@ public sealed partial class RunDetailViewModel : PageViewModel, IDisposable
     /// <summary>The captured output tail, exactly as the service sent it (the re-adoption note line included).</summary>
     [ObservableProperty]
     public partial string Output { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// <see cref="Output"/> split into lines, for a virtualized list: a mebibyte of tail in one text box is laid out again on every
+    /// change. Rebuilt only when the output changed, so an unchanged refresh keeps the same list instance.
+    /// </summary>
+    [ObservableProperty]
+    public partial IReadOnlyList<string> OutputLines { get; private set; } = [];
 
     [ObservableProperty]
     public partial string? OutputNote { get; private set; }
@@ -172,9 +182,46 @@ public sealed partial class RunDetailViewModel : PageViewModel, IDisposable
         if (!string.Equals(Output, details.Output.Text, StringComparison.Ordinal))
         {
             Output = details.Output.Text;
+            OutputLines = SplitLines(details.Output.Text);
+            CopyOutputCommand.NotifyCanExecuteChanged();
         }
 
         OutputNote = !details.Output.Exists ? L.NoOutput : details.Output.Truncated ? L.OutputTruncated : null;
+    }
+
+    /// <summary>Splits on CRLF or LF; a final line break does not add an empty line.</summary>
+    internal static string[] SplitLines(string text)
+    {
+        if (text.Length == 0)
+        {
+            return [];
+        }
+
+        var lines = text.Split('\n');
+        var count = lines[^1].Length == 0 ? lines.Length - 1 : lines.Length;
+        var result = new string[count];
+        for (var i = 0; i < count; i++)
+        {
+            result[i] = lines[i].EndsWith('\r') ? lines[i][..^1] : lines[i];
+        }
+
+        return result;
+    }
+
+    private bool CanCopyOutput => Output.Length > 0;
+
+    [RelayCommand(CanExecute = nameof(CanCopyOutput))]
+    private async Task CopyOutputAsync()
+    {
+        try
+        {
+            await _clipboard.SetTextAsync(Output).ConfigureAwait(true);
+            ErrorText = null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            ErrorText = L.ErrorUnexpected(ex.Message);
+        }
     }
 
     private string EntryText(HistoryEntryDto entry)

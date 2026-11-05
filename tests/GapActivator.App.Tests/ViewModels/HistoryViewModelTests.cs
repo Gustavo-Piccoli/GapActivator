@@ -123,7 +123,8 @@ public class HistoryViewModelTests
     public async Task StateChanged_OnPageOne_Refreshes()
     {
         var h = new DashboardHarness();
-        await h.History.ApplyCommand.ExecuteAsync(null);
+        h.Navigator.Navigate(AppPage.History);
+        await h.History.Refreshing;
         var before = Filters(h).Count;
 
         h.Gateway.RaiseStateChanged(new StateChangedDto(null, null));
@@ -137,7 +138,8 @@ public class HistoryViewModelTests
     {
         var h = new DashboardHarness();
         h.Gateway.RunPages = _ => new RunRowPageDto([Dtos.RunRow()], 120);
-        await h.History.ApplyCommand.ExecuteAsync(null);
+        h.Navigator.Navigate(AppPage.History);
+        await h.History.Refreshing;
         await h.History.NextPageCommand.ExecuteAsync(null);
         var before = Filters(h).Count;
 
@@ -145,6 +147,134 @@ public class HistoryViewModelTests
         await h.History.Refreshing;
 
         Filters(h).Count.ShouldBe(before);
+    }
+
+    [Fact]
+    public async Task StateChanged_WhileAnotherPageIsCurrent_SendsNoListRuns()
+    {
+        var h = new DashboardHarness();
+        await h.History.ApplyCommand.ExecuteAsync(null);
+        h.Navigator.Navigate(AppPage.Dashboard);
+        var before = Filters(h).Count;
+
+        h.Gateway.RaiseStateChanged(new StateChangedDto(null, null));
+        await h.History.Refreshing;
+
+        Filters(h).Count.ShouldBe(before);
+    }
+
+    [Fact]
+    public async Task StateChanged_WhileAPageClickIsInFlight_LeavesTheViewOnTheClickedPage()
+    {
+        var h = new DashboardHarness();
+        h.Gateway.RunPages = f => new RunRowPageDto([Dtos.RunRow($"Page {f.Page}")], 120);
+        h.Navigator.Navigate(AppPage.History);
+        await h.History.Refreshing;
+        TaskCompletionSource hold = h.Gateway.Hold(nameof(FakeServiceGateway.ListRunsAsync));
+
+        Task click = h.History.NextPageCommand.ExecuteAsync(null);
+        h.Gateway.RaiseStateChanged(new StateChangedDto(null, null));
+        hold.SetResult();
+        await click;
+        await h.History.Refreshing;
+
+        h.History.Page.ShouldBe(2);
+        h.History.Items.Single().ProcessName.ShouldBe("Page 2");
+        Filters(h).Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task LiveChanged_WithTheSameProcesses_KeepsTheOptionInstances()
+    {
+        var h = new DashboardHarness();
+        h.Gateway.Processes = [Dtos.Summary("Alpha"), Dtos.Summary("Bravo")];
+        await h.Live.RefreshAsync();
+        ProcessOption[] before = [.. h.History.ProcessOptions];
+        h.History.SelectedProcess = before[2];
+
+        await h.Live.RefreshAsync();
+
+        h.History.ProcessOptions.Zip(before).ShouldAllBe(pair => ReferenceEquals(pair.First, pair.Second));
+        h.History.SelectedProcess.ShouldBeSameAs(before[2]);
+
+        h.Gateway.Processes = [Dtos.Summary("Alpha")];
+        await h.Live.RefreshAsync();
+        h.History.ProcessOptions.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Reload_PagePastTheEnd_LoadsTheLastPage()
+    {
+        var h = new DashboardHarness();
+        var total = 120;
+        h.Gateway.RunPages = f => new RunRowPageDto(f.Page <= (total + 49) / 50 ? [Dtos.RunRow($"Page {f.Page}")] : [], total);
+        h.Navigator.Navigate(AppPage.History);
+        await h.History.Refreshing;
+        await h.History.NextPageCommand.ExecuteAsync(null);
+        await h.History.NextPageCommand.ExecuteAsync(null);
+        h.History.Page.ShouldBe(3);
+        total = 70;
+
+        h.Navigator.Navigate(AppPage.History);
+        await h.History.Refreshing;
+
+        h.History.Page.ShouldBe(2);
+        h.History.PageCount.ShouldBe(2);
+        h.History.Items.Single().ProcessName.ShouldBe("Page 2");
+    }
+
+    [Theory]
+    [InlineData(false, "No runs yet.")]
+    [InlineData(true, "No runs match the filters.")]
+    public async Task EmptyHistory_SaysYetWhenNothingIsFiltered(bool filtered, string expected)
+    {
+        var h = new DashboardHarness();
+        if (filtered)
+        {
+            h.History.SelectedOutcome = h.History.OutcomeOptions[1];
+        }
+
+        await h.History.ApplyCommand.ExecuteAsync(null);
+
+        h.History.ShowEmpty.ShouldBeTrue();
+        h.History.EmptyText.ShouldBe(expected);
+    }
+
+    private static int GetRunCalls(DashboardHarness h) => h.Gateway.Calls.Count(c => c.Method == nameof(FakeServiceGateway.GetRunAsync));
+
+    [Fact]
+    public async Task CloseDetailCommand_StopsPollingTheRun()
+    {
+        var h = new DashboardHarness();
+        var run = Dtos.RunRow(state: RunState.Running, outcome: null, exitCode: null);
+        h.Gateway.Runs[run.Id] = Dtos.RunDetails(run);
+        h.Navigator.OpenRun(run.Id);
+        await h.History.OpeningDetail;
+        var calls = GetRunCalls(h);
+        h.Time.Advance(TimeSpan.FromSeconds(2));
+        GetRunCalls(h).ShouldBe(calls + 2);
+
+        h.History.CloseDetailCommand.Execute(null);
+        h.Time.Advance(TimeSpan.FromSeconds(5));
+
+        GetRunCalls(h).ShouldBe(calls + 2);
+    }
+
+    [Fact]
+    public async Task LeavingHistory_StopsPollingTheRun()
+    {
+        var h = new DashboardHarness();
+        var run = Dtos.RunRow(state: RunState.Running, outcome: null, exitCode: null);
+        h.Gateway.Runs[run.Id] = Dtos.RunDetails(run);
+        h.Navigator.OpenRun(run.Id);
+        await h.History.OpeningDetail;
+        var calls = GetRunCalls(h);
+
+        h.Navigator.Navigate(AppPage.Dashboard);
+        h.Time.Advance(TimeSpan.FromSeconds(5));
+
+        h.History.Detail.ShouldBeNull();
+        GetRunCalls(h).ShouldBe(calls);
     }
 
     [Fact]

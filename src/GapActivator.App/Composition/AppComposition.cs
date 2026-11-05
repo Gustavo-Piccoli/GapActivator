@@ -157,11 +157,14 @@ public static class AppComposition
             sp.GetRequiredService<INavigator>(),
             sp.GetRequiredService<TimeDisplay>(),
             sp.GetRequiredService<Func<ProcessEditorViewModel>>()));
+        services.AddSingleton<IClipboardService>(sp =>
+            new AvaloniaClipboardService(() => sp.GetRequiredService<MainWindowService>().Window));
         services.AddSingleton<Func<RunDetailViewModel>>(sp => () => new RunDetailViewModel(
             sp.GetRequiredService<Localizer>(),
             sp.GetRequiredService<IServiceGateway>(),
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<TimeDisplay>(),
+            sp.GetRequiredService<IClipboardService>(),
             sp.GetRequiredService<IUiDispatcher>()));
         services.AddSingleton(sp => new HistoryViewModel(
             sp.GetRequiredService<Localizer>(),

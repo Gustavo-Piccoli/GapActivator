@@ -42,7 +42,7 @@
       </Border>
 
       <!-- The failed call, a failed refresh, the wait for a first answer and "last known state" are one shared control. -->
-      <views:FreshnessNotes />
+      <views:FreshnessNotes Spacing="20" />
 
       <StackPanel Spacing="20" IsVisible="{Binding HasData}" Classes.stale="{Binding IsStale}">
 
