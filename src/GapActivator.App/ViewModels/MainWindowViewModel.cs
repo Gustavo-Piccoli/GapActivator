@@ -13,13 +13,14 @@ public sealed class MainWindowViewModel : ViewModelBase
     private NavItemViewModel _selectedNavItem;
     private AppPage _currentPage;
 
-    public MainWindowViewModel(Localizer l, INavigator navigator, ConnectionBannerViewModel banner, Permissions permissions, DashboardViewModel dashboard)
+    public MainWindowViewModel(Localizer l, INavigator navigator, ConnectionBannerViewModel banner, Permissions permissions, DashboardViewModel dashboard, ProcessesViewModel processes)
         : base(l)
     {
         _navigator = navigator;
         Banner = banner;
         Permissions = permissions;
         Dashboard = dashboard;
+        Processes = processes;
         NavItems =
         [
             new NavItemViewModel(AppPage.Dashboard, "", l),
@@ -54,8 +55,15 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public DashboardViewModel Dashboard { get; }
 
+    public ProcessesViewModel Processes { get; }
+
     /// <summary>The view model of the current page, or null for a page that is not built yet (the window then shows its title).</summary>
-    public PageViewModel? PageContent => CurrentPage == AppPage.Dashboard ? Dashboard : null;
+    public PageViewModel? PageContent => CurrentPage switch
+    {
+        AppPage.Dashboard => Dashboard,
+        AppPage.Processes => Processes,
+        _ => null,
+    };
 
     public IReadOnlyList<NavItemViewModel> NavItems { get; }
 

@@ -18,6 +18,7 @@ public sealed partial class DashboardViewModel : PageViewModel
     private readonly FailureAcknowledgements _seen;
     private readonly INavigator _navigator;
     private readonly TimeDisplay _times;
+    private readonly LiveFreshness _freshness;
 
     public DashboardViewModel(
         Localizer l,
@@ -37,6 +38,7 @@ public sealed partial class DashboardViewModel : PageViewModel
         _seen = seen;
         _navigator = navigator;
         _times = times;
+        _freshness = new LiveFreshness(l, gateway, live);
 
         live.Changed += (_, _) => Rebuild();
         seen.Changed += (_, _) =>
@@ -69,7 +71,7 @@ public sealed partial class DashboardViewModel : PageViewModel
     /// <summary>"Connected", or the banner's explanation of why not.</summary>
     public string ConnectionText => ConnectionTexts.Banner(_gateway.Status, L) ?? L.Connected;
 
-    public bool IsConnected => _gateway.Status.IsConnected;
+    public bool IsConnected => _freshness.IsConnected;
 
     /// <summary>A check mark when connected, a warning sign otherwise: the state never rests on color alone.</summary>
     public string ConnectionGlyph => IsConnected ? "" : "";
@@ -85,20 +87,20 @@ public sealed partial class DashboardViewModel : PageViewModel
     public string PausedText => L.PausedText;
 
     /// <summary>False until the service has reported once; before that the lists would claim "nothing" when the answer is "unknown".</summary>
-    public bool HasData => _live.Dashboard is not null;
+    public bool HasData => _freshness.HasData;
 
     /// <summary>True while the lists show the last known state because the service is not connected; the view dims them and says so.</summary>
-    public bool IsStale => HasData && !IsConnected;
+    public bool IsStale => _freshness.IsStale;
 
-    public string StaleText => L.StaleNote;
+    public string StaleText => _freshness.StaleText;
 
     /// <summary>True when the last refresh failed, so the lists may be out of date even though the connection is up.</summary>
-    public bool HasRefreshError => _live.RefreshFailed;
+    public bool HasRefreshError => _freshness.HasRefreshError;
 
-    public string RefreshErrorText => L.RefreshFailedText;
+    public string RefreshErrorText => _freshness.RefreshErrorText;
 
     /// <summary>The "waiting" line is only for a connected page with no answer yet; while disconnected the connection text speaks, and after a failure the error does.</summary>
-    public bool ShowWaiting => !HasData && IsConnected && !_live.RefreshFailed;
+    public bool ShowWaiting => _freshness.ShowWaiting;
 
     public bool HasActiveRuns => ActiveRuns.Count > 0;
 

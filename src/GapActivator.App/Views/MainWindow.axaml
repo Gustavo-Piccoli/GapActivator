@@ -73,6 +73,9 @@
             <DataTemplate DataType="vm:DashboardViewModel">
               <views:DashboardView />
             </DataTemplate>
+            <DataTemplate DataType="vm:ProcessesViewModel">
+              <views:ProcessesView />
+            </DataTemplate>
           </ContentControl.DataTemplates>
         </ContentControl>
       </Grid>

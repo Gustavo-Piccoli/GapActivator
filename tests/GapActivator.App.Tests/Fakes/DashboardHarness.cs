@@ -19,6 +19,8 @@ internal sealed class DashboardHarness
         Seen = new FailureAcknowledgements(Time);
         Runs = new RunActions(L, Gateway, Dialogs);
         Dashboard = new DashboardViewModel(L, Gateway, Live, Permissions, Runs, Seen, Navigator, Times);
+        Actions = new ProcessActions(L, Gateway, Dialogs, Runs, Time);
+        Processes = new ProcessesViewModel(L, Gateway, Live, Permissions, Actions, Runs, Seen, Navigator, Times);
     }
 
     public Localizer L { get; }
@@ -42,4 +44,8 @@ internal sealed class DashboardHarness
     public RunActions Runs { get; }
 
     public DashboardViewModel Dashboard { get; }
+
+    public ProcessActions Actions { get; }
+
+    public ProcessesViewModel Processes { get; }
 }

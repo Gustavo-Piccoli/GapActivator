@@ -1,0 +1,107 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:GapActivator.App.ViewModels"
+             x:Class="GapActivator.App.Views.ProcessesView"
+             x:DataType="vm:ProcessesViewModel">
+  <!--
+    Operate surface: a name-ordered list, one row per process, state first. The lifecycle badge always carries its word (the color
+    only backs it up) and its explanation as tooltip and accessible name. Row buttons are real buttons in reading order, named by
+    process because every row says the same verbs; the destructive one comes last, with its question in a dialog. A disabled
+    action keeps the reason as tooltip. While not connected the list is marked as the last known state, and nothing claims
+    "no processes" before the service has reported once.
+  -->
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Spacing="16" MaxWidth="880" HorizontalAlignment="Stretch">
+
+      <TextBlock Classes="error" Text="{Binding ErrorText}" TextWrapping="Wrap"
+                 IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}"
+                 AutomationProperties.LiveSetting="Assertive" />
+
+      <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding HasRefreshError}">
+        <TextBlock Classes="railIcon error" Text="&#xE7BA;" />
+        <TextBlock Classes="error" Text="{Binding RefreshErrorText}" TextWrapping="Wrap" VerticalAlignment="Center"
+                   AutomationProperties.LiveSetting="Assertive" />
+      </StackPanel>
+
+      <TextBlock Classes="muted" Text="{Binding L.WaitingForService}" TextWrapping="Wrap" IsVisible="{Binding ShowWaiting}" />
+
+      <!-- Not connected: the list is the last known state. A glyph and a sentence say so, and the dimming only backs them up. -->
+      <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsStale}">
+        <TextBlock Classes="railIcon warning" Text="&#xE7BA;" />
+        <TextBlock Classes="warning" Text="{Binding StaleText}" TextWrapping="Wrap" VerticalAlignment="Center"
+                   AutomationProperties.LiveSetting="Polite" />
+      </StackPanel>
+
+      <Border Classes="card" IsVisible="{Binding HasData}">
+        <StackPanel Classes.stale="{Binding IsStale}">
+          <TextBlock Classes="muted" Text="{Binding L.NoProcesses}" Margin="16,16" IsVisible="{Binding ShowEmpty}" />
+          <ItemsControl x:Name="ProcessList" ItemsSource="{Binding Items}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ProcessRowViewModel">
+                <StackPanel>
+                  <Grid Classes="row" ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                      <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        <Border x:Name="LifecycleBadge" Classes="badge" VerticalAlignment="Center"
+                                Classes.enabled="{Binding IsEnabledState}"
+                                Classes.disabled="{Binding IsDisabledState}"
+                                Classes.blocked="{Binding IsBlockedState}"
+                                ToolTip.Tip="{Binding LifecycleTooltip}"
+                                AutomationProperties.Name="{Binding BadgeAutomationName}">
+                          <TextBlock Classes="caption" Text="{Binding LifecycleText}" />
+                        </Border>
+                        <TextBlock Foreground="{DynamicResource GaAccentTextBrush}" Text="{Binding RunningText}" VerticalAlignment="Center"
+                                   IsVisible="{Binding IsRunning}" />
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="16">
+                        <TextBlock Classes="caption" Text="{Binding KindText}" />
+                        <TextBlock Classes="caption" Text="{Binding NextText}" />
+                        <StackPanel Orientation="Horizontal" Spacing="6"
+                                    IsVisible="{Binding LastOutcomeText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                          <TextBlock Classes="caption" Text="{Binding L.LastRunLabel}" />
+                          <TextBlock Classes="caption" Text="{Binding LastOutcomeText}" />
+                        </StackPanel>
+                      </StackPanel>
+                    </StackPanel>
+                    <WrapPanel Grid.Column="1" Margin="16,0,0,0" MaxWidth="440" VerticalAlignment="Center"
+                               HorizontalAlignment="Right" Orientation="Horizontal">
+                      <Button x:Name="RunNowButton" Margin="0,2,8,2" Content="{Binding L.RunNow}" Command="{Binding RunNowCommand}"
+                              AutomationProperties.Name="{Binding RunNowAutomationName}"
+                              ToolTip.Tip="{Binding DeniedReason}" ToolTip.ShowOnDisabled="True" />
+                      <Button x:Name="CancelButton" Margin="0,2,8,2" Content="{Binding CancelText}" Command="{Binding CancelCommand}"
+                              IsVisible="{Binding ShowCancel}"
+                              AutomationProperties.Name="{Binding CancelAutomationName}"
+                              ToolTip.Tip="{Binding DeniedReason}" ToolTip.ShowOnDisabled="True" />
+                      <Button x:Name="EnableButton" Margin="0,2,8,2" Content="{Binding L.Enable}" Command="{Binding EnableCommand}"
+                              IsVisible="{Binding ShowEnable}"
+                              AutomationProperties.Name="{Binding EnableAutomationName}"
+                              ToolTip.Tip="{Binding DeniedReason}" ToolTip.ShowOnDisabled="True" />
+                      <Button x:Name="DisableButton" Margin="0,2,8,2" Content="{Binding L.Disable}" Command="{Binding DisableCommand}"
+                              IsVisible="{Binding ShowDisable}"
+                              AutomationProperties.Name="{Binding DisableAutomationName}"
+                              ToolTip.Tip="{Binding DeniedReason}" ToolTip.ShowOnDisabled="True" />
+                      <Button x:Name="UnblockButton" Margin="0,2,8,2" Content="{Binding L.Unblock}" Command="{Binding UnblockCommand}"
+                              IsVisible="{Binding ShowUnblock}"
+                              AutomationProperties.Name="{Binding UnblockAutomationName}"
+                              ToolTip.Tip="{Binding DeniedReason}" ToolTip.ShowOnDisabled="True" />
+                      <Button x:Name="UnblockAndRunButton" Margin="0,2,8,2" Content="{Binding L.UnblockAndRun}" Command="{Binding UnblockAndRunCommand}"
+                              IsVisible="{Binding ShowUnblockAndRun}"
+                              AutomationProperties.Name="{Binding UnblockAndRunAutomationName}"
+                              ToolTip.Tip="{Binding DeniedReason}" ToolTip.ShowOnDisabled="True" />
+                      <!-- Last, and apart from the others: the only destructive action. Its question is asked in a dialog. -->
+                      <Button x:Name="DeleteButton" Margin="8,2,0,2" Content="{Binding L.Delete}" Command="{Binding DeleteCommand}"
+                              AutomationProperties.Name="{Binding DeleteAutomationName}"
+                              ToolTip.Tip="{Binding DeniedReason}" ToolTip.ShowOnDisabled="True" />
+                    </WrapPanel>
+                  </Grid>
+                  <Border Classes="divider" />
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

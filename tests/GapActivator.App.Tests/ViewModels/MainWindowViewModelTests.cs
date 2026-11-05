@@ -20,7 +20,8 @@ public class MainWindowViewModelTests : IAsyncDisposable
             _navigator,
             new ConnectionBannerViewModel(_l, _gateway, new FakeServiceStarter(), new FakeTimeProvider()),
             harness.Permissions,
-            harness.Dashboard);
+            harness.Dashboard,
+            harness.Processes);
     }
 
     public ValueTask DisposeAsync()
