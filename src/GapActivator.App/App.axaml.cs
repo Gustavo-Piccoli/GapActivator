@@ -37,6 +37,9 @@ public sealed class App : Avalonia.Application
             _ = services.GetRequiredService<MainWindowViewModel>();
             services.GetRequiredService<IServiceGateway>().Start();
 
+            // The live state follows the gateway from here on; it refreshes after every connect, and once now if already connected.
+            services.GetRequiredService<LiveState>().Start();
+
             // The shell window is created here, on the UI thread, and disposed by AppShutdown on the UI thread.
             var shell = services.GetRequiredService<ShellWindow>();
             var windows = services.GetRequiredService<IMainWindowService>();

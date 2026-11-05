@@ -12,11 +12,16 @@ public class MainWindowViewModelTests : IAsyncDisposable
     private readonly FakeServiceGateway _gateway = new();
     private readonly Navigator _navigator = new();
 
-    private MainWindowViewModel Create() => new(
-        _l,
-        _navigator,
-        new ConnectionBannerViewModel(_l, _gateway, new FakeServiceStarter(), new FakeTimeProvider()),
-        new Permissions(_l, _gateway));
+    private MainWindowViewModel Create()
+    {
+        var harness = new DashboardHarness(gateway: _gateway, localizer: _l, navigator: _navigator);
+        return new MainWindowViewModel(
+            _l,
+            _navigator,
+            new ConnectionBannerViewModel(_l, _gateway, new FakeServiceStarter(), new FakeTimeProvider()),
+            harness.Permissions,
+            harness.Dashboard);
+    }
 
     public ValueTask DisposeAsync()
     {

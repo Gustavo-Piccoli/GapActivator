@@ -21,7 +21,8 @@ public class MainWindowServiceTests(HeadlessFixture fixture)
     {
         var l = new Localizer(AppLanguage.English);
         var banner = new ConnectionBannerViewModel(l, gateway, new FakeServiceStarter(), new FakeTimeProvider());
-        var viewModel = new MainWindowViewModel(l, new Navigator(), banner, new Permissions(l, gateway));
+        var harness = new DashboardHarness(gateway: gateway, localizer: l);
+        var viewModel = new MainWindowViewModel(l, harness.Navigator, banner, harness.Permissions, harness.Dashboard);
         return new MainWindow { DataContext = viewModel };
     }
 

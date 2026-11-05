@@ -61,6 +61,17 @@
   <Style Selector="Border.badge.blocked TextBlock">
     <Setter Property="Foreground" Value="{DynamicResource GaBadgeBlockedInkBrush}" />
   </Style>
+  <Style Selector="Button.row">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="CornerRadius" Value="0" />
+  </Style>
+  <Style Selector="Button.row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource GaSurfaceHoverBrush}" />
+  </Style>
   <Style Selector="Button:focus-visible /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="BorderBrush" Value="{DynamicResource GaFocusBrush}" />
     <Setter Property="BorderThickness" Value="2" />

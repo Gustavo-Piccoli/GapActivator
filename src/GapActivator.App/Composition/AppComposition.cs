@@ -46,6 +46,7 @@ public static class AppComposition
         Logger<App>(services);
         Logger<AppSettingsStore>(services);
         Logger<ServiceGateway>(services);
+        Logger<LiveState>(services);
         Logger<AppShutdown>(services);
     }
 
@@ -105,11 +106,28 @@ public static class AppComposition
             sp.GetRequiredService<IServiceGateway>(),
             sp.GetRequiredService<IServiceStarter>(),
             sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton(sp => new LiveState(sp.GetRequiredService<IServiceGateway>(), sp.GetRequiredService<ILogger<LiveState>>()));
+        services.AddSingleton(sp => new FailureAcknowledgements(sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton(sp => new TimeDisplay(sp.GetRequiredService<Localizer>(), sp.GetRequiredService<TimeZoneInfo>()));
+        services.AddSingleton(sp => new RunActions(
+            sp.GetRequiredService<Localizer>(),
+            sp.GetRequiredService<IServiceGateway>(),
+            sp.GetRequiredService<IDialogService>()));
+        services.AddSingleton(sp => new DashboardViewModel(
+            sp.GetRequiredService<Localizer>(),
+            sp.GetRequiredService<IServiceGateway>(),
+            sp.GetRequiredService<LiveState>(),
+            sp.GetRequiredService<Permissions>(),
+            sp.GetRequiredService<RunActions>(),
+            sp.GetRequiredService<FailureAcknowledgements>(),
+            sp.GetRequiredService<INavigator>(),
+            sp.GetRequiredService<TimeDisplay>()));
         services.AddSingleton(sp => new MainWindowViewModel(
             sp.GetRequiredService<Localizer>(),
             sp.GetRequiredService<INavigator>(),
             sp.GetRequiredService<ConnectionBannerViewModel>(),
-            sp.GetRequiredService<Permissions>()));
+            sp.GetRequiredService<Permissions>(),
+            sp.GetRequiredService<DashboardViewModel>()));
 
         services.AddSingleton<Func<MainWindow>>(sp => () => new MainWindow { DataContext = sp.GetRequiredService<MainWindowViewModel>() });
         services.AddSingleton(sp => new MainWindowService(
