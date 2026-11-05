@@ -1,9 +1,12 @@
 using System.Globalization;
+using Avalonia;
 using GapActivator.App.Localization;
 using GapActivator.App.Logging;
 using GapActivator.App.Services;
 using GapActivator.App.Settings;
 using GapActivator.App.Shell;
+using GapActivator.App.ViewModels;
+using GapActivator.App.Views;
 using GapActivator.Ipc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -30,6 +33,8 @@ public static class AppComposition
         AddSettings(services);
         AddGateway(services);
         AddShell(services);
+        AddUi(services);
+        AddShutdown(services);
 
         overrides?.Invoke(services);
         return services.BuildServiceProvider();
@@ -41,6 +46,7 @@ public static class AppComposition
         Logger<App>(services);
         Logger<AppSettingsStore>(services);
         Logger<ServiceGateway>(services);
+        Logger<AppShutdown>(services);
     }
 
     private static void Logger<T>(IServiceCollection services) =>
@@ -83,5 +89,62 @@ public static class AppComposition
         services.AddSingleton<ITrayIcon>(sp => new Win32TrayIcon(
             sp.GetRequiredService<ShellWindow>(),
             TrayIconImages.Colors.ToDictionary(c => c.Key, c => TrayIconImages.Create(c.Value))));
+    }
+
+    private static void AddUi(IServiceCollection services)
+    {
+        services.AddSingleton(_ => new Navigator());
+        services.AddSingleton<INavigator>(sp => sp.GetRequiredService<Navigator>());
+        services.AddSingleton(sp => new Permissions(sp.GetRequiredService<Localizer>(), sp.GetRequiredService<IServiceGateway>()));
+        services.AddSingleton<IServiceStarter>(_ => new ScServiceStarter());
+        services.AddSingleton<IDialogService>(sp =>
+            new AvaloniaDialogService(sp.GetRequiredService<Localizer>(), () => sp.GetRequiredService<MainWindowService>().Window));
+
+        services.AddSingleton(sp => new ConnectionBannerViewModel(
+            sp.GetRequiredService<Localizer>(),
+            sp.GetRequiredService<IServiceGateway>(),
+            sp.GetRequiredService<IServiceStarter>(),
+            sp.GetRequiredService<TimeProvider>()));
+        services.AddSingleton(sp => new MainWindowViewModel(
+            sp.GetRequiredService<Localizer>(),
+            sp.GetRequiredService<INavigator>(),
+            sp.GetRequiredService<ConnectionBannerViewModel>(),
+            sp.GetRequiredService<Permissions>()));
+
+        services.AddSingleton<Func<MainWindow>>(sp => () => new MainWindow { DataContext = sp.GetRequiredService<MainWindowViewModel>() });
+        services.AddSingleton(sp => new MainWindowService(
+            sp.GetRequiredService<Func<MainWindow>>(),
+            sp.GetRequiredService<IAppSettingsService>(),
+            () => sp.GetRequiredService<MainWindowService>().Window?.Screens.All.Select(s => s.WorkingArea).ToList() ?? []));
+        services.AddSingleton<IMainWindowService>(sp => sp.GetRequiredService<MainWindowService>());
+    }
+
+    private static void AddShutdown(IServiceCollection services)
+    {
+        services.AddSingleton<IAppLifetime>(sp => sp.GetRequiredService<AppShutdown>());
+        services.AddSingleton(sp =>
+        {
+            // Resolved at exit time, not now: the steps run on the UI thread, where the shell objects must be disposed.
+            T Get<T>()
+                where T : notnull => sp.GetRequiredService<T>();
+
+            // Later tasks insert their steps in front of the shell window: the tray icon goes before it, the gateway first.
+            Action[] steps =
+            [
+                // The gateway loop runs off the UI context, so this wait cannot deadlock; it is bounded.
+                () => Get<IServiceGateway>().DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5)),
+                () => Get<ShellWindow>().Dispose(),
+                RequestDesktopShutdown,
+            ];
+            return new AppShutdown(steps, sp.GetRequiredService<ILogger<AppShutdown>>());
+        });
+    }
+
+    private static void RequestDesktopShutdown()
+    {
+        if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IControlledApplicationLifetime lifetime)
+        {
+            lifetime.Shutdown();
+        }
     }
 }

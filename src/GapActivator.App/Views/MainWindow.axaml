@@ -1,0 +1,66 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:GapActivator.App.ViewModels"
+        x:Class="GapActivator.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="{Binding L.AppName}"
+        Width="1100" Height="720"
+        MinWidth="640" MinHeight="480">
+  <!--
+    Tab order is the XAML order: the rail first, then the banner's button, then the page. The banner and the development
+    strip always carry a glyph and text, so no state is shown by color alone.
+  -->
+  <Grid ColumnDefinitions="200,*">
+    <Border Grid.Column="0" Background="{DynamicResource GaRailBrush}">
+      <DockPanel LastChildFill="True">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="10" Margin="18,14,16,16"
+                    AutomationProperties.Name="{Binding FooterText}">
+          <TextBlock Classes="railIcon" Text="{Binding FooterGlyph}" Foreground="{DynamicResource GaTextMutedBrush}" />
+          <TextBlock Classes="caption" Text="{Binding FooterText}" VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBlock DockPanel.Dock="Top" Text="{Binding L.AppName}" Classes="group" Margin="18,20,16,16" />
+        <ListBox Classes="rail" ItemsSource="{Binding NavItems}" SelectedItem="{Binding SelectedNavItem, Mode=TwoWay}"
+                 AutomationProperties.Name="{Binding L.NavigationLabel}" Margin="8,0">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:NavItemViewModel">
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock Classes="railIcon" Text="{Binding Glyph}" />
+                <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Border>
+
+    <DockPanel Grid.Column="1" LastChildFill="True">
+      <Border DockPanel.Dock="Top" Classes="strip" IsVisible="{Binding Banner.IsDevelopmentMode}"
+              x:Name="DevelopmentStrip">
+        <StackPanel Orientation="Horizontal" Spacing="10" x:DataType="vm:MainWindowViewModel">
+          <TextBlock Classes="railIcon warning" Text="&#xE7BA;" />
+          <TextBlock Classes="warning" Text="{Binding Banner.DevelopmentText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+        </StackPanel>
+      </Border>
+
+      <Border DockPanel.Dock="Top" Classes="strip" IsVisible="{Binding Banner.IsVisible}" x:Name="ConnectionStrip">
+        <StackPanel Spacing="6">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE7BA;" Margin="0,0,10,0" />
+            <TextBlock Grid.Column="1" Text="{Binding Banner.Text}" TextWrapping="Wrap" VerticalAlignment="Center"
+                       AutomationProperties.LiveSetting="Polite" />
+            <Button Grid.Column="2" Classes="accent" Content="{Binding L.StartService}" Margin="16,0,0,0"
+                    IsVisible="{Binding Banner.ShowStartService}" Command="{Binding Banner.StartServiceCommand}" />
+          </Grid>
+          <TextBlock Classes="error" Text="{Binding Banner.ErrorText}" TextWrapping="Wrap"
+                     IsVisible="{Binding Banner.ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}"
+                     AutomationProperties.LiveSetting="Assertive" />
+        </StackPanel>
+      </Border>
+
+      <!-- Later tasks put the pages here, one data template per page view model. -->
+      <ContentControl x:Name="PageHost" Margin="28,24">
+        <TextBlock Classes="title" Text="{Binding PageTitle}" />
+      </ContentControl>
+    </DockPanel>
+  </Grid>
+</Window>

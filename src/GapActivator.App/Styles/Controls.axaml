@@ -132,4 +132,56 @@
     <Setter Property="VerticalAlignment" Value="Center" />
     <Setter Property="AutomationProperties.AccessibilityView" Value="Raw" />
   </Style>
+  <Style Selector="Border.strip">
+    <Setter Property="Background" Value="{DynamicResource GaSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource GaHairlineBrush}" />
+    <Setter Property="BorderThickness" Value="0,0,0,1" />
+    <Setter Property="Padding" Value="28,12" />
+  </Style>
+  <Style Selector="TextBlock.railIcon.warning">
+    <Setter Property="Foreground" Value="{DynamicResource GaWarningTextBrush}" />
+  </Style>
+  <Style Selector="ListBox.rail">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+  </Style>
+  <Style Selector="ListBox.rail > ListBoxItem">
+    <Setter Property="Height" Value="40" />
+    <Setter Property="Margin" Value="0,0,0,2" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="FontSize" Value="14" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource GaTextBrush}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Name="PART_LayoutRoot" Background="Transparent" BorderBrush="Transparent"
+                BorderThickness="2" CornerRadius="{DynamicResource GaControlRadius}">
+          <Grid ColumnDefinitions="8,*">
+            <Border Name="PART_Indicator" Width="3" Height="16" Margin="4,0,0,0"
+                    CornerRadius="1.5" Background="{DynamicResource GaAccentBrush}"
+                    VerticalAlignment="Center" IsVisible="False" />
+            <ContentPresenter Grid.Column="1" Name="PART_ContentPresenter" Margin="10,0,8,0"
+                              Content="{TemplateBinding Content}"
+                              ContentTemplate="{TemplateBinding ContentTemplate}"
+                              Foreground="{TemplateBinding Foreground}"
+                              VerticalContentAlignment="Center" />
+          </Grid>
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ListBox.rail > ListBoxItem:pointerover /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource GaSurfaceHoverBrush}" />
+  </Style>
+  <Style Selector="ListBox.rail > ListBoxItem:selected /template/ Border#PART_LayoutRoot">
+    <Setter Property="Background" Value="{DynamicResource GaSurfaceHoverBrush}" />
+  </Style>
+  <Style Selector="ListBox.rail > ListBoxItem:selected /template/ Border#PART_Indicator">
+    <Setter Property="IsVisible" Value="True" />
+  </Style>
+  <Style Selector="ListBox.rail > ListBoxItem:focus-visible /template/ Border#PART_LayoutRoot">
+    <Setter Property="BorderBrush" Value="{DynamicResource GaFocusBrush}" />
+  </Style>
 </Styles>
