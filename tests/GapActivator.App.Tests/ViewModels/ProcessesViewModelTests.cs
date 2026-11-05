@@ -188,6 +188,66 @@ public class ProcessesViewModelTests
     }
 
     [Fact]
+    public async Task Delete_WhileWaitingForTheRunToStop_ShowsProgressThenClearsIt()
+    {
+        var process = Dtos.Summary("Busy", activeRun: Active());
+        _h.Gateway.Details[process.Id] = Dtos.Details(process);
+        await LoadAsync(process);
+        _h.Dialogs.Enqueue(DialogChoice.Primary);
+        Vm.ProgressText.ShouldBeNull();
+
+        Task delete = Vm.Items.Single().DeleteCommand.ExecuteAsync(null);
+        for (var i = 0; i < 400 && Sent().All(c => c.Method != "CancelRunAsync"); i++)
+        {
+            await Task.Delay(1, TestContext.Current.CancellationToken);
+        }
+
+        delete.IsCompleted.ShouldBeFalse();
+        Vm.ProgressText.ShouldBe("Stopping the run before deleting \"Busy\"…");
+        _h.L.SetLanguage(AppLanguage.Portuguese);
+        Vm.ProgressText.ShouldBe("Parando a execução antes de excluir \"Busy\"…");
+
+        _h.Gateway.Details[process.Id] = Dtos.Details(process with { ActiveRun = null });
+        for (var i = 0; i < 400 && !delete.IsCompleted; i++)
+        {
+            await Task.Delay(1, TestContext.Current.CancellationToken);
+            _h.Time.Advance(ProcessActions.DeletePollInterval);
+        }
+
+        await delete.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Vm.ProgressText.ShouldBeNull();
+        Sent().Select(c => c.Method).ShouldContain("DeleteProcessAsync");
+    }
+
+    [Fact]
+    public async Task Delete_DeclinedOrFailed_NeverLeavesProgressBehind()
+    {
+        var process = Dtos.Summary(activeRun: Active());
+        await LoadAsync(process);
+        _h.Dialogs.Enqueue(DialogChoice.Cancel);
+
+        await Vm.Items.Single().DeleteCommand.ExecuteAsync(null);
+        Vm.ProgressText.ShouldBeNull();
+
+        _h.Dialogs.Enqueue(DialogChoice.Primary);
+        _h.Gateway.FailNext("CancelRunAsync", new GapActivatorRequestException(IpcErrorCodes.RunNotActive, "x", retryable: false));
+        await Vm.Items.Single().DeleteCommand.ExecuteAsync(null);
+
+        Vm.ProgressText.ShouldBeNull();
+        Vm.ErrorText.ShouldBe("There is no active run to cancel.");
+    }
+
+    [Fact]
+    public async Task Row_LastRun_HasASeparatorBeforeTheOutcome()
+    {
+        await LoadAsync(Dtos.Summary(lastOutcome: RunOutcome.Failed));
+
+        Vm.Items.Single().LastRunText.ShouldBe("Last run: Failed");
+        _h.L.SetLanguage(AppLanguage.Portuguese);
+        Vm.Items.Single().LastRunText.ShouldBe("Última execução: Falhou");
+    }
+
+    [Fact]
     public async Task Actions_Viewer_EveryCommandDisabled()
     {
         await LoadAsync(Dtos.Summary(activeRun: Active()), Dtos.Summary("B", lifecycle: ProcessLifecycle.Blocked));

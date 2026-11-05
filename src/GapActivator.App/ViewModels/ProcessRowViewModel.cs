@@ -69,6 +69,10 @@ public sealed partial class ProcessRowViewModel : ViewModelBase
     [ObservableProperty]
     public partial string? LastOutcomeText { get; private set; }
 
+    /// <summary>"Last run: Failed"; null when the process has not run yet.</summary>
+    [ObservableProperty]
+    public partial string? LastRunText { get; private set; }
+
     public bool IsRunning => Summary.ActiveRun is not null;
 
     /// <summary>The state of the active run in words ("Running"); empty when none is active.</summary>
@@ -147,6 +151,7 @@ public sealed partial class ProcessRowViewModel : ViewModelBase
         BadgeAutomationName = LifecycleTooltip is null ? LifecycleText : $"{LifecycleText}: {LifecycleTooltip}";
         NextText = summary.NextScheduledAt is { } next ? L.NextRun(_times.DateTime(next)) : L.NoNextRun;
         LastOutcomeText = summary.LastOutcome is { } outcome ? L.OutcomeText(outcome) : null;
+        LastRunText = LastOutcomeText is null ? null : L.LastRun(LastOutcomeText);
         RunningText = summary.ActiveRun is { } run ? L.StateText(run.State) : string.Empty;
 
         var service = summary.Kind == ProcessKind.Service;

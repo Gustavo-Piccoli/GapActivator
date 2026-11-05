@@ -61,7 +61,12 @@ public sealed partial class Localizer
     // Not in the Fixed strings: the list's empty state and the accessible names of the row buttons (every row says the same word).
     public string NoProcesses => T("No processes are registered yet.", "Nenhum processo cadastrado ainda.");
 
-    public string LastRunLabel => T("Last run", "Última execução");
+    public string LastRun(string outcome) => string.Format(Culture, T("Last run: {0}", "Última execução: {0}"), outcome);
+
+    public string DeleteStopping(string name) => string.Format(
+        Culture,
+        T("Stopping the run before deleting \"{0}\"…", "Parando a execução antes de excluir \"{0}\"…"),
+        name);
 
     public string RunNowFor(string name) => string.Format(Culture, T("Run {0} now", "Executar {0} agora"), name);
 

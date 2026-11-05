@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -110,6 +111,40 @@ public class ProcessesViewTests(HeadlessFixture fixture)
         before.ShouldNotContain("No processes are registered yet.");
         before.ShouldContain("Waiting for the service to report its state…");
         after.ShouldContain("No processes are registered yet.");
+    }
+
+    [Fact]
+    public async Task ProcessesView_LongNameAtMinimumWidth_KeepsTheBadgeInsideTheRow()
+    {
+        var h = new DashboardHarness();
+        h.Gateway.Processes = [Dtos.Summary(new string('W', 120), lifecycle: ProcessLifecycle.Blocked, lastOutcome: RunOutcome.Crashed, nextScheduledAt: Dtos.Epoch.AddDays(1))];
+        await h.Live.RefreshAsync();
+        h.L.SetLanguage(GapActivator.App.Localization.AppLanguage.Portuguese);
+
+        (double badgeRight, double badgeWidth, double rowWidth, double nameWidth, object? nameTip, double bottom, double listBottom) = await fixture.Session.Dispatch(
+            () =>
+            {
+                // The main window's minimum width (640) less the rail (200) and the page margins (56).
+                var window = new Window { Width = 384, Height = 700, Content = new ProcessesView { DataContext = h.Processes } };
+                window.Show();
+                Dispatcher.UIThread.RunJobs();
+                var list = window.GetVisualDescendants().OfType<ItemsControl>().First(c => c.Name == "ProcessList");
+                var badge = window.GetVisualDescendants().OfType<Border>().First(b => b.Name == "LifecycleBadge");
+                var name = list.GetVisualDescendants().OfType<TextBlock>().First(t => t.Text is { Length: 120 });
+                var right = badge.TranslatePoint(new Point(badge.Bounds.Width, 0), list)!.Value.X;
+                var meta = list.GetVisualDescendants().OfType<TextBlock>().Where(t => t.Classes.Contains("caption") && t.IsVisible).ToArray();
+                var lowest = meta.Max(t => t.TranslatePoint(new Point(0, t.Bounds.Height), list)!.Value.Y);
+                var result = (right, badge.Bounds.Width, list.Bounds.Width, name.Bounds.Width, ToolTip.GetTip(name), lowest, list.Bounds.Height);
+                window.Close();
+                return result;
+            },
+            TestContext.Current.CancellationToken);
+
+        badgeWidth.ShouldBeGreaterThan(0);
+        badgeRight.ShouldBeLessThanOrEqualTo(rowWidth);
+        nameWidth.ShouldBeLessThan(rowWidth);
+        nameTip.ShouldBe(new string('W', 120));
+        bottom.ShouldBeLessThanOrEqualTo(listBottom);
     }
 
     private static string[] VisibleTexts(DashboardHarness h)

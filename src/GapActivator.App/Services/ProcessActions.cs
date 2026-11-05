@@ -61,7 +61,7 @@ public sealed class ProcessActions(Localizer l, IServiceGateway gateway, IDialog
             l.DisableActiveMessage(process.Name),
             l.DisableAndCancel,
             l.DisableAndLetFinish,
-            l.CancelRun).ConfigureAwait(true);
+            l.Cancel).ConfigureAwait(true);
         if (choice != DialogChoice.Cancel)
         {
             await gateway.DisableProcessAsync(process.Id, choice == DialogChoice.Primary).ConfigureAwait(true);
@@ -70,7 +70,9 @@ public sealed class ProcessActions(Localizer l, IServiceGateway gateway, IDialog
 
     public Task UnblockAsync(Guid id, bool runNow) => gateway.UnblockProcessAsync(id, runNow);
 
-    public async Task<DeleteResult> DeleteAsync(ProcessSummaryDto process)
+    /// <param name="process">The process to delete.</param>
+    /// <param name="stopping">Called once the user has confirmed and the wait for the run to stop begins, so the page can show progress.</param>
+    public async Task<DeleteResult> DeleteAsync(ProcessSummaryDto process, Action? stopping = null)
     {
         ArgumentNullException.ThrowIfNull(process);
         if (process.ActiveRun is not { } run)
@@ -89,13 +91,14 @@ public sealed class ProcessActions(Localizer l, IServiceGateway gateway, IDialog
             l.DeleteActiveMessage(process.Name),
             l.CancelAndDelete,
             null,
-            l.CancelRun).ConfigureAwait(true);
+            l.Cancel).ConfigureAwait(true);
         if (choice != DialogChoice.Primary)
         {
             return DeleteResult.Declined;
         }
 
         // The user has answered once; stopping a service-kind process must not ask again.
+        stopping?.Invoke();
         await runs.StopAsync(run.RunId, process.Id, process.Kind).ConfigureAwait(true);
 
         var started = time.GetTimestamp();

@@ -23,6 +23,13 @@
                    AutomationProperties.LiveSetting="Assertive" />
       </StackPanel>
 
+      <!-- A delete waits up to a minute for the run to stop: say so, with a glyph. -->
+      <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding ProgressText, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock Classes="railIcon" Text="&#xE895;" />
+        <TextBlock x:Name="ProgressLine" Text="{Binding ProgressText}" TextWrapping="Wrap" VerticalAlignment="Center"
+                   AutomationProperties.LiveSetting="Polite" />
+      </StackPanel>
+
       <TextBlock Classes="muted" Text="{Binding L.WaitingForService}" TextWrapping="Wrap" IsVisible="{Binding ShowWaiting}" />
 
       <!-- Not connected: the list is the last known state. A glyph and a sentence say so, and the dimming only backs them up. -->
@@ -39,33 +46,34 @@
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:ProcessRowViewModel">
                 <StackPanel>
-                  <Grid Classes="row" ColumnDefinitions="*,Auto">
-                    <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
-                      <StackPanel Orientation="Horizontal" Spacing="10">
-                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                        <Border x:Name="LifecycleBadge" Classes="badge" VerticalAlignment="Center"
-                                Classes.enabled="{Binding IsEnabledState}"
-                                Classes.disabled="{Binding IsDisabledState}"
-                                Classes.blocked="{Binding IsBlockedState}"
-                                ToolTip.Tip="{Binding LifecycleTooltip}"
-                                AutomationProperties.Name="{Binding BadgeAutomationName}">
-                          <TextBlock Classes="caption" Text="{Binding LifecycleText}" />
-                        </Border>
-                        <TextBlock Foreground="{DynamicResource GaAccentTextBrush}" Text="{Binding RunningText}" VerticalAlignment="Center"
-                                   IsVisible="{Binding IsRunning}" />
-                      </StackPanel>
-                      <StackPanel Orientation="Horizontal" Spacing="16">
-                        <TextBlock Classes="caption" Text="{Binding KindText}" />
-                        <TextBlock Classes="caption" Text="{Binding NextText}" />
-                        <StackPanel Orientation="Horizontal" Spacing="6"
-                                    IsVisible="{Binding LastOutcomeText, Converter={x:Static ObjectConverters.IsNotNull}}">
-                          <TextBlock Classes="caption" Text="{Binding L.LastRunLabel}" />
-                          <TextBlock Classes="caption" Text="{Binding LastOutcomeText}" />
+                  <Grid Classes="row" RowDefinitions="Auto,Auto" RowSpacing="8">
+                    <StackPanel Grid.Row="0" Spacing="4">
+                      <!-- The name takes what the badge leaves and trims with an ellipsis; its tooltip shows it whole. -->
+                      <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center" ToolTip.Tip="{Binding Name}" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" Margin="10,0,0,0">
+                          <Border x:Name="LifecycleBadge" Classes="badge" VerticalAlignment="Center"
+                                  Classes.enabled="{Binding IsEnabledState}"
+                                  Classes.disabled="{Binding IsDisabledState}"
+                                  Classes.blocked="{Binding IsBlockedState}"
+                                  ToolTip.Tip="{Binding LifecycleTooltip}"
+                                  AutomationProperties.Name="{Binding BadgeAutomationName}">
+                            <TextBlock Classes="caption" Text="{Binding LifecycleText}" />
+                          </Border>
+                          <TextBlock Foreground="{DynamicResource GaAccentTextBrush}" Text="{Binding RunningText}" VerticalAlignment="Center"
+                                     IsVisible="{Binding IsRunning}" />
                         </StackPanel>
-                      </StackPanel>
+                      </Grid>
+                      <!-- Wraps on a narrow window instead of clipping long values. -->
+                      <WrapPanel Orientation="Horizontal">
+                        <TextBlock Classes="caption" Text="{Binding KindText}" Margin="0,0,16,0" />
+                        <TextBlock Classes="caption" Text="{Binding NextText}" Margin="0,0,16,0" />
+                        <TextBlock Classes="caption" Text="{Binding LastRunText}"
+                                   IsVisible="{Binding LastRunText, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                      </WrapPanel>
                     </StackPanel>
-                    <WrapPanel Grid.Column="1" Margin="16,0,0,0" MaxWidth="440" VerticalAlignment="Center"
-                               HorizontalAlignment="Right" Orientation="Horizontal">
+                    <WrapPanel Grid.Row="1" Orientation="Horizontal">
                       <Button x:Name="RunNowButton" Margin="0,2,8,2" Content="{Binding L.RunNow}" Command="{Binding RunNowCommand}"
                               AutomationProperties.Name="{Binding RunNowAutomationName}"
                               ToolTip.Tip="{Binding DeniedReason}" ToolTip.ShowOnDisabled="True" />

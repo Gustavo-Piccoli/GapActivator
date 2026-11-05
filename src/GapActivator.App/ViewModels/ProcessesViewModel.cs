@@ -56,6 +56,7 @@ public sealed class ProcessesViewModel : PageViewModel
                 row.Update(row.Summary);
             }
 
+            OnPropertyChanged(nameof(ProgressText));
             NotifyFreshness();
         };
         Rebuild();
@@ -87,16 +88,35 @@ public sealed class ProcessesViewModel : PageViewModel
     /// <summary>True when the service has reported and has no process; never before the first answer.</summary>
     public bool ShowEmpty => HasData && Items.Count == 0;
 
+    // The name of the process being deleted while its run is stopped; the text is built from it, so it follows a language switch.
+    private string? _stoppingName;
+
+    /// <summary>Shown while a delete waits for the run to stop (up to a minute); null otherwise.</summary>
+    public string? ProgressText => _stoppingName is null ? null : L.DeleteStopping(_stoppingName);
+
     internal Task<bool> RunAsync(Func<Task> action) => TryAsync(action);
 
     internal async Task<bool> DeleteAsync(ProcessRowViewModel row) =>
         await TryAsync(async () =>
         {
-            if (await Actions.DeleteAsync(row.Summary).ConfigureAwait(true) == DeleteResult.StillRunning)
+            try
             {
-                ErrorText = L.DeleteNotStopped;
+                if (await Actions.DeleteAsync(row.Summary, () => SetStopping(row.Summary.Name)).ConfigureAwait(true) == DeleteResult.StillRunning)
+                {
+                    ErrorText = L.DeleteNotStopped;
+                }
+            }
+            finally
+            {
+                SetStopping(null);
             }
         }).ConfigureAwait(true);
+
+    private void SetStopping(string? name)
+    {
+        _stoppingName = name;
+        OnPropertyChanged(nameof(ProgressText));
+    }
 
     private void NotifyFreshness()
     {

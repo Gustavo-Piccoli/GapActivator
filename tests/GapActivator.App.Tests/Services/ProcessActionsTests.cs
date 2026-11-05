@@ -295,6 +295,36 @@ public class ProcessActionsTests
     }
 
     [Fact]
+    public async Task Delete_WithActiveRun_ReportsStoppingOnlyAfterTheUserConfirms()
+    {
+        var process = Dtos.Summary(activeRun: Active());
+        _h.Gateway.Details[process.Id] = Dtos.Details(process with { ActiveRun = null });
+        var stopping = 0;
+
+        _h.Dialogs.Enqueue(DialogChoice.Cancel);
+        await Actions.DeleteAsync(process, () => stopping++);
+        stopping.ShouldBe(0);
+
+        _h.Dialogs.Enqueue(DialogChoice.Primary);
+        await Actions.DeleteAsync(process, () => stopping++);
+        stopping.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Delete_ActiveRunDialog_UsesTheCommonCancelText()
+    {
+        // The dialog's cancel button is the common "Cancel" (a different Localizer key than the dashboard's "Cancel run" button, same words).
+        _h.Dialogs.Enqueue(DialogChoice.Cancel);
+        await Actions.DeleteAsync(Dtos.Summary(activeRun: Active()));
+        _h.Dialogs.Asked.Single().Cancel.ShouldBe(_h.L.Cancel);
+
+        _h.Dialogs.Asked.Clear();
+        _h.Dialogs.Enqueue(DialogChoice.Cancel);
+        await Actions.DisableAsync(Dtos.Summary(activeRun: Active()));
+        _h.Dialogs.Asked.Single().Cancel.ShouldBe(_h.L.Cancel);
+    }
+
+    [Fact]
     public async Task Delete_ActiveRunDeclined_SendsNothing()
     {
         _h.Dialogs.Enqueue(DialogChoice.Cancel);
