@@ -21,6 +21,12 @@
         <TextBlock DockPanel.Dock="Top" Text="{Binding L.AppName}" Classes="group" Margin="18,20,16,16" />
         <ListBox Classes="rail" ItemsSource="{Binding NavItems}" SelectedItem="{Binding SelectedNavItem, Mode=TwoWay}"
                  AutomationProperties.Name="{Binding L.NavigationLabel}" Margin="8,0">
+          <ListBox.ItemContainerTheme>
+            <ControlTheme x:DataType="vm:NavItemViewModel" TargetType="ListBoxItem"
+                          BasedOn="{StaticResource {x:Type ListBoxItem}}">
+              <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />
+            </ControlTheme>
+          </ListBox.ItemContainerTheme>
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:NavItemViewModel">
               <StackPanel Orientation="Horizontal" Spacing="12">
@@ -36,10 +42,10 @@
     <DockPanel Grid.Column="1" LastChildFill="True">
       <Border DockPanel.Dock="Top" Classes="strip" IsVisible="{Binding Banner.IsDevelopmentMode}"
               x:Name="DevelopmentStrip">
-        <StackPanel Orientation="Horizontal" Spacing="10" x:DataType="vm:MainWindowViewModel">
-          <TextBlock Classes="railIcon warning" Text="&#xE7BA;" />
-          <TextBlock Classes="warning" Text="{Binding Banner.DevelopmentText}" TextWrapping="Wrap" VerticalAlignment="Center" />
-        </StackPanel>
+        <Grid ColumnDefinitions="Auto,*">
+          <TextBlock Grid.Column="0" Classes="railIcon warning" Text="&#xE7BA;" Margin="0,0,10,0" />
+          <TextBlock Grid.Column="1" Classes="warning" Text="{Binding Banner.DevelopmentText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+        </Grid>
       </Border>
 
       <Border DockPanel.Dock="Top" Classes="strip" IsVisible="{Binding Banner.IsVisible}" x:Name="ConnectionStrip">

@@ -1,5 +1,8 @@
 using System.Globalization;
 using Avalonia;
+using Avalonia.Automation;
+using Avalonia.Controls;
+using Avalonia.VisualTree;
 using GapActivator.App.Localization;
 using GapActivator.App.Services;
 using GapActivator.App.Settings;
@@ -72,6 +75,52 @@ public class MainWindowServiceTests(HeadlessFixture fixture)
 
         second.ShouldBeSameAs(first);
         visible.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task MainWindow_RailItems_ExposeTheLocalizedLabelAsAutomationName()
+    {
+        (string[] english, string[] portuguese) = await fixture.Session.Dispatch(
+            () =>
+            {
+                var window = NewWindow(new FakeServiceGateway());
+                var vm = (MainWindowViewModel)window.DataContext!;
+                window.Show();
+                string[] Names() => [.. window.GetVisualDescendants().OfType<ListBoxItem>().Select(i => AutomationProperties.GetName(i) ?? string.Empty)];
+                var en = Names();
+                vm.L.SetLanguage(AppLanguage.Portuguese);
+                var pt = Names();
+                window.Close();
+                return (en, pt);
+            },
+            TestContext.Current.CancellationToken);
+
+        english.ShouldBe(["Dashboard", "Processes", "History", "Settings", "About"]);
+        portuguese.ShouldBe(["Painel", "Processos", "Histórico", "Configurações", "Sobre"]);
+    }
+
+    [Fact]
+    public async Task MainWindow_DevelopmentStrip_WrapsItsTextAtTheMinimumWidth()
+    {
+        var gateway = new FakeServiceGateway();
+        gateway.SetStatus(FakeServiceGateway.DevOperator);
+
+        (double textWidth, double available, double height) = await fixture.Session.Dispatch(
+            () =>
+            {
+                var window = NewWindow(gateway);
+                window.Width = 640;
+                window.Show();
+                var strip = window.FindControl<Border>("DevelopmentStrip")!;
+                var text = strip.GetVisualDescendants().OfType<TextBlock>().First(t => t.Classes.Contains("warning") && !t.Classes.Contains("railIcon"));
+                var result = (text.Bounds.Width, strip.Bounds.Width, text.Bounds.Height);
+                window.Close();
+                return result;
+            },
+            TestContext.Current.CancellationToken);
+
+        textWidth.ShouldBeLessThan(available);
+        height.ShouldBeGreaterThan(20);
     }
 
     [Fact]

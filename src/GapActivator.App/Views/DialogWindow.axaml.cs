@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using GapActivator.App.Services;
 
@@ -6,10 +7,24 @@ namespace GapActivator.App.Views;
 
 public sealed partial class DialogWindow : Window
 {
-    public DialogWindow() => InitializeComponent();
+    public DialogWindow()
+    {
+        InitializeComponent();
+        Opened += (_, _) => (SecondaryButton.IsVisible ? SecondaryButton : CancelButton).Focus(NavigationMethod.Tab);
+    }
 
     /// <summary>The button the user pressed; Cancel when the window was closed any other way.</summary>
     public DialogChoice Result { get; private set; } = DialogChoice.Cancel;
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Key == Key.Escape && !e.Handled)
+        {
+            e.Handled = true;
+            Choose(DialogChoice.Cancel);
+        }
+    }
 
     private void OnPrimary(object? sender, RoutedEventArgs e) => Choose(DialogChoice.Primary);
 

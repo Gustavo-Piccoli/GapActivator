@@ -33,7 +33,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         navigator.Requested += (_, request) => Show(request.Page);
         banner.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName is nameof(ConnectionBannerViewModel.IsConnected))
+            if (e.PropertyName is nameof(ConnectionBannerViewModel.IsConnected) or nameof(ConnectionBannerViewModel.IsDevelopmentMode))
             {
                 OnPropertyChanged(nameof(IsConnected));
                 OnPropertyChanged(nameof(FooterText));
@@ -88,10 +88,13 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public bool IsConnected => Banner.IsConnected;
 
-    public string FooterText => IsConnected ? L.FooterConnected : L.FooterNotConnected;
+    // A development service is connected but is not the installed one, so the footer does not call that "Connected".
+    private bool FooterHealthy => IsConnected && !Banner.IsDevelopmentMode;
 
-    /// <summary>A check mark when connected, a warning sign otherwise: the state never rests on color alone.</summary>
-    public string FooterGlyph => IsConnected ? "" : "";
+    public string FooterText => FooterHealthy ? L.FooterConnected : L.FooterNotConnected;
+
+    /// <summary>A check mark when connected to the installed service, a warning sign otherwise: the state never rests on color alone.</summary>
+    public string FooterGlyph => FooterHealthy ? "" : "";
 
     private void Show(AppPage page)
     {

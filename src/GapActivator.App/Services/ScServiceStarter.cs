@@ -13,7 +13,10 @@ public sealed class ScServiceStarter : IServiceStarter
 
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
 
-    public async Task<ServiceStartOutcome> StartAsync(CancellationToken ct)
+    /// <summary>Runs off the calling thread: the UAC prompt blocks <c>Process.Start</c> until the user answers.</summary>
+    public Task<ServiceStartOutcome> StartAsync(CancellationToken ct) => Task.Run(() => RunAsync(ct), CancellationToken.None);
+
+    private static async Task<ServiceStartOutcome> RunAsync(CancellationToken ct)
     {
         var info = new ProcessStartInfo("sc.exe", "start " + IpcProtocol.ServiceName)
         {

@@ -68,6 +68,21 @@ public class MainWindowViewModelTests : IAsyncDisposable
     }
 
     [Fact]
+    public void Footer_DevelopmentService_DoesNotClaimToBeConnected()
+    {
+        _gateway.SetStatus(FakeServiceGateway.DevOperator);
+        var vm = Create();
+
+        vm.FooterText.ShouldBe("Not connected");
+        vm.FooterGlyph.ShouldBe("");
+
+        _gateway.SetStatus(FakeServiceGateway.Operator());
+
+        vm.FooterText.ShouldBe("Connected");
+        vm.FooterGlyph.ShouldBe("");
+    }
+
+    [Fact]
     public void FooterText_FollowsTheConnection()
     {
         var vm = Create();

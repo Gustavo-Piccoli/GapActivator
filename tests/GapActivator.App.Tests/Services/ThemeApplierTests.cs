@@ -79,7 +79,13 @@ public class ThemeApplierTests(HeadlessFixture fixture)
         await Task.Run(() => service.Update(s => s with { Language = AppLanguage.Portuguese }), TestContext.Current.CancellationToken);
 
         localizer.Language.ShouldBe(AppLanguage.English);
-        queue.Run();
+        await fixture.Session.Dispatch(
+            () =>
+            {
+                queue.Run();
+                return 0;
+            },
+            TestContext.Current.CancellationToken);
         localizer.Language.ShouldBe(AppLanguage.Portuguese);
     }
 
