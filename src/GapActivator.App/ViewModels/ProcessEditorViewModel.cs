@@ -131,11 +131,12 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
     public partial bool IsLoading { get; private set; }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(BusyText))]
+    [NotifyPropertyChangedFor(nameof(BusyText), nameof(IsLocked), nameof(IsUnlocked))]
     public partial bool IsSaving { get; private set; }
 
     /// <summary>True when an existing process could not be read; the form is empty and "Try again" reads it again.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsLocked), nameof(IsUnlocked), nameof(SaveDeniedReason))]
     public partial bool LoadFailed { get; private set; }
 
     /// <summary>True after a save that the service or the connection refused: the entries are still in the form.</summary>
@@ -182,8 +183,8 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
 
     public bool IsReadOnly => !_permissions.CanChange;
 
-    /// <summary>The text fields do not accept typing: the user cannot change things, or the process is still loading.</summary>
-    public bool IsLocked => IsReadOnly || IsLoading;
+    /// <summary>The fields do not accept typing: the user cannot change things, the process is loading or failed to load, or a save is in flight.</summary>
+    public bool IsLocked => IsReadOnly || IsLoading || IsSaving || LoadFailed;
 
     public bool IsServiceKind => Kind == ProcessKind.Service;
 
@@ -203,9 +204,9 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
     public string? SensitiveNote => _sensitiveHidden ? L.SensitiveHiddenNote : null;
 
     /// <summary>Why saving is off for this user (the reason is also the tooltip of the disabled button); null when they can change things.</summary>
-    public string? SaveDeniedReason => IsReadOnly ? _permissions.DeniedReason : null;
+    public string? SaveDeniedReason => IsReadOnly ? _permissions.DeniedReason : LoadFailed ? L.EditorLoadFailed : null;
 
-    public string TitleText => IsNew ? L.NewProcess : L.EditProcessTitle(_loadedName);
+    public string TitleText => IsNew ? L.NewProcess : _loadedName.Length == 0 ? L.EditProcessTitleBare : L.EditProcessTitle(_loadedName);
 
     /// <summary>"Loading…" or "Saving…" while the service is being asked; null otherwise.</summary>
     public string? BusyText => IsLoading ? L.EditorLoading : IsSaving ? L.EditorSaving : null;
@@ -254,6 +255,8 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
         _seen.MarkProcessSeen(id);
         DisposeScheduleEditor();
         _processId = id;
+        _loadedName = string.Empty;
+        OnPropertyChanged(nameof(TitleText));
         IsNew = false;
         LoadFailed = false;
         ClearMessages();
@@ -292,9 +295,13 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
         DisposeScheduleEditor();
     }
 
-    private bool CanEdit() => !IsReadOnly && !IsLoading;
+    private bool CanEdit() => !IsLocked;
 
-    private bool CanSave() => CanEdit() && !_sensitiveHidden && !LoadFailed;
+    private bool CanSave() => CanEdit() && !_sensitiveHidden;
+
+    partial void OnIsSavingChanged(bool value) => RaiseCommandStates();
+
+    partial void OnLoadFailedChanged(bool value) => RaiseCommandStates();
 
     private void ClearMessages()
     {
@@ -544,8 +551,9 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
                 ShowKeptInput = true;
                 if (scheduleInPast)
                 {
+                    // The line in the Schedules card has the service's words; the footer, which is always on screen, points to it.
                     ScheduleErrorText = ErrorText;
-                    ErrorText = null;
+                    ErrorText = L.ScheduleProblemFooter;
                 }
 
                 return;

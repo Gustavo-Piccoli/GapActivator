@@ -344,12 +344,9 @@ public class ProcessesViewModelTests
 
         _h.Navigator.OpenProcess(summary.Id);
 
-        // The editor opens at once and fills when the service answers.
+        // The editor opens at once; the read from the service is awaited, not polled.
         Vm.Editor.ShouldNotBeNull();
-        for (var i = 0; i < 500 && Vm.Editor.Name.Length == 0; i++)
-        {
-            await Task.Delay(10, TestContext.Current.CancellationToken);
-        }
+        await Vm.OpeningEditor;
 
         Vm.Editor.Name.ShouldBe("Alpha");
     }

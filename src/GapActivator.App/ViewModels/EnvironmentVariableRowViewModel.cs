@@ -11,19 +11,22 @@ namespace GapActivator.App.ViewModels;
 public sealed partial class EnvironmentVariableRowViewModel : ViewModelBase
 {
     private readonly bool _hidden;
+    private readonly bool _storedAtLoad;
+    private readonly string _loadedName;
 
     internal EnvironmentVariableRowViewModel(Localizer l, string name, string value, bool isSecret, bool hasStoredSecret, bool hidden)
         : base(l)
     {
+        _hidden = hidden;
+        _storedAtLoad = hasStoredSecret;
+        _loadedName = name.Trim();
         Name = name;
         Value = value;
         IsSecret = isSecret;
-        HasStoredSecret = hasStoredSecret;
-        _hidden = hidden;
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(AutomationName), nameof(SecretAutomationName), nameof(RemoveAutomationName))]
+    [NotifyPropertyChangedFor(nameof(AutomationName), nameof(SecretAutomationName), nameof(RemoveAutomationName), nameof(HasStoredSecret), nameof(Placeholder))]
     public partial string Name { get; set; }
 
     [ObservableProperty]
@@ -40,8 +43,11 @@ public sealed partial class EnvironmentVariableRowViewModel : ViewModelBase
 
     public bool IsUnlocked => !IsLocked;
 
-    /// <summary>True when the service holds a secret value for this variable that the app never received.</summary>
-    public bool HasStoredSecret { get; }
+    /// <summary>
+    /// True when the service holds a secret value under this name that the app never received. The service finds a stored value
+    /// by name, so a renamed variable no longer has one (the user must type a value); renaming it back restores it.
+    /// </summary>
+    public bool HasStoredSecret => _storedAtLoad && Name.Trim() == _loadedName;
 
     /// <summary>True for a viewer: the value is not known and is never editable.</summary>
     public bool IsHidden => _hidden;

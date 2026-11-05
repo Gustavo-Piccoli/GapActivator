@@ -42,7 +42,7 @@ public sealed partial class ProcessesViewModel : PageViewModel
         {
             if (request.Page == AppPage.Processes && request.Id is { } id)
             {
-                _ = OpenEditorAsync(id);
+                OpeningEditor = OpenEditorAsync(id);
             }
         };
 
@@ -81,6 +81,9 @@ public sealed partial class ProcessesViewModel : PageViewModel
     /// <summary>What the last saved editor wanted the user to know ("also used by"); shown above the list.</summary>
     [ObservableProperty]
     public partial string? NoticeText { get; private set; }
+
+    /// <summary>The read of the process the last navigation request opened; tests await it, the screen does not need to.</summary>
+    internal Task OpeningEditor { get; private set; } = Task.CompletedTask;
 
     public IRelayCommand NewProcessCommand { get; }
 

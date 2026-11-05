@@ -39,6 +39,16 @@ public sealed partial class Localizer
         string.Format(Culture, T("No longer pending since {0}", "Não está mais pendente desde {0}"), at);
 
     // Not in the Fixed strings: titles, form labels, states and the texts of the buttons of the editor.
+    public string EditProcessTitleBare => T("Edit process", "Editar processo");
+
+    public string ScheduleProblemFooter => T(
+        "The schedule could not be saved. Check the Schedules section.",
+        "Não foi possível salvar o agendamento. Veja a seção Agendamentos.");
+
+    public string EditorLoadFailed => T(
+        "The process could not be loaded. Try again.",
+        "Não foi possível carregar o processo. Tente novamente.");
+
     public string EditProcessTitle(string name) =>
         string.Format(Culture, T("Edit \"{0}\"", "Editar \"{0}\""), name);
 

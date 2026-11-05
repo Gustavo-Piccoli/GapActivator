@@ -274,8 +274,105 @@ public sealed class ProcessEditorViewModelTests : IDisposable
         await _vm.SaveCommand.ExecuteAsync(null);
 
         _vm.ScheduleErrorText.ShouldBe("A one-time schedule must be in the future.");
-        _vm.ErrorText.ShouldBeNull();
+        _vm.ErrorText.ShouldBe("The schedule could not be saved. Check the Schedules section.");
+        _vm.ShowKeptInput.ShouldBeTrue();
         _vm.Description.ShouldBe("typed");
+    }
+
+    [Fact]
+    public async Task Load_Failed_LocksTheFormWithAReasonAndAnHonestTitle()
+    {
+        var id = LoadExisting(Dtos.Details());
+        var hold = _gateway.Hold(nameof(IServiceGateway.GetProcessAsync));
+        _gateway.FailNext(nameof(IServiceGateway.GetProcessAsync), Failure(IpcErrorCodes.NotFound));
+
+        Task load = _vm.LoadAsync(id);
+        _vm.TitleText.ShouldBe("Edit process");
+        _vm.IsLocked.ShouldBeTrue();
+        hold.SetResult();
+        await load;
+
+        _vm.LoadFailed.ShouldBeTrue();
+        _vm.IsLocked.ShouldBeTrue();
+        _vm.TitleText.ShouldBe("Edit process");
+        _vm.SaveDeniedReason.ShouldBe("The process could not be loaded. Try again.");
+        _vm.AddVariableCommand.CanExecute(null).ShouldBeFalse();
+        _vm.BrowseExecutableCommand.CanExecute(null).ShouldBeFalse();
+        _vm.RetryLoadCommand.CanExecute(null).ShouldBeTrue();
+
+        await _vm.RetryLoadCommand.ExecuteAsync(null);
+
+        _vm.IsLocked.ShouldBeFalse();
+        _vm.SaveDeniedReason.ShouldBeNull();
+        _vm.TitleText.ShouldBe("Edit \"Sample\"");
+    }
+
+    [Fact]
+    public async Task Save_InFlight_LocksTheFieldsAndTheRowsUntilItEnds()
+    {
+        FillNew();
+        _vm.AddVariableCommand.Execute(null);
+        _vm.Environment[0].Name = "A";
+        var hold = _gateway.Hold(nameof(IServiceGateway.RegisterProcessAsync));
+        _gateway.FailNext(nameof(IServiceGateway.RegisterProcessAsync), Failure(IpcErrorCodes.Conflict));
+
+        Task save = _vm.SaveCommand.ExecuteAsync(null);
+
+        _vm.IsSaving.ShouldBeTrue();
+        _vm.IsLocked.ShouldBeTrue();
+        _vm.Environment[0].IsLocked.ShouldBeTrue();
+        _vm.AddVariableCommand.CanExecute(null).ShouldBeFalse();
+        hold.SetResult();
+        await save;
+
+        _vm.IsSaving.ShouldBeFalse();
+        _vm.IsLocked.ShouldBeFalse();
+        _vm.Environment[0].IsLocked.ShouldBeFalse();
+        _vm.Name.ShouldBe("Backup");
+    }
+
+    [Fact]
+    public async Task Save_RenamedStoredSecret_RequiresANewValue()
+    {
+        var id = LoadExisting(Dtos.Details() with { Environment = [new EnvironmentVariableViewDto("TOKEN", null, true)] });
+        await _vm.LoadAsync(id);
+
+        _vm.Environment[0].Name = "OTHER";
+
+        _vm.Environment[0].HasStoredSecret.ShouldBeFalse();
+        _vm.Environment[0].Placeholder.ShouldBeNull();
+        await _vm.SaveCommand.ExecuteAsync(null);
+        _vm.ErrorText.ShouldBe("Enter a value for OTHER.");
+        Sent().ShouldBeEmpty();
+
+        // Renaming it back restores the stored state: the stored value is kept again.
+        _vm.Environment[0].Name = "TOKEN";
+        _vm.Environment[0].HasStoredSecret.ShouldBeTrue();
+        await _vm.SaveCommand.ExecuteAsync(null);
+        SentDefinition().Environment.ShouldBe([new EnvironmentVariableInputDto("TOKEN", null, true)]);
+    }
+
+    [Fact]
+    public async Task Save_SwappedStoredSecretNames_AreNotSentAsKeepSoNoValueMovesBetweenThem()
+    {
+        var id = LoadExisting(Dtos.Details() with
+        {
+            Environment = [new EnvironmentVariableViewDto("A", null, true), new EnvironmentVariableViewDto("B", null, true)],
+        });
+        await _vm.LoadAsync(id);
+
+        _vm.Environment[0].Name = "B";
+        _vm.Environment[1].Name = "A";
+        await _vm.SaveCommand.ExecuteAsync(null);
+
+        _vm.ErrorText.ShouldBe("Enter a value for B.");
+        Sent().ShouldBeEmpty();
+
+        _vm.Environment[0].Value = "x";
+        _vm.Environment[1].Value = "y";
+        await _vm.SaveCommand.ExecuteAsync(null);
+
+        SentDefinition().Environment.ShouldBe([new EnvironmentVariableInputDto("B", "x", true), new EnvironmentVariableInputDto("A", "y", true)]);
     }
 
     [Fact]
