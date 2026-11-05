@@ -1,0 +1,152 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:GapActivator.App.ViewModels"
+             x:Class="GapActivator.App.Views.ScheduleEditorView"
+             x:DataType="vm:ScheduleEditorViewModel">
+  <!--
+    Operate surface, one column: the frequency first, then only the fields of that frequency, then the validation message, then the
+    preview card that answers "when will this actually run?". Labels sit above their fields so that long pt-BR labels wrap instead of
+    clipping, and every wrapping text is in a Grid with an Auto column for its glyph and a star column for the text. State is never
+    color alone: the checked weekday shows a check mark, a message has a glyph and a sentence, the loading state has its own line.
+    Tab order is reading order. Every field has an accessible name from its label.
+  -->
+  <UserControl.Styles>
+    <Style Selector="ItemsControl.stale">
+      <Setter Property="Opacity" Value="0.65" />
+    </Style>
+    <Style Selector="ToggleButton.weekday">
+      <Setter Property="MinWidth" Value="64" />
+      <Setter Property="MinHeight" Value="40" />
+      <Setter Property="Margin" Value="0,0,8,8" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.weekday:checked /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource GaAccentBrush}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="BorderBrush" Value="{DynamicResource GaAccentBrush}" />
+    </Style>
+    <Style Selector="ToggleButton.weekday:checked:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource GaAccentBrush}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+  </UserControl.Styles>
+
+  <StackPanel Spacing="16">
+
+    <StackPanel Spacing="6">
+      <TextBlock Text="{Binding L.FrequencyLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <ComboBox x:Name="ModeBox" ItemsSource="{Binding ModeOptions}" SelectedItem="{Binding SelectedModeOption}"
+                HorizontalAlignment="Stretch" MaxWidth="360"
+                AutomationProperties.Name="{Binding L.FrequencyLabel}">
+        <ComboBox.ItemTemplate>
+          <DataTemplate x:DataType="vm:ScheduleModeOption">
+            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+          </DataTemplate>
+        </ComboBox.ItemTemplate>
+      </ComboBox>
+    </StackPanel>
+
+    <StackPanel x:Name="IntervalPanel" Spacing="6" IsVisible="{Binding IsIntervalMode}">
+      <TextBlock Text="{Binding L.EveryLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <Grid ColumnDefinitions="Auto,*">
+        <NumericUpDown x:Name="IntervalBox" Grid.Column="0" Width="160" Minimum="1" Maximum="{Binding IntervalMaximum}"
+                       Increment="1" FormatString="0" Value="{Binding Interval}"
+                       AutomationProperties.Name="{Binding L.EveryLabel}" />
+        <TextBlock Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding IntervalUnitText}" />
+      </Grid>
+    </StackPanel>
+
+    <StackPanel x:Name="TimePanel" Spacing="6" IsVisible="{Binding IsTimeMode}">
+      <TextBlock Text="{Binding L.TimeLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <TimePicker x:Name="TimeBox" HorizontalAlignment="Left" ClockIdentifier="24HourClock" MinuteIncrement="1"
+                  SelectedTime="{Binding Time}" AutomationProperties.Name="{Binding L.TimeLabel}" />
+    </StackPanel>
+
+    <StackPanel x:Name="WeekdaysPanel" Spacing="6" IsVisible="{Binding IsWeekly}">
+      <TextBlock Text="{Binding L.WeekdaysLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <ItemsControl x:Name="WeekdayList" ItemsSource="{Binding Weekdays}" AutomationProperties.Name="{Binding L.WeekdaysLabel}">
+        <ItemsControl.ItemsPanel>
+          <ItemsPanelTemplate>
+            <WrapPanel Orientation="Horizontal" />
+          </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:WeekdayToggle">
+            <ToggleButton Classes="weekday" IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                          AutomationProperties.Name="{Binding Name}" ToolTip.Tip="{Binding Name}">
+              <Grid ColumnDefinitions="Auto,Auto">
+                <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE73E;" Width="16" Margin="0,0,6,0"
+                           Foreground="White" IsVisible="{Binding IsChecked}" />
+                <TextBlock Grid.Column="1" Text="{Binding Text}" TextWrapping="NoWrap" VerticalAlignment="Center" />
+              </Grid>
+            </ToggleButton>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </StackPanel>
+
+    <StackPanel x:Name="MonthDayPanel" Spacing="6" IsVisible="{Binding IsMonthly}">
+      <TextBlock Text="{Binding L.DayOfMonthLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <NumericUpDown x:Name="DayOfMonthBox" HorizontalAlignment="Left" Width="160" Minimum="1" Maximum="31" Increment="1"
+                     FormatString="0" Value="{Binding DayOfMonth}" AutomationProperties.Name="{Binding L.DayOfMonthLabel}" />
+      <TextBlock x:Name="MonthDayHint" Classes="caption" TextWrapping="Wrap" Text="{Binding L.MonthDayHint}" IsVisible="{Binding IsMonthly}" />
+    </StackPanel>
+
+    <StackPanel x:Name="StartPanel" Spacing="6" IsVisible="{Binding IsStartMode}">
+      <TextBlock Text="{Binding StartLabelText}" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <WrapPanel Orientation="Horizontal">
+        <CalendarDatePicker x:Name="StartDateBox" Margin="0,0,10,8" SelectedDate="{Binding StartDate}"
+                            AutomationProperties.Name="{Binding L.DateLabel}" />
+        <TimePicker x:Name="StartTimeBox" Margin="0,0,10,8" ClockIdentifier="24HourClock" MinuteIncrement="1"
+                    SelectedTime="{Binding StartTime}" AutomationProperties.Name="{Binding L.StartTimeLabel}" />
+      </WrapPanel>
+    </StackPanel>
+
+    <StackPanel x:Name="RulePanel" Spacing="6" IsVisible="{Binding IsAdvanced}">
+      <TextBlock Text="{Binding L.RuleLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+      <TextBox x:Name="RuleBox" Text="{Binding RawRule}" TextWrapping="Wrap" AcceptsReturn="False" MaxWidth="560"
+               HorizontalAlignment="Stretch" AutomationProperties.Name="{Binding L.RuleLabel}" />
+      <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding L.RuleHint}" />
+    </StackPanel>
+
+    <!-- Why the schedule cannot be saved yet: a glyph and a sentence, announced when it appears. -->
+    <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding ValidationText, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <TextBlock Grid.Column="0" Classes="railIcon error" Text="&#xE7BA;" VerticalAlignment="Top" />
+      <TextBlock x:Name="ValidationMessage" Grid.Column="1" Classes="error" TextWrapping="Wrap" Text="{Binding ValidationText}"
+                 IsVisible="{Binding ValidationText, Converter={x:Static ObjectConverters.IsNotNull}}"
+                 AutomationProperties.LiveSetting="Assertive" />
+    </Grid>
+
+    <Border Classes="card" Padding="16,12">
+      <StackPanel Spacing="8">
+        <TextBlock Classes="group" Text="{Binding L.PreviewHeading}" TextWrapping="Wrap" />
+
+        <Grid x:Name="PreviewLoading" ColumnDefinitions="Auto,*" IsVisible="{Binding IsPreviewLoading}">
+          <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE895;" VerticalAlignment="Top" />
+          <TextBlock Grid.Column="1" Classes="muted" TextWrapping="Wrap" Text="{Binding L.PreviewLoading}"
+                     AutomationProperties.LiveSetting="Polite" />
+        </Grid>
+
+        <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding HasPreviewError}">
+          <TextBlock Grid.Column="0" Classes="railIcon error" Text="&#xE7BA;" VerticalAlignment="Top" />
+          <TextBlock x:Name="PreviewErrorText" Grid.Column="1" Classes="error" TextWrapping="Wrap" Text="{Binding PreviewError}"
+                     IsVisible="{Binding HasPreviewError}" AutomationProperties.LiveSetting="Assertive" />
+        </Grid>
+
+        <TextBlock x:Name="PreviewEmpty" Classes="muted" TextWrapping="Wrap" Text="{Binding L.PreviewNone}"
+                   IsVisible="{Binding ShowPreviewNone}" />
+
+        <ItemsControl x:Name="PreviewList" ItemsSource="{Binding Preview}" IsVisible="{Binding ShowPreviewList}"
+                      Classes.stale="{Binding IsPreviewLoading}" AutomationProperties.Name="{Binding L.PreviewHeading}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="x:String">
+              <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,2" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding L.LocalTimeNote}" />
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>
