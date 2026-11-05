@@ -1,0 +1,106 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:GapActivator.App.ViewModels"
+             x:Class="GapActivator.App.Views.RunDetailView"
+             x:DataType="vm:RunDetailViewModel">
+  <!--
+    One run, top to bottom by how often it is needed: what happened (process, status, error or reason), the facts, the events, then
+    the output in a monospaced box. The page scrolls; the output box has its own fixed height and scrolls on its own, so a
+    mebibyte of tail never stretches the page. The text is bound as it came (the service's re-adoption note line is part of it)
+    and is only reassigned when it changed. Status carries a word, never only color; the load and the failed call say so.
+  -->
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Spacing="16" MaxWidth="880" HorizontalAlignment="Stretch" Margin="0,0,12,0">
+
+      <TextBlock x:Name="RunTitle" Classes="title" Text="{Binding ProcessName}" TextWrapping="Wrap"
+                 AutomationProperties.HeadingLevel="1" IsVisible="{Binding HasData}" />
+
+      <Grid x:Name="LoadingLine" ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding IsLoading}">
+        <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE895;" />
+        <TextBlock Grid.Column="1" Text="{Binding L.RunLoading}" TextWrapping="Wrap" VerticalAlignment="Center"
+                   AutomationProperties.LiveSetting="Polite" />
+      </Grid>
+
+      <Grid x:Name="ErrorNote" ColumnDefinitions="Auto,*" ColumnSpacing="10"
+            IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}">
+        <TextBlock Grid.Column="0" Classes="railIcon error" Text="&#xE7BA;" />
+        <TextBlock x:Name="ErrorLine" Grid.Column="1" Classes="error" Text="{Binding ErrorText}" TextWrapping="Wrap"
+                   VerticalAlignment="Center" AutomationProperties.LiveSetting="Assertive" />
+      </Grid>
+
+      <StackPanel Spacing="16" IsVisible="{Binding HasData}">
+
+        <Border Classes="card" Padding="16">
+          <StackPanel Spacing="12">
+            <WrapPanel Orientation="Horizontal">
+              <StackPanel Spacing="2" Margin="0,0,24,8">
+                <TextBlock Classes="caption" Text="{Binding L.RunStatusLabel}" />
+                <TextBlock x:Name="StatusLine" Text="{Binding StatusText}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <Grid x:Name="LateLine" ColumnDefinitions="Auto,Auto" ColumnSpacing="6" IsVisible="{Binding IsLate}">
+                  <TextBlock Grid.Column="0" Classes="railIcon warning" Width="16" FontSize="14" Text="&#xE7BA;" />
+                  <TextBlock Grid.Column="1" Classes="warning" Text="{Binding L.Late}" />
+                </Grid>
+              </StackPanel>
+              <StackPanel Spacing="2" Margin="0,0,24,8">
+                <TextBlock Classes="caption" Text="{Binding L.TriggerLabel}" />
+                <TextBlock Text="{Binding TriggerText}" TextWrapping="Wrap" />
+              </StackPanel>
+              <StackPanel Spacing="2" Margin="0,0,24,8" IsVisible="{Binding StartedText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Classes="caption" Text="{Binding L.StartedLabel}" />
+                <TextBlock Text="{Binding StartedText}" TextWrapping="Wrap" />
+              </StackPanel>
+              <StackPanel Spacing="2" Margin="0,0,24,8" IsVisible="{Binding EndedText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Classes="caption" Text="{Binding L.EndedLabel}" />
+                <TextBlock Text="{Binding EndedText}" TextWrapping="Wrap" />
+              </StackPanel>
+              <StackPanel Spacing="2" Margin="0,0,24,8" IsVisible="{Binding DurationText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Classes="caption" Text="{Binding L.Duration}" />
+                <TextBlock x:Name="DurationLine" Text="{Binding DurationText}" />
+              </StackPanel>
+              <StackPanel Spacing="2" Margin="0,0,24,8" IsVisible="{Binding ExitCodeText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Classes="caption" Text="{Binding L.ExitCode}" />
+                <TextBlock x:Name="ExitCodeLine" Text="{Binding ExitCodeText}" />
+              </StackPanel>
+            </WrapPanel>
+
+            <!-- What the service recorded: an error for a failure, a reason otherwise (a cancelled run is not an error). -->
+            <StackPanel x:Name="RunErrorBlock" Spacing="2" IsVisible="{Binding HasRunError}">
+              <TextBlock x:Name="RunErrorLabel" Classes="caption" Text="{Binding ErrorLabel}" />
+              <SelectableTextBlock x:Name="RunErrorLine" Text="{Binding RunErrorText}" TextWrapping="Wrap" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Padding="16">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="group" Text="{Binding L.RunEvents}" AutomationProperties.HeadingLevel="2" />
+            <TextBlock Classes="muted" Text="{Binding L.NoEvents}" TextWrapping="Wrap" IsVisible="{Binding !HasEvents}" />
+            <ItemsControl x:Name="EventList" ItemsSource="{Binding Events}" AutomationProperties.Name="{Binding L.RunEvents}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                  <SelectableTextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,2" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <Border Classes="card" Padding="16">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="group" Text="{Binding L.RunOutput}" AutomationProperties.HeadingLevel="2" />
+            <Grid x:Name="OutputNoteLine" ColumnDefinitions="Auto,*" ColumnSpacing="10"
+                  IsVisible="{Binding OutputNote, Converter={x:Static ObjectConverters.IsNotNull}}">
+              <TextBlock Grid.Column="0" Classes="railIcon warning" Text="&#xE946;" />
+              <TextBlock x:Name="OutputNote" Grid.Column="1" Classes="warning" Text="{Binding OutputNote}" TextWrapping="Wrap"
+                         VerticalAlignment="Center" />
+            </Grid>
+            <TextBox x:Name="OutputBox" Text="{Binding Output, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True"
+                     TextWrapping="NoWrap" Height="400" FontFamily="Cascadia Mono, Consolas, monospace" FontSize="13"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     AutomationProperties.Name="{Binding L.RunOutput}" />
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

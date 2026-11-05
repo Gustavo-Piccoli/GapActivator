@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:GapActivator.App.ViewModels"
+             x:Class="GapActivator.App.Views.FreshnessNotes"
+             x:DataType="vm:IFreshnessNotes">
+  <!--
+    What a page says about its data before the data itself: the call that failed, a refresh that failed, work in progress, the wait
+    for a first answer and "last known state". Each note is a glyph in an Auto column and its text in a star column, so a long
+    sentence wraps beside its glyph instead of clipping (never a horizontal StackPanel). No state rests on color alone: every
+    note has a glyph and a sentence. The pages that show it (Dashboard, Processes, History) bind it to the same members.
+  -->
+  <StackPanel x:Name="Notes" Spacing="12">
+    <!-- With no note to show the whole control is hidden, so it adds no gap to the page's spacing. -->
+    <StackPanel.IsVisible>
+      <MultiBinding Converter="{x:Static BoolConverters.Or}">
+        <Binding Path="ErrorText" Converter="{x:Static ObjectConverters.IsNotNull}" />
+        <Binding Path="HasRefreshError" />
+        <Binding Path="ProgressText" Converter="{x:Static ObjectConverters.IsNotNull}" />
+        <Binding Path="ShowWaiting" />
+        <Binding Path="IsStale" />
+      </MultiBinding>
+    </StackPanel.IsVisible>
+    <Grid x:Name="ErrorNote" ColumnDefinitions="Auto,*" ColumnSpacing="10"
+          IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <TextBlock Grid.Column="0" Classes="railIcon error" Text="&#xE7BA;" />
+      <TextBlock x:Name="ErrorLine" Grid.Column="1" Classes="error" Text="{Binding ErrorText}" TextWrapping="Wrap"
+                 VerticalAlignment="Center" AutomationProperties.LiveSetting="Assertive" />
+    </Grid>
+
+    <Grid x:Name="RefreshErrorNote" ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding HasRefreshError}">
+      <TextBlock Grid.Column="0" Classes="railIcon error" Text="&#xE7BA;" />
+      <TextBlock x:Name="RefreshErrorLine" Grid.Column="1" Classes="error" Text="{Binding RefreshErrorText}" TextWrapping="Wrap"
+                 VerticalAlignment="Center" AutomationProperties.LiveSetting="Assertive" />
+    </Grid>
+
+    <!-- Work the user started and is waiting for, such as a delete that waits up to a minute for its run to stop. -->
+    <Grid x:Name="ProgressNote" ColumnDefinitions="Auto,*" ColumnSpacing="10"
+          IsVisible="{Binding ProgressText, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE895;" />
+      <TextBlock x:Name="ProgressLine" Grid.Column="1" Text="{Binding ProgressText}" TextWrapping="Wrap"
+                 VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+    </Grid>
+
+    <Grid x:Name="WaitingNote" ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding ShowWaiting}">
+      <TextBlock Grid.Column="0" Classes="railIcon muted" Text="&#xE895;" />
+      <TextBlock x:Name="WaitingLine" Grid.Column="1" Classes="muted" Text="{Binding WaitingText}" TextWrapping="Wrap"
+                 VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+    </Grid>
+
+    <!-- Not connected: the data is the last known state. A glyph and a sentence say so, and the dimming only backs them up. -->
+    <Grid x:Name="StaleNote" ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding IsStale}">
+      <TextBlock Grid.Column="0" Classes="railIcon warning" Text="&#xE7BA;" />
+      <TextBlock x:Name="StaleLine" Grid.Column="1" Classes="warning" Text="{Binding StaleText}" TextWrapping="Wrap"
+                 VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+    </Grid>
+  </StackPanel>
+</UserControl>

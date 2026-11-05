@@ -10,7 +10,7 @@ namespace GapActivator.App.ViewModels;
 public sealed record UpcomingItem(string ProcessName, string AtText);
 
 /// <summary>The first page: the connection and the caller's rights, pause and resume, active runs, upcoming runs and recent failures.</summary>
-public sealed partial class DashboardViewModel : PageViewModel
+public sealed partial class DashboardViewModel : PageViewModel, IFreshnessNotes
 {
     private readonly IServiceGateway _gateway;
     private readonly LiveState _live;
@@ -102,6 +102,8 @@ public sealed partial class DashboardViewModel : PageViewModel
     /// <summary>The "waiting" line is only for a connected page with no answer yet; while disconnected the connection text speaks, and after a failure the error does.</summary>
     public bool ShowWaiting => _freshness.ShowWaiting;
 
+    public string WaitingText => L.WaitingForService;
+
     public bool HasActiveRuns => ActiveRuns.Count > 0;
 
     public bool HasUpcoming => Upcoming.Count > 0;
@@ -140,6 +142,7 @@ public sealed partial class DashboardViewModel : PageViewModel
         OnPropertyChanged(nameof(HasRefreshError));
         OnPropertyChanged(nameof(RefreshErrorText));
         OnPropertyChanged(nameof(ShowWaiting));
+        OnPropertyChanged(nameof(WaitingText));
     }
 
     private void RefreshPermissions()

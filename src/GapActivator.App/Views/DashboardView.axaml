@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:GapActivator.App.ViewModels"
+             xmlns:views="using:GapActivator.App.Views"
              x:Class="GapActivator.App.Views.DashboardView"
              x:DataType="vm:DashboardViewModel">
   <!--
@@ -40,24 +41,8 @@
         </Grid>
       </Border>
 
-      <TextBlock Classes="error" Text="{Binding ErrorText}" TextWrapping="Wrap"
-                 IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}"
-                 AutomationProperties.LiveSetting="Assertive" />
-
-      <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding HasRefreshError}">
-        <TextBlock Classes="railIcon error" Text="&#xE7BA;" />
-        <TextBlock Classes="error" Text="{Binding RefreshErrorText}" TextWrapping="Wrap" VerticalAlignment="Center"
-                   AutomationProperties.LiveSetting="Assertive" />
-      </StackPanel>
-
-      <TextBlock Classes="muted" Text="{Binding L.WaitingForService}" TextWrapping="Wrap" IsVisible="{Binding ShowWaiting}" />
-
-      <!-- Not connected: the lists are the last known state. A glyph and a sentence say so, and the dimming only backs them up. -->
-      <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsStale}">
-        <TextBlock Classes="railIcon warning" Text="&#xE7BA;" />
-        <TextBlock Classes="warning" Text="{Binding StaleText}" TextWrapping="Wrap" VerticalAlignment="Center"
-                   AutomationProperties.LiveSetting="Polite" />
-      </StackPanel>
+      <!-- The failed call, a failed refresh, the wait for a first answer and "last known state" are one shared control. -->
+      <views:FreshnessNotes />
 
       <StackPanel Spacing="20" IsVisible="{Binding HasData}" Classes.stale="{Binding IsStale}">
 

@@ -1,0 +1,140 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:GapActivator.App.ViewModels"
+             xmlns:views="using:GapActivator.App.Views"
+             x:Class="GapActivator.App.Views.HistoryView"
+             x:DataType="vm:HistoryViewModel">
+  <!--
+    Operate surface: filters first (process, outcome, dates, then the one action that applies them), the runs newest first, then the
+    pager. A run is one two-line row, not a wide table, so the list reads at the window's minimum width: the process and its status
+    on the first line, the facts (trigger, time, duration, exit code) wrapping on the second. The status is always a word with a
+    glyph, and a failure also carries the red badge; color only backs it up. Loading, the failed call, "no runs" and "not connected"
+    each have a sentence, and nothing claims "no runs" before the first page has been read. The run detail takes the place of the
+    list behind a Back button that comes first in the tab order.
+  -->
+  <Grid>
+    <ScrollViewer x:Name="ListHost" HorizontalScrollBarVisibility="Disabled"
+                  IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNull}}">
+      <StackPanel Spacing="16" MaxWidth="880" HorizontalAlignment="Stretch" Margin="0,0,12,0">
+
+        <Border Classes="card" Padding="16,12">
+          <StackPanel Spacing="4">
+            <WrapPanel x:Name="Filters" Orientation="Horizontal">
+              <StackPanel Spacing="4" Width="200" Margin="0,0,12,8">
+                <TextBlock Classes="caption" Text="{Binding L.FilterProcessLabel}" />
+                <ComboBox x:Name="ProcessBox" HorizontalAlignment="Stretch" ItemsSource="{Binding ProcessOptions}"
+                          SelectedItem="{Binding SelectedProcess, Mode=TwoWay}"
+                          AutomationProperties.Name="{Binding L.FilterProcessLabel}">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ProcessOption">
+                      <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </StackPanel>
+              <StackPanel Spacing="4" Width="200" Margin="0,0,12,8">
+                <TextBlock Classes="caption" Text="{Binding L.FilterOutcomeLabel}" />
+                <ComboBox x:Name="OutcomeBox" HorizontalAlignment="Stretch" ItemsSource="{Binding OutcomeOptions}"
+                          SelectedItem="{Binding SelectedOutcome, Mode=TwoWay}"
+                          AutomationProperties.Name="{Binding L.FilterOutcomeLabel}">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:OutcomeOption">
+                      <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </StackPanel>
+              <StackPanel Spacing="4" Width="160" Margin="0,0,12,8">
+                <TextBlock Classes="caption" Text="{Binding L.FilterFromLabel}" />
+                <CalendarDatePicker x:Name="FromBox" HorizontalAlignment="Stretch" SelectedDate="{Binding FromDate, Mode=TwoWay}"
+                                    AutomationProperties.Name="{Binding L.FilterFromLabel}" />
+              </StackPanel>
+              <StackPanel Spacing="4" Width="160" Margin="0,0,12,8">
+                <TextBlock Classes="caption" Text="{Binding L.FilterToLabel}" />
+                <CalendarDatePicker x:Name="ToBox" HorizontalAlignment="Stretch" SelectedDate="{Binding ToDate, Mode=TwoWay}"
+                                    AutomationProperties.Name="{Binding L.FilterToLabel}" />
+              </StackPanel>
+            </WrapPanel>
+            <Button x:Name="ApplyButton" Classes="accent" HorizontalAlignment="Left" Content="{Binding L.ApplyFilters}"
+                    Command="{Binding ApplyCommand}" />
+          </StackPanel>
+        </Border>
+
+        <views:FreshnessNotes />
+
+        <Border Classes="card" IsVisible="{Binding HasData}">
+          <StackPanel Classes.stale="{Binding IsStale}">
+            <TextBlock x:Name="NoRunsLine" Classes="muted" Text="{Binding L.NoRuns}" TextWrapping="Wrap" Margin="16,16"
+                       IsVisible="{Binding ShowEmpty}" />
+            <ItemsControl x:Name="RunList" ItemsSource="{Binding Items}" AutomationProperties.Name="{Binding L.RunsList}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:RunRowItemViewModel">
+                  <StackPanel>
+                    <Button x:Name="OpenRunButton" Classes="row" Command="{Binding OpenCommand}"
+                            AutomationProperties.Name="{Binding AutomationName}">
+                      <Grid Classes="row" RowDefinitions="Auto,Auto" RowSpacing="6">
+                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+                          <TextBlock Grid.Column="0" Text="{Binding ProcessName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                     VerticalAlignment="Center" ToolTip.Tip="{Binding ProcessName}" />
+                          <Border Grid.Column="1" Classes="badge" Margin="10,0,0,0" VerticalAlignment="Center"
+                                  Classes.blocked="{Binding IsFailure}"
+                                  Classes.enabled="{Binding IsActive}"
+                                  Classes.disabled="{Binding IsNeutral}">
+                            <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="6">
+                              <TextBlock Grid.Column="0" Classes="railIcon" Width="16" FontSize="12" Text="{Binding StatusGlyph}" />
+                              <TextBlock Grid.Column="1" Classes="caption" Text="{Binding StatusText}" VerticalAlignment="Center" />
+                            </Grid>
+                          </Border>
+                        </Grid>
+                        <!-- Wraps on a narrow window instead of clipping. -->
+                        <WrapPanel Grid.Row="1" Orientation="Horizontal">
+                          <TextBlock Classes="caption" Text="{Binding TriggerText}" Margin="0,0,16,0" />
+                          <TextBlock Classes="caption" Text="{Binding CreatedText}" Margin="0,0,16,0" />
+                          <Border Classes="badge disabled" Margin="0,0,16,0" IsVisible="{Binding IsLate}">
+                            <TextBlock Classes="caption" Text="{Binding L.Late}" />
+                          </Border>
+                          <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,16,0"
+                                      IsVisible="{Binding DurationText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <TextBlock Classes="caption" Text="{Binding L.Duration}" />
+                            <TextBlock Classes="caption" Text="{Binding DurationText}" />
+                          </StackPanel>
+                          <StackPanel Orientation="Horizontal" Spacing="4"
+                                      IsVisible="{Binding ExitCodeText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                            <TextBlock Classes="caption" Text="{Binding L.ExitCode}" />
+                            <TextBlock Classes="caption" Text="{Binding ExitCodeText}" />
+                          </StackPanel>
+                        </WrapPanel>
+                      </Grid>
+                    </Button>
+                    <Border Classes="divider" />
+                  </StackPanel>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Border>
+
+        <!-- The pager: previous, where you are, next. The disabled end keeps its place so the buttons do not jump. -->
+        <Grid x:Name="Pager" ColumnDefinitions="Auto,*,Auto" IsVisible="{Binding ShowPaging}">
+          <Button x:Name="PreviousPageButton" Grid.Column="0" Content="{Binding L.PreviousPage}" Command="{Binding PreviousPageCommand}" />
+          <TextBlock x:Name="PageLine" Grid.Column="1" Text="{Binding PageText}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                     TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+          <Button x:Name="NextPageButton" Grid.Column="2" Content="{Binding L.NextPage}" Command="{Binding NextPageCommand}" />
+        </Grid>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- The run detail takes the place of the list; the filters and the page stay behind it. -->
+    <DockPanel x:Name="DetailHost" IsVisible="{Binding Detail, Converter={x:Static ObjectConverters.IsNotNull}}">
+      <Button x:Name="BackButton" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,12"
+              Content="{Binding L.BackToHistory}" Command="{Binding CloseDetailCommand}" />
+      <ContentControl Content="{Binding Detail}">
+        <ContentControl.DataTemplates>
+          <DataTemplate DataType="vm:RunDetailViewModel">
+            <views:RunDetailView />
+          </DataTemplate>
+        </ContentControl.DataTemplates>
+      </ContentControl>
+    </DockPanel>
+  </Grid>
+</UserControl>

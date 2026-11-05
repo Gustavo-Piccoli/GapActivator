@@ -71,6 +71,18 @@ internal static class Dtos
             exitCode,
             Killed: false);
 
+    public static RunDetailsDto RunDetails(
+        RunRowDto? run = null,
+        string? error = null,
+        IReadOnlyList<HistoryEntryDto>? entries = null,
+        string output = "",
+        bool exists = true,
+        bool truncated = false) =>
+        new(run ?? RunRow(), error, entries ?? [], new RunOutputDto(exists, output, truncated));
+
+    public static HistoryEntryDto Entry(HistoryEntryKind kind, DateTimeOffset? at = null, string? message = null) =>
+        new(Guid.NewGuid(), at ?? Epoch, kind, null, null, null, null, message);
+
     public static DashboardDto Dashboard(
         bool isPaused = false,
         IReadOnlyList<RunRowDto>? activeRuns = null,

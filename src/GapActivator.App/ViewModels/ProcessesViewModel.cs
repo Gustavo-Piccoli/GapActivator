@@ -8,7 +8,7 @@ using GapActivator.Ipc.Contracts;
 namespace GapActivator.App.ViewModels;
 
 /// <summary>The process list: one row per registered process, ordered by name, with the actions of each.</summary>
-public sealed partial class ProcessesViewModel : PageViewModel
+public sealed partial class ProcessesViewModel : PageViewModel, IFreshnessNotes
 {
     private readonly LiveState _live;
     private readonly Permissions _permissions;
@@ -110,6 +110,8 @@ public sealed partial class ProcessesViewModel : PageViewModel
 
     public bool ShowWaiting => _freshness.ShowWaiting;
 
+    public string WaitingText => L.WaitingForService;
+
     /// <summary>True when the service has reported and has no process; never before the first answer.</summary>
     public bool ShowEmpty => HasData && Items.Count == 0;
 
@@ -194,6 +196,7 @@ public sealed partial class ProcessesViewModel : PageViewModel
         OnPropertyChanged(nameof(HasRefreshError));
         OnPropertyChanged(nameof(RefreshErrorText));
         OnPropertyChanged(nameof(ShowWaiting));
+        OnPropertyChanged(nameof(WaitingText));
         OnPropertyChanged(nameof(ShowEmpty));
     }
 

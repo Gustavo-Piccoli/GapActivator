@@ -27,31 +27,8 @@
                    AutomationProperties.LiveSetting="Polite" />
       </Grid>
 
-      <TextBlock Classes="error" Text="{Binding ErrorText}" TextWrapping="Wrap"
-                 IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}"
-                 AutomationProperties.LiveSetting="Assertive" />
-
-      <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding HasRefreshError}">
-        <TextBlock Classes="railIcon error" Text="&#xE7BA;" />
-        <TextBlock Classes="error" Text="{Binding RefreshErrorText}" TextWrapping="Wrap" VerticalAlignment="Center"
-                   AutomationProperties.LiveSetting="Assertive" />
-      </StackPanel>
-
-      <!-- A delete waits up to a minute for the run to stop: say so, with a glyph. -->
-      <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding ProgressText, Converter={x:Static ObjectConverters.IsNotNull}}">
-        <TextBlock Classes="railIcon" Text="&#xE895;" />
-        <TextBlock x:Name="ProgressLine" Text="{Binding ProgressText}" TextWrapping="Wrap" VerticalAlignment="Center"
-                   AutomationProperties.LiveSetting="Polite" />
-      </StackPanel>
-
-      <TextBlock Classes="muted" Text="{Binding L.WaitingForService}" TextWrapping="Wrap" IsVisible="{Binding ShowWaiting}" />
-
-      <!-- Not connected: the list is the last known state. A glyph and a sentence say so, and the dimming only backs them up. -->
-      <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding IsStale}">
-        <TextBlock Classes="railIcon warning" Text="&#xE7BA;" />
-        <TextBlock Classes="warning" Text="{Binding StaleText}" TextWrapping="Wrap" VerticalAlignment="Center"
-                   AutomationProperties.LiveSetting="Polite" />
-      </StackPanel>
+      <!-- The failed call, a failed refresh, the delete in progress, the wait for a first answer and "last known state" are one shared control. -->
+      <views:FreshnessNotes />
 
       <Border Classes="card" IsVisible="{Binding HasData}">
         <StackPanel Classes.stale="{Binding IsStale}">

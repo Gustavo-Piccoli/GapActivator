@@ -8,7 +8,7 @@ namespace GapActivator.App.Tests.Fakes;
 /// <summary>Builds the dashboard view model with fakes, and exposes the pieces a test drives.</summary>
 internal sealed class DashboardHarness
 {
-    public DashboardHarness(AppLanguage language = AppLanguage.English, FakeServiceGateway? gateway = null, Localizer? localizer = null, Navigator? navigator = null)
+    public DashboardHarness(AppLanguage language = AppLanguage.English, FakeServiceGateway? gateway = null, Localizer? localizer = null, Navigator? navigator = null, TimeZoneInfo? zone = null)
     {
         L = localizer ?? new Localizer(language);
         Gateway = gateway ?? new FakeServiceGateway();
@@ -21,6 +21,7 @@ internal sealed class DashboardHarness
         Dashboard = new DashboardViewModel(L, Gateway, Live, Permissions, Runs, Seen, Navigator, Times);
         Actions = new ProcessActions(L, Gateway, Dialogs, Runs, Time);
         Processes = new ProcessesViewModel(L, Gateway, Live, Permissions, Actions, Runs, Navigator, Times, NewEditor);
+        History = new HistoryViewModel(L, Gateway, Live, Seen, Navigator, Times, zone ?? TimeZoneInfo.Utc, NewDetail);
     }
 
     private ProcessEditorViewModel NewEditor() =>
@@ -34,6 +35,8 @@ internal sealed class DashboardHarness
             TimeZoneInfo.Utc,
             () => new ScheduleEditorViewModel(L, Gateway, Time, TimeZoneInfo.Utc, Times, new ImmediateUiDispatcher()),
             Files);
+
+    private RunDetailViewModel NewDetail() => new(L, Gateway, Time, Times, new ImmediateUiDispatcher());
 
     public FakeFilePicker Files { get; } = new();
 
@@ -62,4 +65,6 @@ internal sealed class DashboardHarness
     public ProcessActions Actions { get; }
 
     public ProcessesViewModel Processes { get; }
+
+    public HistoryViewModel History { get; }
 }

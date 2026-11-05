@@ -157,13 +157,29 @@ public static class AppComposition
             sp.GetRequiredService<INavigator>(),
             sp.GetRequiredService<TimeDisplay>(),
             sp.GetRequiredService<Func<ProcessEditorViewModel>>()));
+        services.AddSingleton<Func<RunDetailViewModel>>(sp => () => new RunDetailViewModel(
+            sp.GetRequiredService<Localizer>(),
+            sp.GetRequiredService<IServiceGateway>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<TimeDisplay>(),
+            sp.GetRequiredService<IUiDispatcher>()));
+        services.AddSingleton(sp => new HistoryViewModel(
+            sp.GetRequiredService<Localizer>(),
+            sp.GetRequiredService<IServiceGateway>(),
+            sp.GetRequiredService<LiveState>(),
+            sp.GetRequiredService<FailureAcknowledgements>(),
+            sp.GetRequiredService<INavigator>(),
+            sp.GetRequiredService<TimeDisplay>(),
+            sp.GetRequiredService<TimeZoneInfo>(),
+            sp.GetRequiredService<Func<RunDetailViewModel>>()));
         services.AddSingleton(sp => new MainWindowViewModel(
             sp.GetRequiredService<Localizer>(),
             sp.GetRequiredService<INavigator>(),
             sp.GetRequiredService<ConnectionBannerViewModel>(),
             sp.GetRequiredService<Permissions>(),
             sp.GetRequiredService<DashboardViewModel>(),
-            sp.GetRequiredService<ProcessesViewModel>()));
+            sp.GetRequiredService<ProcessesViewModel>(),
+            sp.GetRequiredService<HistoryViewModel>()));
 
         services.AddSingleton<Func<MainWindow>>(sp => () => new MainWindow { DataContext = sp.GetRequiredService<MainWindowViewModel>() });
         services.AddSingleton(sp => new MainWindowService(

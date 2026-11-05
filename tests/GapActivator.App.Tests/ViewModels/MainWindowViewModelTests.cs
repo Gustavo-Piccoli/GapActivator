@@ -21,13 +21,25 @@ public class MainWindowViewModelTests : IAsyncDisposable
             new ConnectionBannerViewModel(_l, _gateway, new FakeServiceStarter(), new FakeTimeProvider()),
             harness.Permissions,
             harness.Dashboard,
-            harness.Processes);
+            harness.Processes,
+            harness.History);
     }
 
     public ValueTask DisposeAsync()
     {
         GC.SuppressFinalize(this);
         return _gateway.DisposeAsync();
+    }
+
+    [Fact]
+    public void PageContent_History_IsTheHistoryViewModel()
+    {
+        var vm = Create();
+
+        vm.PageContent.ShouldBeOfType<DashboardViewModel>();
+        _navigator.Navigate(AppPage.History);
+
+        vm.PageContent.ShouldBeSameAs(vm.History);
     }
 
     [Fact]
