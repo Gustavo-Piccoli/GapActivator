@@ -20,7 +20,9 @@ public sealed class SetupCommandTests
             (path, sid) => Calls.Add($"prepare:{path}:{sid.Value}"),
             sid => Calls.Add("grant:" + sid.Value),
             () => Calls.Add("register"),
-            () => Calls.Add("unregister"));
+            () => Calls.Add("unregister"),
+            sid => Calls.Add("operator:" + sid.Value),
+            () => Calls.Add("remove-group"));
     }
 
     private static async Task<(int Code, string Out, string Err)> RunAsync(Recorder recorder, params string[] args)
@@ -58,6 +60,9 @@ public sealed class SetupCommandTests
     [InlineData("grant-logon-right", "--account", "a", "--path", "C:\\x")]
     [InlineData("register-event-source", "extra")]
     [InlineData("unregister-event-source", "--account", "a")]
+    [InlineData("add-operator")]
+    [InlineData("add-operator", "--account", "a", "--path", "C:\\x")]
+    [InlineData("remove-operators-group", "--account", "a")]
     public async Task Run_UsageError_Returns2WithOneStderrLine(params string[] args)
     {
         var recorder = new Recorder();
@@ -129,7 +134,11 @@ public sealed class SetupCommandTests
         (await RunAsync(recorder, "register-event-source")).Code.ShouldBe(0);
         (await RunAsync(recorder, "unregister-event-source")).Code.ShouldBe(0);
 
-        recorder.Calls.ShouldBe(["resolve:someone", "grant:" + FakeSid.Value, "register", "unregister"]);
+        (await RunAsync(recorder, "add-operator", "--account", "someone")).Code.ShouldBe(0);
+        (await RunAsync(recorder, "remove-operators-group")).Code.ShouldBe(0);
+
+        recorder.Calls.ShouldBe(
+            ["resolve:someone", "grant:" + FakeSid.Value, "register", "unregister", "resolve:someone", "operator:" + FakeSid.Value, "remove-group"]);
     }
 
     [Fact]
@@ -137,7 +146,7 @@ public sealed class SetupCommandTests
     {
         var actions = new SetupActions(
             _ => FakeSid, (_, _) => { }, _ => { },
-            () => throw new System.ComponentModel.Win32Exception(5), () => { });
+            () => throw new System.ComponentModel.Win32Exception(5), () => { }, _ => { }, () => { });
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
 
@@ -147,4 +156,17 @@ public sealed class SetupCommandTests
         stderr.ToString().ShouldContain("5");
         stderr.ToString().TrimEnd().Split('\n').Length.ShouldBe(1);
     }
+
+    [Fact]
+    public void ResolveAccountName_DotPrefix_MeansThisMachine()
+    {
+        string user = Environment.UserName;
+        SecurityIdentifier expected = SetupActions.ResolveAccountName(Environment.MachineName + "\\" + user);
+
+        SetupActions.ResolveAccountName(".\\" + user).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void ResolveAccountName_UnknownDotAccount_StillThrows() =>
+        Should.Throw<IdentityNotMappedException>(() => SetupActions.ResolveAccountName(".\\NoSuchUser-ga"));
 }

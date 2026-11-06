@@ -10,14 +10,28 @@ internal sealed record SetupActions(
     Action<string, SecurityIdentifier> PrepareDataRoot,
     Action<SecurityIdentifier> GrantLogonRight,
     Action RegisterEventSource,
-    Action UnregisterEventSource)
+    Action UnregisterEventSource,
+    Action<SecurityIdentifier> AddOperator,
+    Action RemoveOperatorsGroup)
 {
     public static SetupActions Default { get; } = new(
-        account => (SecurityIdentifier)new NTAccount(account).Translate(typeof(SecurityIdentifier)),
+        ResolveAccountName,
         (path, sid) => DataRootPreparer.Prepare(path, sid),
         ServiceLogonRight.Grant,
         () => new EventSourceRegistrar().Register(),
-        () => new EventSourceRegistrar().Unregister());
+        () => new EventSourceRegistrar().Unregister(),
+        OperatorsGroup.AddOperator,
+        OperatorsGroup.Remove);
+
+    /// <summary>Resolves an account name. A leading <c>.\</c> means this machine, which <see cref="NTAccount"/> cannot translate on its own.</summary>
+    internal static SecurityIdentifier ResolveAccountName(string account)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        string name = account.StartsWith(@".\", StringComparison.Ordinal)
+            ? Environment.MachineName + "\\" + account[2..]
+            : account;
+        return (SecurityIdentifier)new NTAccount(name).Translate(typeof(SecurityIdentifier));
+    }
 }
 
 /// <summary>
@@ -32,7 +46,7 @@ internal static class SetupCommand
 
     private const string Usage1 =
         "usage: setup prepare-data-root --account <account> [--path <dir>] | grant-logon-right --account <account> | "
-        + "register-event-source | unregister-event-source";
+        + "register-event-source | unregister-event-source | add-operator --account <account> | remove-operators-group";
 
     /// <summary>True when the first argument is exactly <c>setup</c>.</summary>
     public static bool IsSetup(string[] args)
@@ -98,6 +112,24 @@ internal static class SetupCommand
 
                     return Execute(stdout, stderr, "logon right granted to " + account, () =>
                         actions.GrantLogonRight(Resolve(actions, account)));
+                }
+
+            case "add-operator":
+                {
+                    if (!Accepts(options, ["--account"]) || !options.TryGetValue("--account", out string? account))
+                    {
+                        return UsageError(stderr, "add-operator needs --account <account>.");
+                    }
+
+                    return Execute(stdout, stderr, "operator added: " + account, () =>
+                        actions.AddOperator(Resolve(actions, account)));
+                }
+
+            case "remove-operators-group":
+                {
+                    return options.Count != 0
+                        ? UsageError(stderr, verb + " takes no arguments.")
+                        : Execute(stdout, stderr, "operators group removed", actions.RemoveOperatorsGroup);
                 }
 
             case "register-event-source":
