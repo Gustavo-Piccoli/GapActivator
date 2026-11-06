@@ -1,5 +1,7 @@
 using GapActivator.App.Localization;
 using GapActivator.App.Services;
+using GapActivator.App.Settings;
+using GapActivator.App.Updates;
 using GapActivator.App.ViewModels;
 using Microsoft.Extensions.Time.Testing;
 
@@ -24,6 +26,7 @@ internal sealed class DashboardHarness
         History = new HistoryViewModel(L, Gateway, Live, Seen, Navigator, Times, zone ?? TimeZoneInfo.Utc, NewDetail);
         Service = new ServiceActions(L, Gateway, Dialogs);
         Settings = new SettingsViewModel(L, Gateway, Permissions, AppSettings, Service);
+        About = new AboutViewModel(L, Gateway, Updates, Launcher, new AppPaths("app"), new ServicePaths("service"), new ImmediateUiDispatcher(), "0.1.0");
     }
 
     private ProcessEditorViewModel NewEditor() =>
@@ -77,4 +80,10 @@ internal sealed class DashboardHarness
     public ServiceActions Service { get; }
 
     public SettingsViewModel Settings { get; }
+
+    public FakeUpdateChecker Updates { get; } = new();
+
+    public FakeShellLauncher Launcher { get; } = new();
+
+    public AboutViewModel About { get; }
 }

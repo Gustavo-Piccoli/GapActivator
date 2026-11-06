@@ -4,6 +4,7 @@ using Avalonia.Threading;
 using GapActivator.App.Composition;
 using GapActivator.App.Services;
 using GapActivator.App.Shell;
+using GapActivator.App.Updates;
 using GapActivator.App.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -39,6 +40,9 @@ public sealed class App : Avalonia.Application
 
             // The live state follows the gateway from here on; it refreshes after every connect, and once now if already connected.
             services.GetRequiredService<LiveState>().Start();
+
+            // The daily release check starts last, once the view models that listen to it exist; it is quiet unless a release is newer.
+            services.GetRequiredService<UpdateChecker>().StartBackground();
 
             // The shell window is created here, on the UI thread, and disposed by AppShutdown on the UI thread.
             var shell = services.GetRequiredService<ShellWindow>();

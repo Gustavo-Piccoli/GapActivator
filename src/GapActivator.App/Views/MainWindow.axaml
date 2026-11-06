@@ -13,14 +13,9 @@
   -->
   <Grid ColumnDefinitions="200,*">
     <Border Grid.Column="0" Background="{DynamicResource GaRailBrush}">
-      <DockPanel LastChildFill="True">
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="10" Margin="18,14,16,16"
-                    AutomationProperties.Name="{Binding FooterText}">
-          <TextBlock Classes="railIcon" Text="{Binding FooterGlyph}" Foreground="{DynamicResource GaTextMutedBrush}" />
-          <TextBlock Classes="caption" Text="{Binding FooterText}" VerticalAlignment="Center" />
-        </StackPanel>
-        <TextBlock DockPanel.Dock="Top" Text="{Binding L.AppName}" Classes="group" Margin="18,20,16,16" />
-        <ListBox Classes="rail" ItemsSource="{Binding NavItems}" SelectedItem="{Binding SelectedNavItem, Mode=TwoWay}"
+      <Grid RowDefinitions="Auto,*,Auto,Auto">
+        <TextBlock Grid.Row="0" Text="{Binding L.AppName}" Classes="group" Margin="18,20,16,16" />
+        <ListBox Grid.Row="1" Classes="rail" ItemsSource="{Binding NavItems}" SelectedItem="{Binding SelectedNavItem, Mode=TwoWay}"
                  AutomationProperties.Name="{Binding L.NavigationLabel}" Margin="8,0">
           <ListBox.ItemContainerTheme>
             <ControlTheme x:DataType="vm:NavItemViewModel" TargetType="ListBoxItem"
@@ -37,7 +32,22 @@
             </DataTemplate>
           </ListBox.ItemTemplate>
         </ListBox>
-      </DockPanel>
+        <!-- A newer release exists: a button that opens About (after the rail in the tab order). Glyph and words, never color alone. -->
+        <Button Grid.Row="2" x:Name="UpdateNoticeButton" Classes="notice" Margin="8,8,8,0"
+                IsVisible="{Binding HasUpdateNotice}" Command="{Binding OpenUpdateNoticeCommand}"
+                AutomationProperties.Name="{Binding UpdateNotice}">
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+            <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE896;" Foreground="{DynamicResource GaAccentTextBrush}" />
+            <TextBlock Grid.Column="1" Classes="caption" Text="{Binding UpdateNotice}" TextWrapping="Wrap" VerticalAlignment="Center"
+                       Foreground="{DynamicResource GaAccentTextBrush}" />
+          </Grid>
+        </Button>
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="10" Margin="18,14,16,16"
+                    AutomationProperties.Name="{Binding FooterText}">
+          <TextBlock Classes="railIcon" Text="{Binding FooterGlyph}" Foreground="{DynamicResource GaTextMutedBrush}" />
+          <TextBlock Classes="caption" Text="{Binding FooterText}" VerticalAlignment="Center" />
+        </StackPanel>
+      </Grid>
     </Border>
 
     <DockPanel Grid.Column="1" LastChildFill="True">
@@ -81,6 +91,9 @@
             </DataTemplate>
             <DataTemplate DataType="vm:SettingsViewModel">
               <views:SettingsView />
+            </DataTemplate>
+            <DataTemplate DataType="vm:AboutViewModel">
+              <views:AboutView />
             </DataTemplate>
           </ContentControl.DataTemplates>
         </ContentControl>

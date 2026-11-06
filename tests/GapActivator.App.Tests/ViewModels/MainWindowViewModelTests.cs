@@ -1,6 +1,7 @@
 using GapActivator.App.Localization;
 using GapActivator.App.Services;
 using GapActivator.App.Tests.Fakes;
+using GapActivator.App.Updates;
 using GapActivator.App.ViewModels;
 using Microsoft.Extensions.Time.Testing;
 
@@ -23,7 +24,10 @@ public class MainWindowViewModelTests : IAsyncDisposable
             harness.Dashboard,
             harness.Processes,
             harness.History,
-            harness.Settings);
+            harness.Settings,
+            harness.About,
+            harness.Updates,
+            new ImmediateUiDispatcher());
     }
 
     public ValueTask DisposeAsync()
@@ -51,6 +55,36 @@ public class MainWindowViewModelTests : IAsyncDisposable
         _navigator.Navigate(AppPage.Settings);
 
         vm.PageContent.ShouldBeSameAs(vm.Settings);
+    }
+
+    [Fact]
+    public void PageContent_About_IsTheAboutViewModel()
+    {
+        var vm = Create();
+
+        _navigator.Navigate(AppPage.About);
+
+        vm.PageContent.ShouldBeSameAs(vm.About);
+    }
+
+    [Fact]
+    public void MainWindow_UpdateFound_ShowsTheRailNotice()
+    {
+        var harness = new DashboardHarness(gateway: _gateway, localizer: _l, navigator: _navigator);
+        var vm = new MainWindowViewModel(_l, _navigator, new ConnectionBannerViewModel(_l, _gateway, new FakeServiceStarter(), new FakeTimeProvider()), harness.Permissions, harness.Dashboard, harness.Processes, harness.History, harness.Settings, harness.About, harness.Updates, new ImmediateUiDispatcher());
+        vm.UpdateNotice.ShouldBeNull();
+        vm.HasUpdateNotice.ShouldBeFalse();
+
+        harness.Updates.RaiseUpdateFound(new UpdateCheckResult(UpdateCheckOutcome.UpdateAvailable, new Version(0, 2, 0), new Uri("https://github.com/Gustavo-Piccoli/GapActivator/releases/tag/v0.2.0")));
+
+        vm.UpdateNotice.ShouldBe("Update 0.2.0 available");
+        vm.HasUpdateNotice.ShouldBeTrue();
+
+        _l.SetLanguage(AppLanguage.Portuguese);
+        vm.UpdateNotice.ShouldBe("Atualização 0.2.0 disponível");
+
+        vm.OpenUpdateNoticeCommand.Execute(null);
+        _navigator.Current.ShouldBe(AppPage.About);
     }
 
     [Fact]

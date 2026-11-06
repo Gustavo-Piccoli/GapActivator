@@ -87,6 +87,25 @@
       </FocusAdornerTemplate>
     </Setter>
   </Style>
+  <!-- The update notice in the rail: a quiet link-like button that fills the rail width. -->
+  <Style Selector="Button.notice">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="10,8" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+  </Style>
+  <Style Selector="Button.notice:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource GaSurfaceHoverBrush}" />
+  </Style>
+  <!-- Selectable paths on the About page take keyboard focus: the same ring as the form controls. -->
+  <Style Selector="UserControl.about SelectableTextBlock:focus-visible">
+    <Setter Property="FocusAdorner">
+      <FocusAdornerTemplate>
+        <Border BorderBrush="{DynamicResource GaFocusBrush}" BorderThickness="2" CornerRadius="{DynamicResource GaControlRadius}" />
+      </FocusAdornerTemplate>
+    </Setter>
+  </Style>
   <Style Selector="TabControl.rail">
     <Setter Property="Padding" Value="0" />
     <Setter Property="Background" Value="{DynamicResource GaGroundBrush}" />

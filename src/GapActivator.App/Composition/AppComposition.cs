@@ -5,6 +5,7 @@ using GapActivator.App.Logging;
 using GapActivator.App.Services;
 using GapActivator.App.Settings;
 using GapActivator.App.Shell;
+using GapActivator.App.Updates;
 using GapActivator.App.ViewModels;
 using GapActivator.App.Views;
 using GapActivator.Ipc;
@@ -33,6 +34,7 @@ public static class AppComposition
         AddSettings(services);
         AddGateway(services);
         AddShell(services);
+        AddUpdates(services);
         AddUi(services);
         AddShutdown(services);
 
@@ -47,6 +49,7 @@ public static class AppComposition
         Logger<AppSettingsStore>(services);
         Logger<ServiceGateway>(services);
         Logger<LiveState>(services);
+        Logger<UpdateChecker>(services);
         Logger<AppShutdown>(services);
     }
 
@@ -91,6 +94,22 @@ public static class AppComposition
         services.AddSingleton<ITrayIcon>(sp => new Win32TrayIcon(
             sp.GetRequiredService<ShellWindow>(),
             TrayIconImages.Colors.ToDictionary(c => c.Key, c => TrayIconImages.Create(c.Value))));
+    }
+
+    private static void AddUpdates(IServiceCollection services)
+    {
+        // One HttpClient for the whole life of the app: the only outbound request is the release check.
+        services.AddSingleton(_ => new HttpClient());
+        services.AddSingleton<IReleaseSource>(sp => new GitHubReleaseSource(sp.GetRequiredService<HttpClient>(), AppVersion.Display));
+        services.AddSingleton(sp => new UpdateChecker(
+            sp.GetRequiredService<IReleaseSource>(),
+            ReleaseVersion.TryParse(AppVersion.Display, out var current) ? current : new Version(0, 0, 0),
+            sp.GetRequiredService<IAppSettingsService>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<UpdateChecker>>()));
+        services.AddSingleton<IUpdateChecker>(sp => sp.GetRequiredService<UpdateChecker>());
+        services.AddSingleton<IShellLauncher>(_ => new ShellLauncher());
+        services.AddSingleton(ServicePaths.Default);
     }
 
     private static void AddUi(IServiceCollection services)
@@ -186,6 +205,15 @@ public static class AppComposition
             sp.GetRequiredService<Permissions>(),
             sp.GetRequiredService<IAppSettingsService>(),
             sp.GetRequiredService<ServiceActions>()));
+        services.AddSingleton(sp => new AboutViewModel(
+            sp.GetRequiredService<Localizer>(),
+            sp.GetRequiredService<IServiceGateway>(),
+            sp.GetRequiredService<IUpdateChecker>(),
+            sp.GetRequiredService<IShellLauncher>(),
+            sp.GetRequiredService<AppPaths>(),
+            sp.GetRequiredService<ServicePaths>(),
+            sp.GetRequiredService<IUiDispatcher>(),
+            AppVersion.Display));
         services.AddSingleton(sp => new MainWindowViewModel(
             sp.GetRequiredService<Localizer>(),
             sp.GetRequiredService<INavigator>(),
@@ -194,7 +222,10 @@ public static class AppComposition
             sp.GetRequiredService<DashboardViewModel>(),
             sp.GetRequiredService<ProcessesViewModel>(),
             sp.GetRequiredService<HistoryViewModel>(),
-            sp.GetRequiredService<SettingsViewModel>()));
+            sp.GetRequiredService<SettingsViewModel>(),
+            sp.GetRequiredService<AboutViewModel>(),
+            sp.GetRequiredService<IUpdateChecker>(),
+            sp.GetRequiredService<IUiDispatcher>()));
 
         services.AddSingleton<Func<MainWindow>>(sp => () => new MainWindow { DataContext = sp.GetRequiredService<MainWindowViewModel>() });
         services.AddSingleton(sp => new MainWindowService(
