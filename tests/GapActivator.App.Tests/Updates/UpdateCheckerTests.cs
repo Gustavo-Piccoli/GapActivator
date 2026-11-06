@@ -1,3 +1,4 @@
+using System.Net;
 using GapActivator.App.Settings;
 using GapActivator.App.Tests.Fakes;
 using GapActivator.App.Updates;
@@ -184,5 +185,108 @@ public class UpdateCheckerTests
         _source.Failure = new OperationCanceledException(cts.Token);
 
         await Should.ThrowAsync<OperationCanceledException>(() => checker.CheckNowAsync(cts.Token));
+    }
+
+    [Fact]
+    public async Task Dispose_InFlightScheduledCheck_CancelsItAndStaysSilent()
+    {
+        _source.Hang = true;
+        var checker = Create();
+        var raised = 0;
+        checker.UpdateFound += (_, _) => raised++;
+        checker.Checked += (_, _) => raised++;
+
+        checker.StartBackground();
+        await _source.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        checker.Dispose();
+        await _source.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        await Task.Delay(150, TestContext.Current.CancellationToken);
+
+        _settings.Updates.ShouldBe(0);
+        raised.ShouldBe(0);
+        _logger.Levels.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Checked_IsRaisedAfterEveryCheckBeforeUpdateFound()
+    {
+        using var checker = Create();
+        var order = new List<string>();
+        checker.Checked += (_, r) => order.Add("checked:" + r.Outcome);
+        checker.UpdateFound += (_, _) => order.Add("found");
+
+        await checker.CheckNowAsync(TestContext.Current.CancellationToken);
+        _source.Release = new ReleaseInfo("v0.1.0", Page);
+        await checker.CheckNowAsync(TestContext.Current.CancellationToken);
+
+        order.ShouldBe(["checked:UpdateAvailable", "found", "checked:UpToDate"]);
+    }
+
+    [Fact]
+    public async Task Checked_FailureIsRaisedToo()
+    {
+        _source.Failure = new HttpRequestException("offline");
+        using var checker = Create();
+        UpdateCheckResult? seen = null;
+        checker.Checked += (_, r) => seen = r;
+
+        await checker.CheckNowAsync(TestContext.Current.CancellationToken);
+
+        seen.ShouldNotBeNull().Outcome.ShouldBe(UpdateCheckOutcome.Failed);
+    }
+
+    [Fact]
+    public async Task CheckNow_PageOfAnotherRepository_IsFailed()
+    {
+        var handler = new StubHttpHandler(HttpStatusCode.OK, """{"tag_name":"v9.0.0","html_url":"https://github.com/someone-else/repo/releases/tag/v9.0.0"}""");
+        using var checker = new UpdateChecker(new GitHubReleaseSource(new HttpClient(handler), "0.1.0"), new Version(0, 1, 0), _settings, _time, _logger);
+
+        var result = await checker.CheckNowAsync(TestContext.Current.CancellationToken);
+
+        result.Outcome.ShouldBe(UpdateCheckOutcome.Failed);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden, "")]
+    [InlineData(HttpStatusCode.OK, "{ not json")]
+    public async Task CheckNow_RateLimitedOrMalformed_IsFailedAndLoggedAtInformation(HttpStatusCode status, string body)
+    {
+        using var checker = new UpdateChecker(new GitHubReleaseSource(new HttpClient(new StubHttpHandler(status, body)), "0.1.0"), new Version(0, 1, 0), _settings, _time, _logger);
+
+        var result = await checker.CheckNowAsync(TestContext.Current.CancellationToken);
+
+        result.Outcome.ShouldBe(UpdateCheckOutcome.Failed);
+        _logger.Levels.ShouldBe([LogLevel.Information]);
+    }
+
+    [Fact]
+    public async Task CheckNow_SourceNeverAnswers_FailsAfterTheTimeout()
+    {
+        _source.Hang = true;
+        using var checker = Create();
+
+        var running = checker.CheckNowAsync(TestContext.Current.CancellationToken);
+        await _source.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        running.IsCompleted.ShouldBeFalse();
+        _time.Advance(UpdateChecker.Timeout);
+        var result = await running.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+        result.Outcome.ShouldBe(UpdateCheckOutcome.Failed);
+        _logger.Levels.ShouldBe([LogLevel.Information]);
+        _settings.Current.LastUpdateCheck.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task CheckNow_PrereleaseIsNotOffered()
+    {
+        var body = """{"tag_name":"v9.0.0","html_url":"https://github.com/Gustavo-Piccoli/GapActivator/releases/tag/v9.0.0","prerelease":true}""";
+        using var checker = new UpdateChecker(new GitHubReleaseSource(new HttpClient(new StubHttpHandler(HttpStatusCode.OK, body)), "0.1.0"), new Version(0, 1, 0), _settings, _time, _logger);
+        var raised = false;
+        checker.UpdateFound += (_, _) => raised = true;
+
+        var result = await checker.CheckNowAsync(TestContext.Current.CancellationToken);
+
+        result.Outcome.ShouldBe(UpdateCheckOutcome.NoReleases);
+        raised.ShouldBeFalse();
     }
 }

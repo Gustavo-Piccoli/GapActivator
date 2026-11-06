@@ -2,9 +2,12 @@ using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using GapActivator.App.Services;
 using GapActivator.App.Tests.Fakes;
 using GapActivator.App.Updates;
+using GapActivator.App.ViewModels;
 using GapActivator.App.Views;
+using Microsoft.Extensions.Time.Testing;
 
 namespace GapActivator.App.Tests.Views;
 
@@ -94,5 +97,77 @@ public class AboutViewTests(HeadlessFixture fixture)
 
         visible.ShouldBeTrue();
         text.ShouldBe("The folder does not exist yet.");
+    }
+
+    [Fact]
+    public async Task MainWindow_RailNotice_NamesItsTargetAndKeepsTheFixedVisibleText()
+    {
+        var h = new DashboardHarness();
+        var banner = new ConnectionBannerViewModel(h.L, h.Gateway, new FakeServiceStarter(), new FakeTimeProvider());
+        var viewModel = new MainWindowViewModel(h.L, h.Navigator, banner, h.Permissions, h.Dashboard, h.Processes, h.History, h.Settings, h.About, h.Updates, new ImmediateUiDispatcher());
+
+        var (hiddenBefore, name, visibleText) = await fixture.Session.Dispatch(
+            () =>
+            {
+                var window = new MainWindow { DataContext = viewModel };
+                window.Show();
+                Dispatcher.UIThread.RunJobs();
+                var hidden = Find<Button>(window, "UpdateNoticeButton").IsEffectivelyVisible;
+                h.Updates.RaiseUpdateFound(new UpdateCheckResult(UpdateCheckOutcome.UpdateAvailable, new Version(0, 2, 0), new Uri("https://github.com/Gustavo-Piccoli/GapActivator/releases/tag/v0.2.0")));
+                Dispatcher.UIThread.RunJobs();
+                var button = Find<Button>(window, "UpdateNoticeButton");
+                var text = button.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text).Last();
+                var result = (hidden, AutomationProperties.GetName(button), text);
+                window.Close();
+                return result;
+            },
+            TestContext.Current.CancellationToken);
+
+        hiddenBefore.ShouldBeFalse();
+        name.ShouldBe("Update 0.2.0 available. Open About.");
+        visibleText.ShouldBe("Update 0.2.0 available");
+    }
+
+    [Fact]
+    public async Task AboutView_NeverChecked_ShowsNotCheckedYetAndTheAutomaticChecksNote()
+    {
+        var h = new DashboardHarness();
+        h.AppSettings.Update(s => s with { CheckForUpdates = false });
+
+        var (status, note) = await fixture.Session.Dispatch(
+            () =>
+            {
+                var window = Show(h);
+                var result = (Find<TextBlock>(window, "UpdateStatusText").Text, Find<TextBlock>(window, "AutomaticChecksNoteText").Text);
+                window.Close();
+                return result;
+            },
+            TestContext.Current.CancellationToken);
+
+        status.ShouldBe("Not checked yet.");
+        note.ShouldBe("Automatic checks are off.");
+    }
+
+    [Fact]
+    public async Task AboutView_LinkFailure_ShowsInTheCardOfTheButtonThatFailed()
+    {
+        var h = new DashboardHarness();
+        h.Launcher.Failure = new InvalidOperationException("no browser");
+
+        var (repoText, repoCard, folderCard) = await fixture.Session.Dispatch(
+            () =>
+            {
+                var window = Show(h);
+                h.About.OpenRepositoryCommand.Execute(null);
+                Dispatcher.UIThread.RunJobs();
+                var result = (Find<TextBlock>(window, "RepositoryErrorText").Text, Find<Grid>(window, "RepositoryErrorRow").IsEffectivelyVisible, Find<Grid>(window, "FolderErrorRow").IsEffectivelyVisible);
+                window.Close();
+                return result;
+            },
+            TestContext.Current.CancellationToken);
+
+        repoText.ShouldBe("Could not open the page.");
+        repoCard.ShouldBeTrue();
+        folderCard.ShouldBeFalse();
     }
 }

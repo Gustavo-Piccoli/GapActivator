@@ -2,7 +2,7 @@ using GapActivator.App.Updates;
 
 namespace GapActivator.App.Tests.Fakes;
 
-/// <summary>An update checker that returns a set result (or throws) and lets a test raise <c>UpdateFound</c>.</summary>
+/// <summary>An update checker that returns a set result (or throws) and lets a test raise <c>Checked</c> and <c>UpdateFound</c>.</summary>
 internal sealed class FakeUpdateChecker : IUpdateChecker
 {
     public UpdateCheckResult? Last { get; set; }
@@ -15,6 +15,8 @@ internal sealed class FakeUpdateChecker : IUpdateChecker
 
     public event EventHandler<UpdateCheckResult>? UpdateFound;
 
+    public event EventHandler<UpdateCheckResult>? Checked;
+
     public Task<UpdateCheckResult> CheckNowAsync(CancellationToken ct)
     {
         Checks++;
@@ -24,12 +26,19 @@ internal sealed class FakeUpdateChecker : IUpdateChecker
         }
 
         Last = Result;
+        Checked?.Invoke(this, Result);
         if (Result.Outcome == UpdateCheckOutcome.UpdateAvailable)
         {
             UpdateFound?.Invoke(this, Result);
         }
 
         return Task.FromResult(Result);
+    }
+
+    public void RaiseChecked(UpdateCheckResult result)
+    {
+        Last = result;
+        Checked?.Invoke(this, result);
     }
 
     public void RaiseUpdateFound(UpdateCheckResult result)

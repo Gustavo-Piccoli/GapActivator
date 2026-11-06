@@ -61,6 +61,15 @@ public sealed partial class Localizer
 
     public string AboutCouldNotOpen => T("Could not open it.", "Não foi possível abrir.");
 
+    public string AboutNotChecked => T("Not checked yet.", "Ainda não verificado.");
+
+    public string AboutAutomaticChecksOff => T("Automatic checks are off.", "As verificações automáticas estão desligadas.");
+
+    public string AboutCouldNotOpenPage => T("Could not open the page.", "Não foi possível abrir a página.");
+
+    public string UpdateAvailableNoticeName(string version) =>
+        string.Format(Culture, T("Update {0} available. Open About.", "Atualização {0} disponível. Abrir Sobre."), version);
+
     public string AboutServiceNote => T(
         "These are the service's default folders. A service started for development may keep its files elsewhere.",
         "Estas são as pastas padrão do serviço. Um serviço iniciado para desenvolvimento pode guardar os arquivos em outro lugar.");

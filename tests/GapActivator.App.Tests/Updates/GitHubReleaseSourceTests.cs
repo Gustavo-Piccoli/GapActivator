@@ -47,4 +47,28 @@ public class GitHubReleaseSourceTests
     public async Task GetLatest_ServerError_Throws() =>
         await Should.ThrowAsync<HttpRequestException>(
             () => Create(new StubHttpHandler(HttpStatusCode.InternalServerError)).GetLatestAsync(TestContext.Current.CancellationToken));
+
+    [Fact]
+    public async Task GetLatest_PageOfAnotherRepository_Throws()
+    {
+        var body = """{"tag_name":"v1","html_url":"https://github.com/someone-else/repo/releases/tag/v1"}""";
+
+        await Should.ThrowAsync<InvalidDataException>(
+            () => Create(new StubHttpHandler(HttpStatusCode.OK, body)).GetLatestAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task GetLatest_Forbidden_Throws() =>
+        await Should.ThrowAsync<HttpRequestException>(
+            () => Create(new StubHttpHandler(HttpStatusCode.Forbidden)).GetLatestAsync(TestContext.Current.CancellationToken));
+
+    [Theory]
+    [InlineData("""{"tag_name":"v0.2.0","html_url":"https://github.com/Gustavo-Piccoli/GapActivator/releases/tag/v0.2.0","prerelease":true}""")]
+    [InlineData("""{"tag_name":"v0.2.0","html_url":"https://github.com/Gustavo-Piccoli/GapActivator/releases/tag/v0.2.0","draft":true}""")]
+    public async Task GetLatest_PrereleaseOrDraft_ReturnsNull(string body)
+    {
+        var release = await Create(new StubHttpHandler(HttpStatusCode.OK, body)).GetLatestAsync(TestContext.Current.CancellationToken);
+
+        release.ShouldBeNull();
+    }
 }

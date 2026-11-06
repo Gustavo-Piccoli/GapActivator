@@ -31,8 +31,13 @@
         <StackPanel Spacing="10">
           <TextBlock Classes="group" Text="{Binding L.AboutUpdatesLabel}" AutomationProperties.HeadingLevel="2" />
           <TextBlock x:Name="UpdateStatusText" Text="{Binding UpdateStatus}" TextWrapping="Wrap"
-                     IsVisible="{Binding UpdateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                      AutomationProperties.LiveSetting="Polite" />
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10"
+                IsVisible="{Binding AutomaticChecksNote, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE946;" />
+            <TextBlock x:Name="AutomaticChecksNoteText" Grid.Column="1" Classes="muted" Text="{Binding AutomaticChecksNote}"
+                       TextWrapping="Wrap" VerticalAlignment="Center" />
+          </Grid>
           <WrapPanel Orientation="Horizontal">
             <Button x:Name="CheckNowButton" Classes="accent" Content="{Binding L.AboutCheckNow}" Command="{Binding CheckNowCommand}"
                     Margin="0,0,12,0" />
@@ -40,11 +45,18 @@
                     AutomationProperties.Name="{Binding OpenReleaseName}"
                     IsVisible="{Binding AvailableReleaseUrl, Converter={x:Static ObjectConverters.IsNotNull}}" />
           </WrapPanel>
+          <Grid x:Name="ReleaseErrorRow" ColumnDefinitions="Auto,*" ColumnSpacing="10"
+                IsVisible="{Binding ReleaseErrorText, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <TextBlock Grid.Column="0" Classes="railIcon error" Text="&#xE783;" />
+            <TextBlock x:Name="ReleaseErrorText" Grid.Column="1" Classes="error" Text="{Binding ReleaseErrorText}" TextWrapping="Wrap"
+                       VerticalAlignment="Center" AutomationProperties.LiveSetting="Assertive" />
+          </Grid>
         </StackPanel>
       </Border>
 
       <!-- Source code -->
       <Border Classes="card" Padding="16">
+        <StackPanel Spacing="8">
         <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="6">
           <TextBlock Grid.Row="0" Grid.Column="0" Classes="group" Text="{Binding L.AboutRepositoryLabel}" AutomationProperties.HeadingLevel="2" />
           <SelectableTextBlock x:Name="RepositoryText" Grid.Row="1" Grid.Column="0" Classes="muted" Text="{Binding RepositoryUrl}"
@@ -54,6 +66,13 @@
                   Command="{Binding OpenRepositoryCommand}" AutomationProperties.Name="{Binding OpenRepositoryName}"
                   VerticalAlignment="Center" />
         </Grid>
+        <Grid x:Name="RepositoryErrorRow" ColumnDefinitions="Auto,*" ColumnSpacing="10"
+              IsVisible="{Binding RepositoryErrorText, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <TextBlock Grid.Column="0" Classes="railIcon error" Text="&#xE783;" />
+          <TextBlock x:Name="RepositoryErrorText" Grid.Column="1" Classes="error" Text="{Binding RepositoryErrorText}" TextWrapping="Wrap"
+                     VerticalAlignment="Center" AutomationProperties.LiveSetting="Assertive" />
+        </Grid>
+        </StackPanel>
       </Border>
 
       <!-- Who may change things -->
@@ -76,9 +95,9 @@
             <TextBlock Classes="group" Text="{Binding L.AboutFilesLabel}" AutomationProperties.HeadingLevel="2" />
             <TextBlock Classes="caption" Text="{Binding L.AboutServiceNote}" TextWrapping="Wrap" />
             <Grid x:Name="FolderErrorRow" ColumnDefinitions="Auto,*" ColumnSpacing="10" Margin="0,6,0,0"
-                  IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}">
+                  IsVisible="{Binding FolderErrorText, Converter={x:Static ObjectConverters.IsNotNull}}">
               <TextBlock Grid.Column="0" Classes="railIcon error" Text="&#xE783;" />
-              <TextBlock x:Name="FolderErrorText" Grid.Column="1" Classes="error" Text="{Binding ErrorText}" TextWrapping="Wrap"
+              <TextBlock x:Name="FolderErrorText" Grid.Column="1" Classes="error" Text="{Binding FolderErrorText}" TextWrapping="Wrap"
                          VerticalAlignment="Center" AutomationProperties.LiveSetting="Assertive" />
             </Grid>
           </StackPanel>
@@ -86,7 +105,7 @@
           <Grid Classes="row" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="2">
             <TextBlock Grid.Row="0" Text="{Binding L.AboutServiceDataLabel}" FontWeight="SemiBold" />
             <SelectableTextBlock x:Name="ServiceDataText" Grid.Row="1" Classes="caption" Text="{Binding ServiceDataRoot}"
-                                 TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ServiceDataRoot}" />
+                                 TextWrapping="NoWrap" TextTrimming="LeadingCharacterEllipsis" ToolTip.Tip="{Binding ServiceDataRoot}" />
             <Button x:Name="OpenServiceDataButton" Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Content="{Binding L.AboutOpenFolder}"
                     Command="{Binding OpenFolderCommand}" CommandParameter="{Binding ServiceDataRoot}"
                     AutomationProperties.Name="{Binding ServiceDataName}" VerticalAlignment="Center" />
@@ -95,7 +114,7 @@
           <Grid Classes="row" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="2">
             <TextBlock Grid.Row="0" Text="{Binding L.AboutServiceLogsLabel}" FontWeight="SemiBold" />
             <SelectableTextBlock x:Name="ServiceLogsText" Grid.Row="1" Classes="caption" Text="{Binding ServiceLogs}"
-                                 TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ServiceLogs}" />
+                                 TextWrapping="NoWrap" TextTrimming="LeadingCharacterEllipsis" ToolTip.Tip="{Binding ServiceLogs}" />
             <Button x:Name="OpenServiceLogsButton" Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Content="{Binding L.AboutOpenFolder}"
                     Command="{Binding OpenFolderCommand}" CommandParameter="{Binding ServiceLogs}"
                     AutomationProperties.Name="{Binding ServiceLogsName}" VerticalAlignment="Center" />
@@ -104,7 +123,7 @@
           <Grid Classes="row" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="2">
             <TextBlock Grid.Row="0" Text="{Binding L.AboutAppSettingsLabel}" FontWeight="SemiBold" />
             <SelectableTextBlock x:Name="AppSettingsText" Grid.Row="1" Classes="caption" Text="{Binding AppSettingsFile}"
-                                 TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding AppSettingsFile}" />
+                                 TextWrapping="NoWrap" TextTrimming="LeadingCharacterEllipsis" ToolTip.Tip="{Binding AppSettingsFile}" />
             <Button x:Name="OpenAppSettingsButton" Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Content="{Binding L.AboutOpenFolder}"
                     Command="{Binding OpenFolderCommand}" CommandParameter="{Binding AppSettingsFolder}"
                     AutomationProperties.Name="{Binding AppSettingsName}" VerticalAlignment="Center" />
@@ -113,7 +132,7 @@
           <Grid Classes="row" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="16" RowSpacing="2">
             <TextBlock Grid.Row="0" Text="{Binding L.AboutAppLogsLabel}" FontWeight="SemiBold" />
             <SelectableTextBlock x:Name="AppLogsText" Grid.Row="1" Classes="caption" Text="{Binding AppLogs}"
-                                 TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding AppLogs}" />
+                                 TextWrapping="NoWrap" TextTrimming="LeadingCharacterEllipsis" ToolTip.Tip="{Binding AppLogs}" />
             <Button x:Name="OpenAppLogsButton" Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Content="{Binding L.AboutOpenFolder}"
                     Command="{Binding OpenFolderCommand}" CommandParameter="{Binding AppLogs}"
                     AutomationProperties.Name="{Binding AppLogsName}" VerticalAlignment="Center" />

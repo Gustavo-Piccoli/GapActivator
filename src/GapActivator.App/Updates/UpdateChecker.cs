@@ -11,6 +11,7 @@ public sealed partial class UpdateChecker(IReleaseSource source, Version current
     : IUpdateChecker, IDisposable
 {
     private readonly Version _current = ReleaseVersion.Normalize(current);
+    private readonly CancellationTokenSource _stopping = new();
     private ITimer? _timer;
     private UpdateCheckResult? _last;
     private int _running;
@@ -23,6 +24,8 @@ public sealed partial class UpdateChecker(IReleaseSource source, Version current
     public static TimeSpan Timeout { get; } = TimeSpan.FromSeconds(10);
 
     public event EventHandler<UpdateCheckResult>? UpdateFound;
+
+    public event EventHandler<UpdateCheckResult>? Checked;
 
     public UpdateCheckResult? Last => Volatile.Read(ref _last);
 
@@ -42,8 +45,16 @@ public sealed partial class UpdateChecker(IReleaseSource source, Version current
     public async Task<UpdateCheckResult> CheckNowAsync(CancellationToken ct)
     {
         var result = await CheckCoreAsync(ct).ConfigureAwait(false);
+
+        // A check that was still running when the app shut down leaves no trace: no write, no event.
+        if (Volatile.Read(ref _disposed) == 1)
+        {
+            return result;
+        }
+
         Volatile.Write(ref _last, result);
         settings.Update(s => s with { LastUpdateCheck = time.GetUtcNow() });
+        Checked?.Invoke(this, result);
         if (result.Outcome == UpdateCheckOutcome.UpdateAvailable)
         {
             UpdateFound?.Invoke(this, result);
@@ -57,6 +68,8 @@ public sealed partial class UpdateChecker(IReleaseSource source, Version current
         if (Interlocked.Exchange(ref _disposed, 1) == 0)
         {
             _timer?.Dispose();
+            _stopping.Cancel();
+            _stopping.Dispose();
         }
     }
 
@@ -122,7 +135,11 @@ public sealed partial class UpdateChecker(IReleaseSource source, Version current
     {
         try
         {
-            await CheckNowAsync(CancellationToken.None).ConfigureAwait(false);
+            await CheckNowAsync(_stopping.Token).ConfigureAwait(false);
+        }
+        catch (Exception) when (Volatile.Read(ref _disposed) == 1)
+        {
+            // Disposed while the check ran: nothing to report.
         }
         catch (Exception ex)
         {
@@ -140,6 +157,6 @@ public sealed partial class UpdateChecker(IReleaseSource source, Version current
     [LoggerMessage(Level = LogLevel.Information, Message = "Update check failed.")]
     private partial void LogUnreadableTag();
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "The scheduled update check threw.")]
+    [LoggerMessage(Level = LogLevel.Information, Message = "The scheduled update check threw.")]
     private partial void LogTickFailed(Exception ex);
 }

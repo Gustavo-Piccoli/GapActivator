@@ -28,6 +28,7 @@ public sealed partial class AboutViewModel : ViewModelBase, IDisposable
 
     private readonly IServiceGateway _gateway;
     private readonly IUpdateChecker _updates;
+    private readonly IAppSettingsService _settings;
     private readonly IShellLauncher _launcher;
     private readonly IUiDispatcher _ui;
     private readonly AppPaths _app;
@@ -36,13 +37,16 @@ public sealed partial class AboutViewModel : ViewModelBase, IDisposable
     private Status _status = Status.None;
     private Version? _availableVersion;
     private bool _folderMissing;
-    private bool _openFailed;
+    private bool _folderFailed;
+    private bool _releaseFailed;
+    private bool _repositoryFailed;
 
-    public AboutViewModel(Localizer l, IServiceGateway gateway, IUpdateChecker updates, IShellLauncher launcher, AppPaths app, ServicePaths service, IUiDispatcher ui, string version)
+    public AboutViewModel(Localizer l, IServiceGateway gateway, IUpdateChecker updates, IAppSettingsService settings, IShellLauncher launcher, AppPaths app, ServicePaths service, IUiDispatcher ui, string version)
         : base(l)
     {
         _gateway = gateway;
         _updates = updates;
+        _settings = settings;
         _launcher = launcher;
         _app = app;
         _ui = ui;
@@ -59,6 +63,8 @@ public sealed partial class AboutViewModel : ViewModelBase, IDisposable
         L.PropertyChanged += OnLocalizerChanged;
         gateway.ConnectionChanged += OnConnectionChanged;
         updates.UpdateFound += OnUpdateFound;
+        updates.Checked += OnChecked;
+        settings.Changed += OnSettingsChanged;
     }
 
     public string VersionText { get; }
@@ -97,8 +103,11 @@ public sealed partial class AboutViewModel : ViewModelBase, IDisposable
         Status.NoReleases => L.AboutNoReleases,
         Status.Failed => L.AboutCheckFailed,
         Status.Available => L.AboutUpdateAvailable(AvailableVersionText),
-        _ => string.Empty,
+        _ => L.AboutNotChecked,
     };
+
+    /// <summary>Says the automatic check is off (the app setting); null while it is on.</summary>
+    public string? AutomaticChecksNote => _settings.Current.CheckForUpdates ? null : L.AboutAutomaticChecksOff;
 
     /// <summary>The release page of an available update, or null.</summary>
     [ObservableProperty]
@@ -118,8 +127,14 @@ public sealed partial class AboutViewModel : ViewModelBase, IDisposable
 
     public string AppLogsName => L.AboutOpenFolderName(L.AboutAppLogsLabel);
 
-    /// <summary>Why the last open failed, or null. Kept until an open works; never cleared before the next attempt.</summary>
-    public string? ErrorText => _folderMissing ? L.AboutFolderMissing : _openFailed ? L.AboutCouldNotOpen : null;
+    /// <summary>Why the last folder open failed, or null. Kept until a folder opens; never cleared before the next attempt.</summary>
+    public string? FolderErrorText => _folderMissing ? L.AboutFolderMissing : _folderFailed ? L.AboutCouldNotOpen : null;
+
+    /// <summary>Shown beside the release button when the release page could not be opened; cleared only when it opens.</summary>
+    public string? ReleaseErrorText => _releaseFailed ? L.AboutCouldNotOpenPage : null;
+
+    /// <summary>Shown beside the repository button when the page could not be opened; cleared only when it opens.</summary>
+    public string? RepositoryErrorText => _repositoryFailed ? L.AboutCouldNotOpenPage : null;
 
     private string AvailableVersionText => _availableVersion?.ToString() ?? string.Empty;
 
@@ -132,6 +147,8 @@ public sealed partial class AboutViewModel : ViewModelBase, IDisposable
 
         _disposed = true;
         _updates.UpdateFound -= OnUpdateFound;
+        _updates.Checked -= OnChecked;
+        _settings.Changed -= OnSettingsChanged;
         _gateway.ConnectionChanged -= OnConnectionChanged;
         L.PropertyChanged -= OnLocalizerChanged;
         _cts.Cancel();
@@ -162,12 +179,17 @@ public sealed partial class AboutViewModel : ViewModelBase, IDisposable
     {
         if (AvailableReleaseUrl is { } url)
         {
-            TryLaunch(() => _launcher.OpenUrl(url));
+            var opened = TryLaunch(() => _launcher.OpenUrl(url));
+            SetLinkState(ref _releaseFailed, !opened, nameof(ReleaseErrorText));
         }
     }
 
     [RelayCommand]
-    private void OpenRepository() => TryLaunch(() => _launcher.OpenUrl(new Uri(Repository)));
+    private void OpenRepository()
+    {
+        var opened = TryLaunch(() => _launcher.OpenUrl(new Uri(Repository)));
+        SetLinkState(ref _repositoryFailed, !opened, nameof(RepositoryErrorText));
+    }
 
     [RelayCommand]
     private void OpenFolder(string? path)
@@ -184,37 +206,47 @@ public sealed partial class AboutViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        TryLaunch(() => _launcher.OpenFolder(path));
+        var opened = TryLaunch(() => _launcher.OpenFolder(path));
+        SetFolderState(missing: false, failed: !opened);
     }
 
     private bool CanOpenRelease() => AvailableReleaseUrl is not null;
 
-    private void TryLaunch(Action launch)
+    // No handler or a shell failure is told briefly by the caller, never thrown into the UI.
+    private static bool TryLaunch(Action launch)
     {
         try
         {
             launch();
+            return true;
         }
         catch (Exception)
         {
-            // No handler or a shell failure: say so briefly, never crash the UI.
-            SetFolderState(missing: false, failed: true);
+            return false;
+        }
+    }
+
+    private void SetLinkState(ref bool field, bool failed, string property)
+    {
+        if (field == failed)
+        {
             return;
         }
 
-        SetFolderState(missing: false, failed: false);
+        field = failed;
+        OnPropertyChanged(property);
     }
 
     private void SetFolderState(bool missing, bool failed)
     {
-        if (_folderMissing == missing && _openFailed == failed)
+        if (_folderMissing == missing && _folderFailed == failed)
         {
             return;
         }
 
         _folderMissing = missing;
-        _openFailed = failed;
-        OnPropertyChanged(nameof(ErrorText));
+        _folderFailed = failed;
+        OnPropertyChanged(nameof(FolderErrorText));
     }
 
     private void Apply(UpdateCheckResult result)
@@ -246,6 +278,11 @@ public sealed partial class AboutViewModel : ViewModelBase, IDisposable
 
     // The checker's timer runs on a pool thread, so its result reaches view-model state only through the dispatcher.
     private void OnUpdateFound(object? sender, UpdateCheckResult result) => _ui.Post(() => Apply(result));
+
+    // The background check finishes on a pool thread, so its result also reaches this page only through the dispatcher.
+    private void OnChecked(object? sender, UpdateCheckResult result) => _ui.Post(() => Apply(result));
+
+    private void OnSettingsChanged(object? sender, AppSettings settings) => _ui.Post(() => OnPropertyChanged(nameof(AutomaticChecksNote)));
 
     private void OnConnectionChanged(object? sender, GatewayStatus status)
     {

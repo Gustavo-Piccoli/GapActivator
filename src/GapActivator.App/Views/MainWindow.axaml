@@ -35,7 +35,7 @@
         <!-- A newer release exists: a button that opens About (after the rail in the tab order). Glyph and words, never color alone. -->
         <Button Grid.Row="2" x:Name="UpdateNoticeButton" Classes="notice" Margin="8,8,8,0"
                 IsVisible="{Binding HasUpdateNotice}" Command="{Binding OpenUpdateNoticeCommand}"
-                AutomationProperties.Name="{Binding UpdateNotice}">
+                AutomationProperties.Name="{Binding UpdateNoticeName}">
           <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
             <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE896;" Foreground="{DynamicResource GaAccentTextBrush}" />
             <TextBlock Grid.Column="1" Classes="caption" Text="{Binding UpdateNotice}" TextWrapping="Wrap" VerticalAlignment="Center"

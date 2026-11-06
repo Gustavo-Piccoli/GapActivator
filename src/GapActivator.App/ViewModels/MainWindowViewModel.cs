@@ -53,6 +53,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(PageTitle));
             OnPropertyChanged(nameof(FooterText));
             OnPropertyChanged(nameof(UpdateNotice));
+            OnPropertyChanged(nameof(UpdateNoticeName));
         };
 
         // The checker's timer runs on a pool thread, so the notice is written on the UI thread.
@@ -80,6 +81,9 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     /// <summary>The rail-footer notice that a newer release exists, or null. Clicking it opens About.</summary>
     public string? UpdateNotice => _availableUpdate is { } version ? L.UpdateAvailableNotice(version.ToString()) : null;
+
+    /// <summary>What a screen reader says for the notice: it also says that the button opens About.</summary>
+    public string? UpdateNoticeName => _availableUpdate is { } version ? L.UpdateAvailableNoticeName(version.ToString()) : null;
 
     public bool HasUpdateNotice => _availableUpdate is not null;
 
@@ -152,6 +156,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
         _availableUpdate = result.LatestVersion;
         OnPropertyChanged(nameof(UpdateNotice));
+        OnPropertyChanged(nameof(UpdateNoticeName));
         OnPropertyChanged(nameof(HasUpdateNotice));
     }
 

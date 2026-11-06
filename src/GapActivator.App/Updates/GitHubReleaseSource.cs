@@ -8,6 +8,8 @@ public sealed class GitHubReleaseSource(HttpClient http, string productVersion) 
 {
     private static readonly Uri LatestUrl = new("https://api.github.com/repos/Gustavo-Piccoli/GapActivator/releases/latest");
 
+    private const string ReleasesPath = "/Gustavo-Piccoli/GapActivator/releases/";
+
     public async Task<ReleaseInfo?> GetLatestAsync(CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, LatestUrl);
@@ -32,11 +34,18 @@ public sealed class GitHubReleaseSource(HttpClient http, string productVersion) 
                 throw new InvalidDataException("Release payload is missing tag_name or html_url.");
             }
 
+            // A prerelease or a draft is never offered as an update: to the user it is as if nothing was published.
+            if (dto.Prerelease || dto.Draft)
+            {
+                return null;
+            }
+
             if (!Uri.TryCreate(dto.HtmlUrl, UriKind.Absolute, out var page)
                 || page.Scheme != Uri.UriSchemeHttps
-                || !string.Equals(page.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+                || !string.Equals(page.Host, "github.com", StringComparison.OrdinalIgnoreCase)
+                || !page.AbsolutePath.StartsWith(ReleasesPath, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidDataException("Release html_url is not an https://github.com URL.");
+                throw new InvalidDataException("Release html_url is not a release page of the GapActivator repository on github.com.");
             }
 
             return new ReleaseInfo(dto.TagName, page);

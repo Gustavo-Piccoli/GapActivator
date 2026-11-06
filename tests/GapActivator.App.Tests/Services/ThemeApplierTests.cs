@@ -90,6 +90,37 @@ public class ThemeApplierTests(HeadlessFixture fixture)
     }
 
     [Fact]
+    public async Task ThemeApplier_PostsDeliveredOutOfOrder_LeaveTheNewestSettingsApplied()
+    {
+        using var dir = new TempDirectory();
+        var service = NewService(dir, AppSettings.Defaults(English) with { Theme = AppTheme.System });
+        var localizer = new Localizer(AppLanguage.English);
+        var queue = new QueueingDispatcher();
+        var applier = new ThemeApplier(localizer, service, queue, new RecordingCultureApplier());
+        await fixture.Session.Dispatch(
+            () =>
+            {
+                applier.Start();
+                return 0;
+            },
+            TestContext.Current.CancellationToken);
+
+        service.Update(s => s with { Theme = AppTheme.Light, Language = AppLanguage.English });
+        service.Update(s => s with { Theme = AppTheme.Dark, Language = AppLanguage.Portuguese });
+
+        var variant = await fixture.Session.Dispatch(
+            () =>
+            {
+                queue.RunNewestFirst();
+                return Avalonia.Application.Current.ShouldNotBeNull().RequestedThemeVariant;
+            },
+            TestContext.Current.CancellationToken);
+
+        variant.ShouldBe(ThemeVariant.Dark);
+        localizer.Language.ShouldBe(AppLanguage.Portuguese);
+    }
+
+    [Fact]
     public async Task LanguageChange_AppliesTheUiCulture()
     {
         using var dir = new TempDirectory();
@@ -126,6 +157,19 @@ public class ThemeApplierTests(HeadlessFixture fixture)
             lock (_pending)
             {
                 _pending.Enqueue(action);
+            }
+        }
+
+        public void RunNewestFirst()
+        {
+            lock (_pending)
+            {
+                foreach (var action in _pending.Reverse().ToList())
+                {
+                    action();
+                }
+
+                _pending.Clear();
             }
         }
 

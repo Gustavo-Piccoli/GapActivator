@@ -26,7 +26,7 @@ internal sealed class DashboardHarness
         History = new HistoryViewModel(L, Gateway, Live, Seen, Navigator, Times, zone ?? TimeZoneInfo.Utc, NewDetail);
         Service = new ServiceActions(L, Gateway, Dialogs);
         Settings = new SettingsViewModel(L, Gateway, Permissions, AppSettings, Service);
-        About = new AboutViewModel(L, Gateway, Updates, Launcher, new AppPaths("app"), new ServicePaths("service"), new ImmediateUiDispatcher(), "0.1.0");
+        About = new AboutViewModel(L, Gateway, Updates, AppSettings, Launcher, new AppPaths("app"), new ServicePaths("service"), new ImmediateUiDispatcher(), "0.1.0");
     }
 
     private ProcessEditorViewModel NewEditor() =>

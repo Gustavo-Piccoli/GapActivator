@@ -18,9 +18,10 @@ public class AboutViewModelTests : IAsyncDisposable
     private readonly FakeUpdateChecker _updates = new();
     private readonly FakeShellLauncher _launcher = new();
     private readonly TempDirectory _dir = new();
+    private readonly FakeAppSettings _settings = new();
 
     private AboutViewModel Create(string version = "0.1.0") =>
-        new(_l, _gateway, _updates, _launcher, new AppPaths(Path.Combine(_dir.Path, "app")), new ServicePaths(Path.Combine(_dir.Path, "service")), new ImmediateUiDispatcher(), version);
+        new(_l, _gateway, _updates, _settings, _launcher, new AppPaths(Path.Combine(_dir.Path, "app")), new ServicePaths(Path.Combine(_dir.Path, "service")), new ImmediateUiDispatcher(), version);
 
     private static string Make(string path)
     {
@@ -68,7 +69,7 @@ public class AboutViewModelTests : IAsyncDisposable
     {
         var tcs = new TaskCompletionSource<UpdateCheckResult>();
         var slow = new SlowChecker(tcs.Task);
-        var vm = new AboutViewModel(_l, _gateway, slow, _launcher, new AppPaths("a"), new ServicePaths("s"), new ImmediateUiDispatcher(), "0.1.0");
+        var vm = new AboutViewModel(_l, _gateway, slow, _settings, _launcher, new AppPaths("a"), new ServicePaths("s"), new ImmediateUiDispatcher(), "0.1.0");
 
         var running = vm.CheckNowCommand.ExecuteAsync(null);
         var during = vm.UpdateStatus;
@@ -190,7 +191,7 @@ public class AboutViewModelTests : IAsyncDisposable
         vm.OpenFolderCommand.Execute(logs);
 
         _launcher.Folders.ShouldBe([logs]);
-        vm.ErrorText.ShouldBeNull();
+        vm.FolderErrorText.ShouldBeNull();
     }
 
     [Fact]
@@ -201,10 +202,10 @@ public class AboutViewModelTests : IAsyncDisposable
         vm.OpenFolderCommand.Execute(vm.ServiceLogs);
 
         _launcher.Folders.ShouldBeEmpty();
-        vm.ErrorText.ShouldBe("The folder does not exist yet.");
+        vm.FolderErrorText.ShouldBe("The folder does not exist yet.");
 
         _l.SetLanguage(AppLanguage.Portuguese);
-        vm.ErrorText.ShouldBe("A pasta ainda não existe.");
+        vm.FolderErrorText.ShouldBe("A pasta ainda não existe.");
     }
 
     [Fact]
@@ -213,11 +214,11 @@ public class AboutViewModelTests : IAsyncDisposable
         var vm = Create();
         vm.OpenFolderCommand.Execute(vm.ServiceLogs);
         vm.OpenFolderCommand.Execute(vm.ServiceDataRoot);
-        vm.ErrorText.ShouldNotBeNull();
+        vm.FolderErrorText.ShouldNotBeNull();
 
         vm.OpenFolderCommand.Execute(Make(vm.AppLogs));
 
-        vm.ErrorText.ShouldBeNull();
+        vm.FolderErrorText.ShouldBeNull();
     }
 
     [Fact]
@@ -228,7 +229,7 @@ public class AboutViewModelTests : IAsyncDisposable
 
         vm.OpenFolderCommand.Execute(Make(vm.AppLogs));
 
-        vm.ErrorText.ShouldBe("Could not open it.");
+        vm.FolderErrorText.ShouldBe("Could not open it.");
     }
 
     [Fact]
@@ -265,7 +266,90 @@ public class AboutViewModelTests : IAsyncDisposable
 
         _updates.RaiseUpdateFound(new UpdateCheckResult(UpdateCheckOutcome.UpdateAvailable, new Version(0, 2, 0), Page));
 
-        vm.UpdateStatus.ShouldBeEmpty();
+        vm.UpdateStatus.ShouldBe("Not checked yet.");
+    }
+
+    [Fact]
+    public void About_BackgroundCheck_UpdatesTheStatus()
+    {
+        var vm = Create();
+
+        _updates.RaiseChecked(new UpdateCheckResult(UpdateCheckOutcome.UpToDate, new Version(0, 1, 0), null));
+
+        vm.UpdateStatus.ShouldBe("You have the latest version.");
+    }
+
+    [Fact]
+    public void About_BeforeAnyCheck_SaysNotCheckedYetAndFollowsTheLanguage()
+    {
+        var vm = Create();
+
+        vm.UpdateStatus.ShouldBe("Not checked yet.");
+        _l.SetLanguage(AppLanguage.Portuguese);
+        vm.UpdateStatus.ShouldBe("Ainda não verificado.");
+    }
+
+    [Fact]
+    public void About_AutomaticChecksOff_SaysSoAndFollowsTheSettingAndTheLanguage()
+    {
+        var vm = Create();
+        vm.AutomaticChecksNote.ShouldBeNull();
+
+        _settings.Update(s => s with { CheckForUpdates = false });
+
+        vm.AutomaticChecksNote.ShouldBe("Automatic checks are off.");
+        _l.SetLanguage(AppLanguage.Portuguese);
+        vm.AutomaticChecksNote.ShouldBe("As verificações automáticas estão desligadas.");
+
+        _settings.Update(s => s with { CheckForUpdates = true });
+        vm.AutomaticChecksNote.ShouldBeNull();
+    }
+
+    [Fact]
+    public void About_OpenRepository_Failure_ShowsTheErrorOnTheRepositoryOnlyUntilItWorks()
+    {
+        var vm = Create();
+        _launcher.Failure = new InvalidOperationException("no browser");
+
+        vm.OpenRepositoryCommand.Execute(null);
+
+        vm.RepositoryErrorText.ShouldBe("Could not open the page.");
+        vm.ReleaseErrorText.ShouldBeNull();
+        vm.FolderErrorText.ShouldBeNull();
+        _l.SetLanguage(AppLanguage.Portuguese);
+        vm.RepositoryErrorText.ShouldBe("Não foi possível abrir a página.");
+
+        vm.OpenRepositoryCommand.Execute(null);
+        vm.RepositoryErrorText.ShouldNotBeNull();
+
+        _launcher.Failure = null;
+        vm.OpenRepositoryCommand.Execute(null);
+        vm.RepositoryErrorText.ShouldBeNull();
+    }
+
+    [Fact]
+    public void About_OpenRelease_Failure_ShowsTheErrorOnTheReleaseOnly()
+    {
+        _updates.Last = new UpdateCheckResult(UpdateCheckOutcome.UpdateAvailable, new Version(0, 2, 0), Page);
+        var vm = Create();
+        _launcher.Failure = new InvalidOperationException("no browser");
+
+        vm.OpenReleaseCommand.Execute(null);
+
+        vm.ReleaseErrorText.ShouldBe("Could not open the page.");
+        vm.RepositoryErrorText.ShouldBeNull();
+        vm.FolderErrorText.ShouldBeNull();
+    }
+
+    [Fact]
+    public void About_FolderErrorSurvivesALinkThatOpens()
+    {
+        var vm = Create();
+        vm.OpenFolderCommand.Execute(vm.ServiceLogs);
+
+        vm.OpenRepositoryCommand.Execute(null);
+
+        vm.FolderErrorText.ShouldBe("The folder does not exist yet.");
     }
 
     private sealed class SlowChecker(Task<UpdateCheckResult> pending) : IUpdateChecker
@@ -273,6 +357,12 @@ public class AboutViewModelTests : IAsyncDisposable
         public UpdateCheckResult? Last => null;
 
         public event EventHandler<UpdateCheckResult>? UpdateFound
+        {
+            add { }
+            remove { }
+        }
+
+        public event EventHandler<UpdateCheckResult>? Checked
         {
             add { }
             remove { }

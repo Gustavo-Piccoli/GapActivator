@@ -209,6 +209,7 @@ public static class AppComposition
             sp.GetRequiredService<Localizer>(),
             sp.GetRequiredService<IServiceGateway>(),
             sp.GetRequiredService<IUpdateChecker>(),
+            sp.GetRequiredService<IAppSettingsService>(),
             sp.GetRequiredService<IShellLauncher>(),
             sp.GetRequiredService<AppPaths>(),
             sp.GetRequiredService<ServicePaths>(),

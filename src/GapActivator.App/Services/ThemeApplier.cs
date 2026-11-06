@@ -19,7 +19,8 @@ public sealed class ThemeApplier(Localizer localizer, IAppSettingsService settin
         _started = true;
         Apply(settings.Current);
         // Changed can be raised from any thread; Avalonia and the localizer's bindings need the UI thread.
-        settings.Changed += (_, current) => ui.Post(() => Apply(current));
+        // Apply what is current when the post runs, not the snapshot of the event: posts from two threads can arrive in either order.
+        settings.Changed += (_, _) => ui.Post(() => Apply(settings.Current));
     }
 
     private void Apply(AppSettings current)

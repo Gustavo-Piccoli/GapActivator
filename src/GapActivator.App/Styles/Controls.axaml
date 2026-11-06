@@ -19,6 +19,10 @@
     <Setter Property="FontSize" Value="12" />
     <Setter Property="Foreground" Value="{DynamicResource GaTextMutedBrush}" />
   </Style>
+  <Style Selector="SelectableTextBlock.caption">
+    <Setter Property="FontSize" Value="12" />
+    <Setter Property="Foreground" Value="{DynamicResource GaTextMutedBrush}" />
+  </Style>
   <Style Selector="TextBlock.error">
     <Setter Property="Foreground" Value="{DynamicResource GaCriticalTextBrush}" />
   </Style>
