@@ -230,11 +230,11 @@ public class ProcessesViewModelTests
         Vm.ProgressText.ShouldBeNull();
 
         _h.Dialogs.Enqueue(DialogChoice.Primary);
-        _h.Gateway.FailNext("CancelRunAsync", new GapActivatorRequestException(IpcErrorCodes.RunNotActive, "x", retryable: false));
+        _h.Gateway.FailNext("CancelRunAsync", new GapActivatorRequestException(IpcErrorCodes.Internal, "x", retryable: false));
         await Vm.Items.Single().DeleteCommand.ExecuteAsync(null);
 
         Vm.ProgressText.ShouldBeNull();
-        Vm.ErrorText.ShouldBe("There is no active run to cancel.");
+        Vm.ErrorText.ShouldBe(ServiceErrors.Describe(IpcErrorCodes.Internal, "x", _h.L));
     }
 
     [Fact]
