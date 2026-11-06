@@ -99,6 +99,8 @@ english.StepEventSource=registering the event source
 brazilianportuguese.StepEventSource=registrar a origem de eventos
 english.StepOperators=creating the GapActivator Operators group
 brazilianportuguese.StepOperators=criar o grupo GapActivator Operators
+english.StepRemoveOperators=removing the GapActivator Operators group
+brazilianportuguese.StepRemoveOperators=remover o grupo GapActivator Operators
 english.StepStartService=starting the service
 brazilianportuguese.StepStartService=iniciar o serviço
 english.StepUnregisterEventSource=removing the event source
@@ -145,7 +147,6 @@ const
   ServiceName = 'GapActivator';
   VirtualAccount = 'NT SERVICE\GapActivator';
   ServiceRegKey = 'SYSTEM\CurrentControlSet\Services\GapActivator';
-  OperatorsGroup = 'GapActivator Operators';
   // The service may wait for running processes to stop: 1320 polls of 500 ms are 11 minutes.
   StopPollCount = 1320;
   StopPollMs = 500;
@@ -185,8 +186,36 @@ function ChangeServiceConfigW(hService: Cardinal; dwServiceType, dwStartType, dw
   lpServiceStartName, lpPassword: String; lpDisplayNameNull: Cardinal): Longint;
 external 'ChangeServiceConfigW@advapi32.dll stdcall';
 
+// The same function, changing only the binary path (every other argument is NO_CHANGE or NULL).
+function ChangeServiceBinaryPathW(hService: Cardinal; dwServiceType, dwStartType, dwErrorControl: Longint;
+  lpBinaryPathName: String; lpLoadOrderGroupNull, lpdwTagIdNull, lpDependenciesNull, lpServiceStartNameNull,
+  lpPasswordNull, lpDisplayNameNull: Cardinal): Longint;
+external 'ChangeServiceConfigW@advapi32.dll stdcall';
+
 function CloseServiceHandle(hSCObject: Cardinal): Longint;
 external 'CloseServiceHandle@advapi32.dll stdcall';
+
+// The user of the interactive session Setup runs in. Setup is a 32-bit process, so pointers are Cardinal.
+function GetCurrentProcessId: Cardinal;
+external 'GetCurrentProcessId@kernel32.dll stdcall';
+
+function ProcessIdToSessionId(dwProcessId: Cardinal; var pSessionId: Cardinal): Longint;
+external 'ProcessIdToSessionId@kernel32.dll stdcall';
+
+function WTSQuerySessionInformationW(hServer, SessionId, WTSInfoClass: Cardinal; var ppBuffer: Cardinal;
+  var pBytesReturned: Cardinal): Longint;
+external 'WTSQuerySessionInformationW@wtsapi32.dll stdcall';
+
+procedure WTSFreeMemory(pMemory: Cardinal);
+external 'WTSFreeMemory@wtsapi32.dll stdcall';
+
+// Copies a NUL-terminated UTF-16 string from a raw pointer into a String buffer.
+function lstrcpynW(lpString1: String; lpString2: Cardinal; iMaxLength: Longint): Cardinal;
+external 'lstrcpynW@kernel32.dll stdcall';
+
+// The DOMAIN\user name (NameSamCompatible = 2) of the account Setup itself runs as.
+function GetUserNameExW(NameFormat: Longint; lpNameBuffer: String; var nSize: Cardinal): Longint;
+external 'GetUserNameExW@secur32.dll stdcall';
 
 function LogonUserW(lpszUsername, lpszDomain, lpszPassword: String; dwLogonType, dwLogonProvider: Cardinal;
   var phToken: Cardinal): Longint;
@@ -270,64 +299,80 @@ begin
   Result := RunCaptured(ExpandConstant('{app}\Service\GapActivator.Service.exe'), Params, Output);
 end;
 
-function GroupExists: Boolean;
+// A String from a pointer returned by a Windows API call.
+function PointerToString(P: Cardinal): String;
 var
-  Output: String;
+  Buffer: String;
+  N: Integer;
 begin
-  Result := RunCaptured(SysDir('net.exe'), 'localgroup "' + OperatorsGroup + '"', Output) = 0;
+  SetLength(Buffer, 512);
+  lstrcpynW(Buffer, P, 512);
+  N := Pos(#0, Buffer);
+  if N > 0 then
+    SetLength(Buffer, N - 1);
+  Result := Buffer;
 end;
 
-// True when the output of "net localgroup" lists the user, as DOMAIN\user or, for a local user, as the bare name.
-function IsGroupMember(const User: String): Boolean;
+// One string of the interactive session Setup runs in (WTSUserName = 5, WTSDomainName = 7).
+function QuerySessionString(SessionId, InfoClass: Cardinal): String;
 var
-  Output, Rest, Line, Bare: String;
-  P: Integer;
+  Buffer, Bytes: Cardinal;
 begin
-  Result := False;
-  if RunCaptured(SysDir('net.exe'), 'localgroup "' + OperatorsGroup + '"', Output) <> 0 then
-    exit;
-  Bare := '';
-  P := Pos('\', User);
-  if (P > 0) and (CompareText(Copy(User, 1, P - 1), GetComputerNameString) = 0) then
-    Bare := Copy(User, P + 1, Length(User));
-  StringChangeEx(Output, #13, '', True);
-  Rest := Output;
-  while Rest <> '' do
+  Result := '';
+  Buffer := 0;
+  Bytes := 0;
+  // WTS_CURRENT_SERVER_HANDLE is 0.
+  if WTSQuerySessionInformationW(0, SessionId, InfoClass, Buffer, Bytes) <> 0 then
   begin
-    P := Pos(#10, Rest);
-    if P = 0 then
+    if Buffer <> 0 then
     begin
-      Line := Trim(Rest);
-      Rest := '';
-    end
-    else
-    begin
-      Line := Trim(Copy(Rest, 1, P - 1));
-      Rest := Copy(Rest, P + 1, Length(Rest));
+      Result := PointerToString(Buffer);
+      WTSFreeMemory(Buffer);
     end;
-    if (CompareText(Line, User) = 0) or ((Bare <> '') and (CompareText(Line, Bare) = 0)) then
-      Result := True;
   end;
 end;
 
-// Gets DOMAIN\user of the user who started Setup (before elevation), by running whoami as that user.
+// DOMAIN\user of the account Setup itself runs as; the fallback when no interactive session has a user (for
+// example a runner service in session 0).
+function GetProcessUserName: String;
+var
+  Buffer: String;
+  Size: Cardinal;
+begin
+  Result := '';
+  Size := 256;
+  SetLength(Buffer, 256);
+  if GetUserNameExW(2, Buffer, Size) <> 0 then
+    Result := Copy(Buffer, 1, Size);
+end;
+
+// DOMAIN\user of the user who started Setup, from the WTS session of this process. This works when Setup was
+// elevated with another administrator's credentials (the user's temp folder is not reachable then), and the
+// name arrives as Unicode, so accented names survive.
 function GetOriginalUser: String;
 var
-  OutFile: String;
-  Text: AnsiString;
-  Code: Integer;
+  SessionId: Cardinal;
+  User, Domain: String;
 begin
   if not OriginalUserLoaded then
   begin
     OriginalUserLoaded := True;
     OriginalUser := '';
-    OutFile := ExpandConstant('{tmp}\gapactivator-whoami.txt');
-    DeleteFile(OutFile);
-    if ExecAsOriginalUser(ExpandConstant('{cmd}'), '/C whoami.exe > "' + OutFile + '"', '', SW_HIDE,
-      ewWaitUntilTerminated, Code) and (Code = 0) then
-      if LoadStringFromFile(OutFile, Text) then
-        OriginalUser := Trim(String(Text));
-    DeleteFile(OutFile);
+    SessionId := 0;
+    if ProcessIdToSessionId(GetCurrentProcessId, SessionId) <> 0 then
+    begin
+      User := QuerySessionString(SessionId, 5);
+      Domain := QuerySessionString(SessionId, 7);
+      if User <> '' then
+      begin
+        if Domain <> '' then
+          OriginalUser := Domain + '\' + User
+        else
+          OriginalUser := User;
+      end;
+    end;
+    if OriginalUser = '' then
+      OriginalUser := GetProcessUserName;
     Log('Installing user: ' + OriginalUser);
   end;
   Result := OriginalUser;
@@ -464,6 +509,39 @@ begin
   end;
 end;
 
+// Sets the (quoted) binary path of the installed service through the API; sc.exe would strip the quotes.
+function SetServiceBinaryPath(const QuotedPath: String; var Err: Longint): Boolean;
+var
+  Manager, Service: Cardinal;
+begin
+  Result := False;
+  Err := 0;
+  Manager := OpenSCManagerW(0, 0, SC_MANAGER_CONNECT);
+  if Manager = 0 then
+  begin
+    Err := DLLGetLastError;
+    exit;
+  end;
+  try
+    Service := OpenServiceW(Manager, ServiceName, SERVICE_CHANGE_CONFIG);
+    if Service = 0 then
+    begin
+      Err := DLLGetLastError;
+      exit;
+    end;
+    try
+      if ChangeServiceBinaryPathW(Service, -1, -1, -1, QuotedPath, 0, 0, 0, 0, 0, 0) = 0 then
+        Err := DLLGetLastError
+      else
+        Result := True;
+    finally
+      CloseServiceHandle(Service);
+    end;
+  finally
+    CloseServiceHandle(Manager);
+  end;
+end;
+
 function StepMessage(const StepKey: String; Code: Integer; const Output: String): String;
 begin
   Result := FmtMessage(CustomMessage('StepFailed'), [CustomMessage(StepKey), IntToStr(Code), Output]);
@@ -483,11 +561,9 @@ begin
   // the way to keep the password out of both; /PASSWORD wins when both are given.
   SpecificPassword := ExpandConstant('{param:PASSWORD|}');
   if SpecificPassword = '' then
-  begin
     SpecificPassword := GetEnv('GAPACTIVATOR_SETUP_PASSWORD');
-    // Do not hand the password to the child processes Setup starts.
-    SetEnvironmentVariableW('GAPACTIVATOR_SETUP_PASSWORD', 0);
-  end;
+  // Do not hand the password to the child processes Setup starts, whichever way it was given.
+  SetEnvironmentVariableW('GAPACTIVATOR_SETUP_PASSWORD', 0);
   CommandLineHasAccount := SpecificAccount <> '';
   Result := CommandLineHasAccount;
 end;
@@ -511,6 +587,8 @@ end;
 
 function InitializeSetup: Boolean;
 begin
+  // Read the command line first: this also clears the password variable before any child process starts.
+  ReadCommandLineAccount;
   IsUpgrade := RegKeyExists(HKLM64, ServiceRegKey);
   Result := True;
 end;
@@ -593,6 +671,10 @@ var
   Err: Longint;
 begin
   Result := True;
+  // A silent Setup simulates Next on every page. A message box here would block an unattended run
+  // (/SUPPRESSMSGBOXES does not suppress MsgBox), so PrepareToInstall validates a silent run instead.
+  if WizardSilent then
+    exit;
   if (AccountPage <> nil) and (CurPageID = AccountPage.ID) and SpecificRadio.Checked then
   begin
     SpecificAccount := Trim(NameEdit.Text);
@@ -668,11 +750,12 @@ begin
     end;
   end;
 
-  // 1. Create the service (new install), or point an existing one at this installation (upgrade).
+  // 1. Create the service (new install), or re-apply the start type of an existing one (upgrade). sc.exe strips
+  // the quotes from binPath= before it stores the path, and an unquoted path with a space can be hijacked, so
+  // the quoted path is always set through the API afterwards (on upgrades too, which repairs older installs).
   if IsUpgrade then
   begin
-    Code := Sc('config ' + ServiceName + ' binPath= "' + ExpandConstant('{app}\Service\GapActivator.Service.exe')
-      + '" start= delayed-auto', Output);
+    Code := Sc('config ' + ServiceName + ' start= delayed-auto', Output);
     if Code <> 0 then
     begin
       PostError := StepMessage('StepUpdateService', Code, Output);
@@ -688,6 +771,14 @@ begin
       PostError := StepMessage('StepCreateService', Code, Output);
       exit;
     end;
+  end;
+  if not SetServiceBinaryPath('"' + ExpandConstant('{app}\Service\GapActivator.Service.exe') + '"', Err) then
+  begin
+    PostError := StepMessage('StepUpdateService', Err, SysErrorMessage(Err));
+    exit;
+  end;
+  if not IsUpgrade then
+  begin
     if UseSpecific then
     begin
       Log('Setting the service account to ' + SpecificAccount + ' with ChangeServiceConfigW.');
@@ -738,19 +829,12 @@ begin
     exit;
   end;
 
-  // 6. The Operators group, in virtual-account mode on a new install. "net" returns 2 for every error, so a
-  // failure is accepted only when the group exists (or the user is already a member).
+  // 6. The Operators group, in virtual-account mode on a new install. The verb creates the group when it is
+  // missing and adds the user; an existing group or membership is success.
   if (not IsUpgrade) and (not UseSpecific) then
   begin
-    Code := RunCaptured(SysDir('net.exe'), 'localgroup "' + OperatorsGroup
-      + '" /add /comment:"Members can change GapActivator processes and settings."', Output);
-    if (Code <> 0) and not GroupExists then
-    begin
-      PostError := StepMessage('StepOperators', Code, Output);
-      exit;
-    end;
-    Code := RunCaptured(SysDir('net.exe'), 'localgroup "' + OperatorsGroup + '" "' + User + '" /add', Output);
-    if (Code <> 0) and not IsGroupMember(User) then
+    Code := ServiceTool('setup add-operator --account "' + User + '"', Output);
+    if Code <> 0 then
     begin
       PostError := StepMessage('StepOperators', Code, Output);
       exit;
@@ -823,9 +907,14 @@ begin
         MsgBox(StepMessage('StepUnregisterEventSource', Code, Output), mbError, MB_OK);
     end;
 
-    // 4. Delete the Operators group, unless it is already gone.
-    if GroupExists then
-      RunCaptured(SysDir('net.exe'), 'localgroup "' + OperatorsGroup + '" /delete', Output);
+    // 4. Delete the Operators group (a missing group is success).
+    Code := ServiceTool('setup remove-operators-group', Output);
+    if Code <> 0 then
+    begin
+      Log('remove-operators-group failed: ' + IntToStr(Code));
+      if not UninstallSilent then
+        MsgBox(StepMessage('StepRemoveOperators', Code, Output), mbError, MB_OK);
+    end;
 
     // 5. The shortcuts are removed by the uninstaller itself. The Log on as a service right is never removed.
   end

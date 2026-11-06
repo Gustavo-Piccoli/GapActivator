@@ -61,7 +61,10 @@ function Get-ServiceStatus {
 }
 
 function Test-PipeExists {
-    [IO.Directory]::GetFiles('\\.\pipe\') -contains "\\.\pipe\$serviceName"
+    # Listing the pipe directory can throw on Windows PowerShell 5.1 (odd pipe names); fall back to a direct probe.
+    $pipe = "\\.\pipe\$serviceName"
+    try { if ([IO.Directory]::GetFiles('\\.\pipe\') -contains $pipe) { return $true } } catch { }
+    try { return [IO.File]::Exists($pipe) } catch { return $false }
 }
 
 function Get-ServiceProcessId {
@@ -106,7 +109,11 @@ function Invoke-Uninstall([string]$Name, [switch]$DeleteData) {
     $log = Join-Path $logDir "$Name.log"
     $arguments = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$log`"")
     if ($DeleteData) { $arguments += '/DELETEDATA' }
-    Start-Process -FilePath $unins -ArgumentList $arguments -Wait | Out-Null
+    $process = Start-Process -FilePath $unins -ArgumentList $arguments -Wait -PassThru
+    Assert ($process.ExitCode -eq 0) "the uninstaller '$Name' exits with 0 (was $($process.ExitCode))"
+    # The first process re-launches a temp copy of itself, so wait until no uninstaller process remains.
+    $finished = Wait-Until { @(Get-Process -Name 'unins*', '_iu*' -ErrorAction SilentlyContinue).Count -eq 0 } 180
+    Assert $finished "the uninstaller '$Name' finishes (no unins*/_iu* process) within 180 s"
     Assert (Wait-Until { -not (Test-Path -LiteralPath $uninstallKey) } 180) 'the uninstall entry disappears within 180 s'
     $log
 }
@@ -157,7 +164,9 @@ function Assert-ServiceConfiguration([string]$ExpectedAccount, [string]$Expected
     Assert ($snapshot.Delayed -eq 1) "$What : registry DelayedAutostart is 1, was $($snapshot.Delayed)"
     Assert ($snapshot.ObjectName -ieq $ExpectedAccount) "$What : registry ObjectName is '$ExpectedAccount', was '$($snapshot.ObjectName)'"
     $expectedImage = Join-Path $installDir 'Service\GapActivator.Service.exe'
-    Assert (($snapshot.ImagePath.Trim('"')) -ieq $expectedImage) "$What : ImagePath is '$expectedImage', was '$($snapshot.ImagePath)'"
+    # The stored path must be quoted: an unquoted path with a space can be hijacked (CWE-428).
+    Assert ($snapshot.ImagePath -ceq ('"' + $expectedImage + '"')) "$What : ImagePath is the quoted path `"$expectedImage`", was '$($snapshot.ImagePath)'"
+    Assert ($snapshot.ImagePath.StartsWith('"') -and $snapshot.ImagePath.EndsWith('GapActivator.Service.exe"')) "$What : ImagePath starts with a quote and ends with GapActivator.Service.exe and a quote"
     Assert ($snapshot.DisplayName -ceq 'GapActivator') "$What : DisplayName is GapActivator, was '$($snapshot.DisplayName)'"
     Assert ($snapshot.Description.Length -gt 0) "$What : the service has a description"
     Assert ($snapshot.NonCrashFlag -eq 1) "$What : FailureActionsOnNonCrashFailures is 1, was $($snapshot.NonCrashFlag)"
@@ -263,7 +272,9 @@ try {
     Assert (Test-Path -LiteralPath $eventSourceKey) 'phase 1 : the event source exists'
     Assert (Test-GroupExists) "phase 1 : the group '$groupName' exists"
     $members = @(Get-LocalGroupMember -Group $groupName | ForEach-Object { [string]$_.Name })
-    Assert (@($members | Where-Object { $_ -ieq $currentUser }).Count -eq 1) "phase 1 : the group has the installing user '$currentUser' (members: $($members -join ', '))"
+    # The installer adds the user of the interactive session, or the process user when no session has one.
+    $sessionUser = [string](Get-CimInstance -ClassName Win32_ComputerSystem).UserName
+    Assert (@($members | Where-Object { $_ -ieq $currentUser -or ($sessionUser -and $_ -ieq $sessionUser) }).Count -ge 1) "phase 1 : the group has the installing user '$currentUser' (session user '$sessionUser'; members: $($members -join ', '))"
     Assert-DataRootAcl $virtualAccount 'phase 1'
 
     # ---- Phase 2: upgrade by running the same installer again.
