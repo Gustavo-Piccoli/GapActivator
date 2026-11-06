@@ -85,6 +85,18 @@ function Show-Logs {
     }
 }
 
+# Rewrites every log file with the test password masked, so a failed run can upload its logs (the CI step does)
+# without publishing the throwaway password, even when the leak assertion itself is what failed.
+function Hide-Secret {
+    if (-not $secretToMask) { return }
+    foreach ($file in Get-ChildItem -LiteralPath $logDir -File) {
+        $text = [IO.File]::ReadAllText($file.FullName)
+        if ($text.Contains($secretToMask)) {
+            [IO.File]::WriteAllText($file.FullName, $text.Replace($secretToMask, '***'), (New-Object Text.UTF8Encoding($false)))
+        }
+    }
+}
+
 # Runs the installer silently and returns its exit code. The password, when given, travels in an environment
 # variable: Setup's own log records its command line, so /PASSWORD= would put it in the log.
 function Invoke-Install([string]$Name, [string[]]$ExtraArguments = @(), [string]$Password = $null, [int[]]$ExpectedExit = @(0)) {
@@ -352,6 +364,7 @@ try {
 catch {
     Write-Host "Installer test FAILED: $($_.Exception.Message)"
     Show-Logs
+    Hide-Secret
     throw
 }
 finally {
