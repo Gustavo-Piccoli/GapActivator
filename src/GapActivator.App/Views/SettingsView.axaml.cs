@@ -9,12 +9,12 @@ public sealed partial class SettingsView : UserControl
     {
         InitializeComponent();
 
-        // Coming to the page reads the service values again, so it never shows what an earlier visit left behind.
+        // Coming to the page reads the service values again, unless the user has unsaved edits: those stay until Save.
         AttachedToVisualTree += (_, _) =>
         {
-            if (DataContext is SettingsViewModel { LoadCommand: var load } && load.CanExecute(null))
+            if (DataContext is SettingsViewModel viewModel)
             {
-                load.Execute(null);
+                _ = viewModel.OnPageShownAsync();
             }
         };
     }

@@ -45,7 +45,7 @@ public sealed partial class Localizer
 
     public string AuthorizationLabel => T("Who can change settings", "Quem pode alterar as configurações");
 
-    public string CycleIntervalLabel => T("Check interval (seconds)", "Intervalo de verificação (segundos)");
+    public string CycleIntervalLabel => T("Cycle interval (seconds)", "Intervalo do ciclo (segundos)");
 
     public string FailureLimitLabel => T("Consecutive failures before blocking", "Falhas consecutivas antes de bloquear");
 
@@ -81,9 +81,20 @@ public sealed partial class Localizer
 
     public string RecipientsLabel => T("Recipients (one per line)", "Destinatários (um por linha)");
 
-    public string AlertsLabel => T("Send an e-mail when", "Enviar e-mail quando");
+    public string AlertsLabel => T("Send an e-mail when:", "Enviar um e-mail quando:");
 
     public string SendTestEmail => T("Send test e-mail", "Enviar e-mail de teste");
+
+    public string SectionService => T("Service", "Serviço");
+
+    public string RestartServiceNote => T(
+        "Restarting stops active runs; they are retried by their schedules.",
+        "Reiniciar interrompe as execuções ativas; elas são retomadas pelos agendamentos.");
+
+    public string RestartRequested => T("Restart requested.", "Reinício solicitado.");
+
+    public string SettingsNotWholeNumber(string field) =>
+        string.Format(Culture, T("{0} must be a whole number.", "{0} deve ser um número inteiro."), field);
 
     public string RestartServiceAction => T("Restart service", "Reiniciar serviço");
 
@@ -91,7 +102,7 @@ public sealed partial class Localizer
 
     public string LanguageLabel => T("Language", "Idioma");
 
-    public string CheckForUpdatesLabel => T("Check for updates", "Verificar atualizações");
+    public string CheckForUpdates => T("Check for updates", "Verificar atualizações");
 
     public string AppSettingsNote => T("These options apply to this app only and take effect at once.", "Estas opções valem só para este aplicativo e têm efeito imediato.");
 
@@ -120,9 +131,9 @@ public sealed partial class Localizer
         AlertKind.ProcessBlocked => T("A process is blocked", "Um processo é bloqueado"),
         AlertKind.RunFailed => T("A run fails", "Uma execução falha"),
         AlertKind.RunTimedOut => T("A run exceeds its time limit", "Uma execução excede o limite de tempo"),
-        AlertKind.ServiceProcessCrashed => T("A service process ends unexpectedly", "Um processo de serviço encerra inesperadamente"),
+        AlertKind.ServiceProcessCrashed => T("A service-kind process stops unexpectedly", "Um processo do tipo serviço é encerrado inesperadamente"),
         AlertKind.CycleFailed => T("A cycle fails", "Um ciclo falha"),
-        AlertKind.ServiceRestarted => T("The service restarts", "O serviço é reiniciado"),
+        AlertKind.ServiceRestarted => T("GapActivator is restarted", "O GapActivator é reiniciado"),
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
     };
 }

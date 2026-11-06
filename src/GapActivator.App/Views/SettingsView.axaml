@@ -24,6 +24,8 @@
           <TextBlock Grid.Column="1" Text="{Binding L.SettingsLoading}" TextWrapping="Wrap" VerticalAlignment="Center"
                      AutomationProperties.LiveSetting="Polite" />
         </Grid>
+        <Button x:Name="RetryLoadButton" HorizontalAlignment="Left" Content="{Binding L.TryAgain}" Command="{Binding LoadCommand}"
+                IsVisible="{Binding LoadFailed}" />
 
         <!-- Who may change what: the operators mode, and for a viewer the reason the service fields are locked. -->
         <Border x:Name="AuthorizationCard" Classes="card" Padding="16"
@@ -154,7 +156,7 @@
                 <StackPanel Spacing="4" Width="360" Margin="0,0,16,14">
                   <TextBlock Text="{Binding L.SmtpPasswordLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
                   <TextBox x:Name="PasswordBox" Text="{Binding NewPassword}" PasswordChar="&#x2022;" IsReadOnly="{Binding ServiceFieldsReadOnly}"
-                           AutomationProperties.Name="{Binding L.SmtpPasswordLabel}" />
+                           IsEnabled="{Binding CanTypePassword}" AutomationProperties.Name="{Binding L.SmtpPasswordLabel}" />
                   <TextBlock x:Name="PasswordHint" Classes="caption" TextWrapping="Wrap"
                              Text="{Binding L.PasswordStoredHint}" IsVisible="{Binding HasStoredPassword}" />
                   <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding L.PasswordNoneHint}"
@@ -199,6 +201,17 @@
           </Border>
         </StackPanel>
 
+        <!-- The service itself. -->
+        <Border x:Name="ServiceCard" Classes="card" Padding="16">
+          <StackPanel Spacing="10">
+            <TextBlock Classes="group" Text="{Binding L.SectionService}" TextWrapping="Wrap" AutomationProperties.HeadingLevel="2" />
+            <TextBlock Classes="caption" Text="{Binding L.RestartServiceNote}" TextWrapping="Wrap" />
+            <Button x:Name="RestartServiceButton" HorizontalAlignment="Left" Content="{Binding L.RestartServiceAction}"
+                    Command="{Binding RestartServiceCommand}"
+                    ToolTip.Tip="{Binding Permissions.DeniedReason}" ToolTip.ShowOnDisabled="True" />
+          </StackPanel>
+        </Border>
+
         <!-- This app: always editable, applied at once. -->
         <Border x:Name="AppCard" Classes="card" Padding="16">
           <StackPanel Spacing="6">
@@ -231,8 +244,8 @@
             <CheckBox x:Name="NotificationsCheck" IsChecked="{Binding Notifications}" AutomationProperties.Name="{Binding L.ShowNotifications}">
               <TextBlock Text="{Binding L.ShowNotifications}" TextWrapping="Wrap" />
             </CheckBox>
-            <CheckBox x:Name="UpdatesCheck" IsChecked="{Binding CheckForUpdates}" AutomationProperties.Name="{Binding L.CheckForUpdatesLabel}">
-              <TextBlock Text="{Binding L.CheckForUpdatesLabel}" TextWrapping="Wrap" />
+            <CheckBox x:Name="UpdatesCheck" IsChecked="{Binding CheckForUpdates}" AutomationProperties.Name="{Binding L.CheckForUpdates}">
+              <TextBlock Text="{Binding L.CheckForUpdates}" TextWrapping="Wrap" />
             </CheckBox>
           </StackPanel>
         </Border>
@@ -240,7 +253,9 @@
     </ScrollViewer>
 
     <!-- Footer: always visible, after the form in the tab order. -->
-    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="16" MaxWidth="880" HorizontalAlignment="Stretch">
+    <StackPanel Grid.Row="2" Spacing="12" MaxWidth="880" HorizontalAlignment="Stretch">
+    <Border Classes="divider" />
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
       <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
         <Grid x:Name="ErrorLine" ColumnDefinitions="Auto,*" ColumnSpacing="10"
               IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}">
@@ -255,12 +270,9 @@
                      VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
         </Grid>
       </StackPanel>
-      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-        <Button x:Name="RestartServiceButton" Content="{Binding L.RestartServiceAction}" Command="{Binding RestartServiceCommand}"
-                ToolTip.Tip="{Binding Permissions.DeniedReason}" ToolTip.ShowOnDisabled="True" />
-        <Button x:Name="SaveButton" Classes="accent" Content="{Binding L.Save}" Command="{Binding SaveCommand}"
-                ToolTip.Tip="{Binding Permissions.DeniedReason}" ToolTip.ShowOnDisabled="True" />
-      </StackPanel>
+      <Button x:Name="SaveButton" Grid.Column="1" Classes="accent" Content="{Binding L.Save}" Command="{Binding SaveCommand}"
+              ToolTip.Tip="{Binding Permissions.DeniedReason}" ToolTip.ShowOnDisabled="True" />
     </Grid>
+    </StackPanel>
   </Grid>
 </UserControl>

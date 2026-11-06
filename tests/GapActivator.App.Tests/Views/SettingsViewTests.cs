@@ -49,6 +49,7 @@ public class SettingsViewTests(HeadlessFixture fixture)
     public async Task SettingsView_AfterTheRead_ShowsTheValuesAndTheSelectedOptions()
     {
         var h = new DashboardHarness();
+        h.Gateway.Settings = Dtos.SettingsView() with { CycleInterval = TimeSpan.FromSeconds(45) };
         h.AppSettings.Update(s => s with { Theme = AppTheme.Dark });
         await h.Settings.LoadCommand.ExecuteAsync(null);
 
@@ -67,7 +68,7 @@ public class SettingsViewTests(HeadlessFixture fixture)
             TestContext.Current.CancellationToken);
 
         theme.ShouldBeSameAs(h.Settings.ThemeChoice);
-        cycle.ShouldBe(30m);
+        cycle.ShouldBe(45m);
         host.ShouldBe("smtp.example.com");
         authorization.ShouldBeTrue();
     }
@@ -111,11 +112,11 @@ public class SettingsViewTests(HeadlessFixture fixture)
             nameof(GapActivator.App.Services.IServiceGateway.GetSettingsAsync),
             new GapActivator.Ipc.GapActivatorRequestException(GapActivator.Ipc.IpcErrorCodes.Disconnected, "down", retryable: true));
 
-        var (service, error) = await fixture.Session.Dispatch(
+        var (service, error, retry) = await fixture.Session.Dispatch(
             () =>
             {
                 var window = Show(h);
-                var result = (Find<StackPanel>(window, "ServiceSections").IsEffectivelyVisible, VisibleTexts(window));
+                var result = (Find<StackPanel>(window, "ServiceSections").IsEffectivelyVisible, VisibleTexts(window), Find<Button>(window, "RetryLoadButton").IsEffectivelyVisible);
                 window.Close();
                 return result;
             },
@@ -123,5 +124,6 @@ public class SettingsViewTests(HeadlessFixture fixture)
 
         service.ShouldBeFalse();
         error.ShouldContain("Not connected to the service.");
+        retry.ShouldBeTrue();
     }
 }

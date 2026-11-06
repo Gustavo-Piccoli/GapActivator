@@ -359,4 +359,206 @@ public class SettingsViewModelTests
         Vm.LogLevelOptions.Single(o => o.Value is LogLevel.Warning).Text.ShouldBe("Aviso");
         Vm.LogLevel.ShouldBe(LogLevel.Warning);
     }
+
+    [Fact]
+    public void Save_BeforeTheFirstLoad_CannotExecute()
+    {
+        Vm.HasLoaded.ShouldBeFalse();
+        Vm.SaveCommand.CanExecute(null).ShouldBeFalse();
+        Vm.SendTestEmailCommand.CanExecute(null).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Save_AfterAFailedFirstLoad_CannotExecuteAndOffersARetry()
+    {
+        _h.Gateway.Settings = Full();
+        _h.Gateway.FailNext(nameof(IServiceGateway.GetSettingsAsync), new GapActivatorRequestException(IpcErrorCodes.Busy, "busy", retryable: true));
+        await Vm.LoadCommand.ExecuteAsync(null);
+
+        Vm.HasLoaded.ShouldBeFalse();
+        Vm.LoadFailed.ShouldBeTrue();
+        Vm.SaveCommand.CanExecute(null).ShouldBeFalse();
+        Vm.SendTestEmailCommand.CanExecute(null).ShouldBeFalse();
+
+        await Vm.LoadCommand.ExecuteAsync(null);
+
+        Vm.LoadFailed.ShouldBeFalse();
+        Vm.HasLoaded.ShouldBeTrue();
+        Vm.SaveCommand.CanExecute(null).ShouldBeTrue();
+        Vm.CycleIntervalSeconds.ShouldBe(45m);
+    }
+
+    [Fact]
+    public async Task Save_WhileALoadRuns_CannotExecute()
+    {
+        await LoadAsync();
+        TaskCompletionSource hold = _h.Gateway.Hold(nameof(IServiceGateway.GetSettingsAsync));
+        Task reading = Vm.LoadCommand.ExecuteAsync(null);
+
+        Vm.IsLoading.ShouldBeTrue();
+        Vm.SaveCommand.CanExecute(null).ShouldBeFalse();
+        Vm.SendTestEmailCommand.CanExecute(null).ShouldBeFalse();
+
+        hold.SetResult();
+        await reading;
+
+        Vm.SaveCommand.CanExecute(null).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Loads_FromTheConnectionAndThePage_DoNotOverlap()
+    {
+        TaskCompletionSource hold = _h.Gateway.Hold(nameof(IServiceGateway.GetSettingsAsync));
+        Task first = Vm.LoadCommand.ExecuteAsync(null);
+
+        _h.Gateway.SetStatus(FakeServiceGateway.Operator());
+        Task second = Vm.OnPageShownAsync();
+
+        Count(nameof(IServiceGateway.GetSettingsAsync)).ShouldBe(1);
+        hold.SetResult();
+        await Task.WhenAll(first, second);
+        Count(nameof(IServiceGateway.GetSettingsAsync)).ShouldBe(1);
+        Vm.HasLoaded.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task PageShown_WithUnsavedEdits_KeepsThemAndSendsNoRead()
+    {
+        await LoadAsync();
+        Vm.SmtpHost = "edited.example.com";
+        Vm.NewPassword = "typed";
+        var reads = Count(nameof(IServiceGateway.GetSettingsAsync));
+
+        await Vm.OnPageShownAsync();
+
+        Count(nameof(IServiceGateway.GetSettingsAsync)).ShouldBe(reads);
+        Vm.SmtpHost.ShouldBe("edited.example.com");
+        Vm.NewPassword.ShouldBe("typed");
+    }
+
+    [Fact]
+    public async Task PageShown_WithATickedClearPassword_KeepsIt()
+    {
+        await LoadAsync();
+        Vm.ClearPassword = true;
+        var reads = Count(nameof(IServiceGateway.GetSettingsAsync));
+
+        await Vm.OnPageShownAsync();
+
+        Count(nameof(IServiceGateway.GetSettingsAsync)).ShouldBe(reads);
+        Vm.ClearPassword.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task PageShown_WithoutEdits_ReloadsAndClearsTheOldStatus()
+    {
+        await LoadAsync();
+        await Vm.SaveCommand.ExecuteAsync(null);
+        Vm.StatusText.ShouldBe("Settings saved.");
+        var reads = Count(nameof(IServiceGateway.GetSettingsAsync));
+
+        await Vm.OnPageShownAsync();
+
+        Count(nameof(IServiceGateway.GetSettingsAsync)).ShouldBe(reads + 1);
+        Vm.StatusText.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task PageShown_BeforeAnyLoad_Loads()
+    {
+        await Vm.OnPageShownAsync();
+
+        Vm.HasLoaded.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Save_ResetsTheEditsAsClean_SoThePageReloadsNextTime()
+    {
+        await LoadAsync();
+        Vm.SmtpHost = "edited.example.com";
+        _h.Gateway.Settings = Full() with { Email = Full().Email with { Host = "edited.example.com" } };
+        await Vm.SaveCommand.ExecuteAsync(null);
+        var reads = Count(nameof(IServiceGateway.GetSettingsAsync));
+
+        await Vm.OnPageShownAsync();
+
+        Count(nameof(IServiceGateway.GetSettingsAsync)).ShouldBe(reads + 1);
+    }
+
+    [Fact]
+    public async Task RestartService_Declined_KeepsAVisibleError()
+    {
+        await LoadAsync();
+        _h.Gateway.FailNext(nameof(IServiceGateway.SendTestEmailAsync), new GapActivatorRequestException(IpcErrorCodes.EmailTestFailed, "down", retryable: false));
+        await Vm.SendTestEmailCommand.ExecuteAsync(null);
+        var error = Vm.ErrorText.ShouldNotBeNull();
+
+        await Vm.RestartServiceCommand.ExecuteAsync(null);
+
+        Vm.ErrorText.ShouldBe(error);
+    }
+
+    [Fact]
+    public async Task RestartService_Confirmed_ShowsTheRequestedStatus()
+    {
+        _h.Dialogs.Enqueue(DialogChoice.Primary);
+
+        await Vm.RestartServiceCommand.ExecuteAsync(null);
+
+        Vm.StatusText.ShouldBe("Restart requested.");
+        _h.L.SetLanguage(AppLanguage.Portuguese);
+        Vm.StatusText.ShouldBe("Reinício solicitado.");
+    }
+
+    [Fact]
+    public async Task ClearPassword_Ticked_ClearsTheTypedPasswordAndLocksTheBox()
+    {
+        await LoadAsync();
+        Vm.NewPassword = "typed";
+        Vm.CanTypePassword.ShouldBeTrue();
+
+        Vm.ClearPassword = true;
+
+        Vm.NewPassword.ShouldBeEmpty();
+        Vm.CanTypePassword.ShouldBeFalse();
+        Vm.ClearPassword = false;
+        Vm.CanTypePassword.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Save_FractionInAWholeNumberField_SendsNothingAndSaysWhole()
+    {
+        await LoadAsync();
+        Vm.CycleIntervalSeconds = 30.5m;
+
+        await Vm.SaveCommand.ExecuteAsync(null);
+
+        Count(nameof(IServiceGateway.UpdateSettingsAsync)).ShouldBe(0);
+        Vm.ErrorText.ShouldBe(_h.L.SettingsNotWholeNumber(_h.L.CycleIntervalLabel));
+        Vm.ErrorText.ShouldBe("Cycle interval (seconds) must be a whole number.");
+    }
+
+    [Fact]
+    public async Task Save_FractionInTheTimeLimit_SendsNothingAndSaysWhole()
+    {
+        await LoadAsync();
+        Vm.DefaultTimeLimitSeconds = 90.5m;
+
+        await Vm.SaveCommand.ExecuteAsync(null);
+
+        Count(nameof(IServiceGateway.UpdateSettingsAsync)).ShouldBe(0);
+        Vm.ErrorText.ShouldBe(_h.L.SettingsNotWholeNumber(_h.L.DefaultTimeLimitLabel));
+    }
+
+    [Fact]
+    public async Task Save_PortPastTheBound_SendsNothingAndNamesTheRange()
+    {
+        await LoadAsync();
+        Vm.SmtpPort = 70000;
+
+        await Vm.SaveCommand.ExecuteAsync(null);
+
+        Count(nameof(IServiceGateway.UpdateSettingsAsync)).ShouldBe(0);
+        Vm.ErrorText.ShouldBe(_h.L.SettingsOutOfRange(_h.L.SmtpPortLabel, 1, 65535));
+    }
 }

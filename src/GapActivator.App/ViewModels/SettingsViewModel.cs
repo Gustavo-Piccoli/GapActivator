@@ -36,6 +36,8 @@ public sealed partial class SettingsViewModel : PageViewModel
     private bool _applying;
     private bool _serviceCheckForUpdates;
     private Outcome _status;
+    private Task _reading = Task.CompletedTask;
+    private Snapshot? _baseline;
 
     public SettingsViewModel(Localizer l, IServiceGateway gateway, Permissions permissions, IAppSettingsService appSettings, ServiceActions service)
         : base(l)
@@ -74,8 +76,8 @@ public sealed partial class SettingsViewModel : PageViewModel
             if (e.PropertyName is nameof(Permissions.CanChange))
             {
                 OnPropertyChanged(nameof(ServiceFieldsReadOnly));
-                SaveCommand.NotifyCanExecuteChanged();
-                SendTestEmailCommand.NotifyCanExecuteChanged();
+                OnPropertyChanged(nameof(CanTypePassword));
+                NotifyGuards();
                 RestartServiceCommand.NotifyCanExecuteChanged();
             }
         };
@@ -86,7 +88,7 @@ public sealed partial class SettingsViewModel : PageViewModel
             // Nothing is shown before the first read, so the first connection brings the values in.
             if (status.IsConnected && !HasLoaded)
             {
-                Loading = LoadCommand.ExecuteAsync(null);
+                Loading = ReadAsync(keepStatus: false);
             }
         };
         l.PropertyChanged += (_, _) => RebuildTexts();
@@ -97,7 +99,25 @@ public sealed partial class SettingsViewModel : PageViewModel
         None,
         Saved,
         TestEmailSent,
+        RestartRequested,
     }
+
+    private sealed record Snapshot(
+        decimal Cycle,
+        decimal FailureLimit,
+        decimal? TimeLimit,
+        decimal Grace,
+        decimal LogDays,
+        decimal HistoryDays,
+        LogLevel Level,
+        bool EmailEnabled,
+        string Host,
+        decimal Port,
+        TlsMode Tls,
+        string Username,
+        string Sender,
+        string Recipients,
+        string Alerts);
 
     public ObservableCollection<ChoiceOption> ThemeOptions { get; } = [];
 
@@ -182,6 +202,10 @@ public sealed partial class SettingsViewModel : PageViewModel
     [ObservableProperty]
     public partial bool HasLoaded { get; private set; }
 
+    /// <summary>True when the last read failed and nothing has been read yet: the page then offers "Try again".</summary>
+    [ObservableProperty]
+    public partial bool LoadFailed { get; private set; }
+
     // The drop-downs select an option object; these map it to and from the enum values the rest of the model uses.
     public ChoiceOption ThemeChoice
     {
@@ -209,6 +233,9 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     public Permissions Permissions => _permissions;
 
+    /// <summary>The new-password box is locked while the stored password is being removed.</summary>
+    public bool CanTypePassword => !ServiceFieldsReadOnly && !ClearPassword;
+
     public bool ServiceFieldsReadOnly => !_permissions.CanChange;
 
     public string? AuthorizationText => _gateway.Status is { IsConnected: true, OperatorsMode: { } mode } ? L.OperatorsModeText(mode) : null;
@@ -218,6 +245,7 @@ public sealed partial class SettingsViewModel : PageViewModel
     {
         Outcome.Saved => L.SettingsSaved,
         Outcome.TestEmailSent => L.TestEmailSent,
+        Outcome.RestartRequested => L.RestartRequested,
         _ => null,
     };
 
@@ -226,21 +254,56 @@ public sealed partial class SettingsViewModel : PageViewModel
 
     private bool CanChange => _permissions.CanChange;
 
+    // Saving before the values have been read would send the field defaults over the service settings.
+    private bool CanSave => _permissions.CanChange && HasLoaded && !IsLoading;
+
+    // Edits that were not saved: a service field that differs from the last read, a typed password, or a ticked "remove password".
+    private bool IsDirty => NewPassword.Length > 0 || ClearPassword || (_baseline is not null && Capture() != _baseline);
+
+    /// <summary>
+    /// Called each time the page comes on screen: reads the service values, unless the user has unsaved edits (they stay until Save).
+    /// </summary>
+    internal Task OnPageShownAsync() => !HasLoaded || !IsDirty ? ReadAsync(keepStatus: false) : Task.CompletedTask;
+
     [RelayCommand]
-    private async Task LoadAsync()
+    private Task LoadAsync() => ReadAsync(keepStatus: false);
+
+    // One read at a time, whoever asks (the command, the page, a connection): later callers share the running one.
+    private Task ReadAsync(bool keepStatus)
     {
+        if (_reading is { IsCompleted: false } running)
+        {
+            return running;
+        }
+
+        return _reading = ReadCoreAsync(keepStatus);
+    }
+
+    private async Task ReadCoreAsync(bool keepStatus)
+    {
+        if (!keepStatus)
+        {
+            SetStatus(Outcome.None);
+        }
+
+        LoadFailed = false;
         IsLoading = true;
         SettingsViewDto? dto = null;
         var ok = await TryAsync(async () => dto = await _gateway.GetSettingsAsync().ConfigureAwait(true)).ConfigureAwait(true);
-        IsLoading = false;
         if (ok && dto is not null)
         {
             Apply(dto);
             HasLoaded = true;
         }
+        else
+        {
+            LoadFailed = !HasLoaded;
+        }
+
+        IsLoading = false;
     }
 
-    [RelayCommand(CanExecute = nameof(CanChange))]
+    [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task SaveAsync()
     {
         SetStatus(Outcome.None);
@@ -264,11 +327,11 @@ public sealed partial class SettingsViewModel : PageViewModel
         if (saved)
         {
             SetStatus(Outcome.Saved);
-            await LoadAsync().ConfigureAwait(true);
+            await ReadAsync(keepStatus: true).ConfigureAwait(true);
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanChange))]
+    [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task SendTestEmailAsync()
     {
         SetStatus(Outcome.None);
@@ -282,8 +345,17 @@ public sealed partial class SettingsViewModel : PageViewModel
     [RelayCommand(CanExecute = nameof(CanChange))]
     private async Task RestartServiceAsync()
     {
+        // The question comes first and outside the error handling: a "no" changes nothing, not even a visible error.
+        if (!await _service.ConfirmRestartAsync().ConfigureAwait(true))
+        {
+            return;
+        }
+
         SetStatus(Outcome.None);
-        await TryAsync(() => _service.RestartServiceAsync()).ConfigureAwait(true);
+        if (await TryAsync(() => _service.SendRestartAsync()).ConfigureAwait(true))
+        {
+            SetStatus(Outcome.RestartRequested);
+        }
     }
 
     /// <summary>Splits on new lines, commas and semicolons, trims, and drops empty entries.</summary>
@@ -300,6 +372,20 @@ public sealed partial class SettingsViewModel : PageViewModel
     {
         OnPropertyChanged(nameof(LanguageChoice));
         WriteAppSetting(s => s with { Language = value });
+    }
+
+    partial void OnHasLoadedChanged(bool value) => NotifyGuards();
+
+    partial void OnIsLoadingChanged(bool value) => NotifyGuards();
+
+    partial void OnClearPasswordChanged(bool value)
+    {
+        if (value)
+        {
+            NewPassword = string.Empty;
+        }
+
+        OnPropertyChanged(nameof(CanTypePassword));
     }
 
     partial void OnLogLevelChanged(LogLevel value) => OnPropertyChanged(nameof(LogLevelChoice));
@@ -329,6 +415,29 @@ public sealed partial class SettingsViewModel : PageViewModel
             _appSettings.Update(change);
         }
     }
+
+    private void NotifyGuards()
+    {
+        SaveCommand.NotifyCanExecuteChanged();
+        SendTestEmailCommand.NotifyCanExecuteChanged();
+    }
+
+    private Snapshot Capture() => new(
+        CycleIntervalSeconds,
+        FailureLimit,
+        DefaultTimeLimitSeconds,
+        DefaultGracePeriodSeconds,
+        LogRetentionDays,
+        HistoryRetentionDays,
+        LogLevel,
+        EmailEnabled,
+        SmtpHost,
+        SmtpPort,
+        Tls,
+        Username,
+        Sender,
+        RecipientsText,
+        string.Join(',', Alerts.Where(a => a.IsChecked).Select(a => (int)a.Kind)));
 
     private void SetStatus(Outcome status)
     {
@@ -382,6 +491,8 @@ public sealed partial class SettingsViewModel : PageViewModel
             {
                 option.IsChecked = email.Alerts.Contains(option.Kind);
             }
+
+            _baseline = Capture();
         }
         finally
         {
@@ -416,10 +527,18 @@ public sealed partial class SettingsViewModel : PageViewModel
         ?? Check(DefaultGracePeriodSeconds, L.DefaultGraceLabel, 1, 600)
         ?? Check(LogRetentionDays, L.LogRetentionLabel, 1, MaxDays)
         ?? Check(HistoryRetentionDays, L.HistoryRetentionLabel, 1, MaxDays)
-        ?? Check(SmtpPort, L.SmtpPortLabel, 1, 65535);
+        ?? Check(SmtpPort, L.SmtpPortLabel, 1, 65535)
+        ?? (DefaultTimeLimitSeconds is { } limit && limit != decimal.Truncate(limit) ? L.SettingsNotWholeNumber(L.DefaultTimeLimitLabel) : null);
 
-    private string? Check(decimal value, string label, int min, int max) =>
-        value >= min && value <= max && value == decimal.Truncate(value) ? null : L.SettingsOutOfRange(label, min, max);
+    private string? Check(decimal value, string label, int min, int max)
+    {
+        if (value != decimal.Truncate(value))
+        {
+            return L.SettingsNotWholeNumber(label);
+        }
+
+        return value >= min && value <= max ? null : L.SettingsOutOfRange(label, min, max);
+    }
 
     private void RebuildTexts()
     {
