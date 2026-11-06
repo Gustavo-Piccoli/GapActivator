@@ -26,7 +26,7 @@ public sealed class AppCompositionTests(HeadlessFixture fixture)
         provider.GetRequiredService<ICultureApplier>().ShouldBeOfType<ProcessCultureApplier>();
     }
 
-    // Nothing is awaited until the provider is disposed: the shell window belongs to the thread that created it, and the shutdown
+    // The body runs in one dispatch on the UI thread: the shell window belongs to the thread that created it, and the shutdown
     // step that destroys it must run on that thread.
     [Fact]
     [Trait("Category", "Integration")]
@@ -60,42 +60,49 @@ public sealed class AppCompositionTests(HeadlessFixture fixture)
 
         try
         {
-            // Everything App.axaml.cs resolves, and every page.
-            provider.GetRequiredService<MainWindowViewModel>().ShouldNotBeNull();
-            provider.GetRequiredService<DashboardViewModel>().ShouldNotBeNull();
-            provider.GetRequiredService<ProcessesViewModel>().ShouldNotBeNull();
-            provider.GetRequiredService<HistoryViewModel>().ShouldNotBeNull();
-            provider.GetRequiredService<SettingsViewModel>().ShouldNotBeNull();
-            provider.GetRequiredService<AboutViewModel>().ShouldNotBeNull();
-            provider.GetRequiredService<Func<ProcessEditorViewModel>>()().Dispose();
-            provider.GetRequiredService<Func<ScheduleEditorViewModel>>()().Dispose();
-            provider.GetRequiredService<Func<RunDetailViewModel>>()().Dispose();
-            provider.GetRequiredService<ThemeApplier>().ShouldNotBeNull();
-            provider.GetRequiredService<IServiceGateway>().ShouldNotBeNull();
-            provider.GetRequiredService<LiveState>().ShouldNotBeNull();
-            provider.GetRequiredService<IUpdateChecker>().ShouldNotBeNull();
-            provider.GetRequiredService<UpdateChecker>().ShouldNotBeNull();
-            provider.GetRequiredService<IMainWindowService>().ShouldNotBeNull();
-            provider.GetRequiredService<IAppLifetime>().ShouldBeOfType<AppShutdown>();
-            provider.GetRequiredService<TrayCoordinator>().ShouldNotBeNull();
-            provider.GetRequiredService<NotificationPresenter>().ShouldNotBeNull();
-            provider.GetRequiredService<ILogger<App>>().ShouldNotBeNull();
+            // The UI thread: the app resolves the theme, the shell window and the tray there, and shuts down there.
+            await fixture.Session.Dispatch(
+                () =>
+                {
+                    // Everything App.axaml.cs resolves, and every page.
+                    provider.GetRequiredService<MainWindowViewModel>().ShouldNotBeNull();
+                    provider.GetRequiredService<DashboardViewModel>().ShouldNotBeNull();
+                    provider.GetRequiredService<ProcessesViewModel>().ShouldNotBeNull();
+                    provider.GetRequiredService<HistoryViewModel>().ShouldNotBeNull();
+                    provider.GetRequiredService<SettingsViewModel>().ShouldNotBeNull();
+                    provider.GetRequiredService<AboutViewModel>().ShouldNotBeNull();
+                    provider.GetRequiredService<Func<ProcessEditorViewModel>>()().Dispose();
+                    provider.GetRequiredService<Func<ScheduleEditorViewModel>>()().Dispose();
+                    provider.GetRequiredService<Func<RunDetailViewModel>>()().Dispose();
+                    provider.GetRequiredService<ThemeApplier>().ShouldNotBeNull();
+                    provider.GetRequiredService<IServiceGateway>().ShouldNotBeNull();
+                    provider.GetRequiredService<LiveState>().ShouldNotBeNull();
+                    provider.GetRequiredService<IUpdateChecker>().ShouldNotBeNull();
+                    provider.GetRequiredService<UpdateChecker>().ShouldNotBeNull();
+                    provider.GetRequiredService<IMainWindowService>().ShouldNotBeNull();
+                    provider.GetRequiredService<IAppLifetime>().ShouldBeOfType<AppShutdown>();
+                    provider.GetRequiredService<TrayCoordinator>().ShouldNotBeNull();
+                    provider.GetRequiredService<NotificationPresenter>().ShouldNotBeNull();
+                    provider.GetRequiredService<ILogger<App>>().ShouldNotBeNull();
 
-            // The launch sequence itself, as the app runs it (minimized: no window).
-            App.StartServices(provider);
+                    // The launch sequence itself, as the app runs it (minimized: no window).
+                    App.StartServices(provider);
 
-            var shell = provider.GetRequiredService<ShellWindow>();
-            var http = provider.GetRequiredService<HttpClient>();
-            shell.Handle.ShouldNotBe(0);
-            tray.States.ShouldNotBeEmpty();
+                    var shell = provider.GetRequiredService<ShellWindow>();
+                    var http = provider.GetRequiredService<HttpClient>();
+                    shell.Handle.ShouldNotBe(0);
+                    tray.States.ShouldNotBeEmpty();
 
-            // The shutdown steps, once.
-            provider.GetRequiredService<IAppLifetime>().Exit();
+                    // The shutdown steps, once.
+                    provider.GetRequiredService<IAppLifetime>().Exit();
 
-            shutdownLog.Levels.ShouldNotContain(LogLevel.Error);
-            tray.Disposed.ShouldBeTrue();
-            shell.Handle.ShouldBe(0);
-            Should.Throw<ObjectDisposedException>(() => http.Timeout = TimeSpan.FromSeconds(5));
+                    shutdownLog.Levels.ShouldNotContain(LogLevel.Error);
+                    tray.Disposed.ShouldBeTrue();
+                    shell.Handle.ShouldBe(0);
+                    Should.Throw<ObjectDisposedException>(() => http.Timeout = TimeSpan.FromSeconds(5));
+                    return 0;
+                },
+                TestContext.Current.CancellationToken);
         }
         finally
         {
