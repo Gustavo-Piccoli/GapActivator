@@ -33,7 +33,7 @@ If the pipe name is already in use by another process, the service logs a Critic
 
 ## Installing as a Windows Service (developers only)
 
-The installer (Plan 5) does this for users. For development, run an elevated PowerShell with the path of your build:
+The installer does this for users; see [installing.md](installing.md). For real installs, use the installer. For development, run an elevated PowerShell with the path of your build:
 
 ```powershell
 sc.exe create GapActivator binPath= "C:\path\to\GapActivator.Service.exe" start= demand
@@ -45,6 +45,6 @@ sc.exe failureflag GapActivator 1
 
 Remove it with `sc.exe delete GapActivator`.
 
-> **Warning: this is for a developer install only.** Without the installer, nothing sets access rights on the data root, so it inherits `Users: Read` from ProgramData and any local user can read the database and the run output. ProgramData also lets any local user create files in the folder. That user can therefore plant a `gapactivator.db-wal` file before the service creates its own, and change the process definitions that the service then runs with its own rights. On a developer install this is privilege escalation, not only secret exposure. Secrets are protected with machine-scope DPAPI, which lets any local user decrypt them. `sc.exe create` without `obj=` runs the service, and every child it starts, as LocalSystem. Never store real SMTP passwords or secret variables in a developer install. The installer (Plan 5) sets the access rights.
+> **Warning: this is for a developer install only.** Without the installer, nothing sets access rights on the data root, so it inherits `Users: Read` from ProgramData and any local user can read the database and the run output. ProgramData also lets any local user create files in the folder. That user can therefore plant a `gapactivator.db-wal` file before the service creates its own, and change the process definitions that the service then runs with its own rights. On a developer install this is privilege escalation, not only secret exposure. Secrets are protected with machine-scope DPAPI, which lets any local user decrypt them. `sc.exe create` without `obj=` runs the service, and every child it starts, as LocalSystem. Never store real SMTP passwords or secret variables in a developer install. The installer sets the access rights.
 
 When the system shuts down or reboots, Windows does not wait the 10 min 45 s the service asks for. The operating system may kill the children. At the next start, a RunToCompletion run with no recorded stop ends Abandoned, a Service-kind run ends Interrupted, and a run with a recorded stop ends with that stop's outcome; an earlier stop reason, such as a user cancel or a time limit, wins over the shutdown.
