@@ -69,7 +69,6 @@ public sealed unsafe class Win32TrayIcon : ITrayIcon
             return false;
         }
 
-        _balloon.Shown(tag);
         var data = NewData(NIF_INFO);
         data.hWnd = _window.Handle;
         CopyTo(data.szInfoTitle, 64, title);
@@ -81,7 +80,13 @@ public sealed unsafe class Win32TrayIcon : ITrayIcon
             _ => NIIF_INFO,
         };
         LastBalloonFlags = data.dwInfoFlags;
-        Shell_NotifyIconW(NIM_MODIFY, in data);
+        if (!Shell_NotifyIconW(NIM_MODIFY, in data))
+        {
+            return false;
+        }
+
+        // Recorded only once the shell took the balloon: a refused one will never time out or be clicked.
+        _balloon.Shown(tag);
         return true;
     }
 
@@ -240,6 +245,8 @@ public sealed unsafe class Win32TrayIcon : ITrayIcon
     {
         if (msg == ShellWindow.TaskbarCreatedMessage)
         {
+            // The shell lost the icon and every balloon with it.
+            _balloon.Reset();
             if (_desired)
             {
                 // Drop any stale entry first so the add cannot fail as a duplicate.
