@@ -13,7 +13,7 @@ namespace GapActivator.Service.Setup;
 /// backup privileges are enabled for the duration, so a DACL that excludes Administrators does not stop the takeover.
 /// Objects are opened without DELETE (it is checked against other processes' share modes). A symbolic link or mount
 /// point is deleted (the link only, never the target) through a second no-follow open that must be the same object; any
-/// other reparse tag is left alone and reported.
+/// other reparse tag is reset like a regular child and, for a directory, not walked into.
 /// </summary>
 internal static class DataRootPreparer
 {
@@ -29,9 +29,8 @@ internal static class DataRootPreparer
     /// Test only: keeps the current owner when the process cannot set Administrators as the owner (not elevated). The
     /// command line never sets it.
     /// </param>
-    /// <param name="reportSkipped">Receives one line for each reparse point that is neither a symbolic link nor a mount point.</param>
     public static void Prepare(
-        string path, SecurityIdentifier account, bool allowOwnerFallback = false, Action<string>? reportSkipped = null)
+        string path, SecurityIdentifier account, bool allowOwnerFallback = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(account);
@@ -51,7 +50,7 @@ internal static class DataRootPreparer
         security.AddAccessRule(new FileSystemAccessRule(account, FileSystemRights.Modify, both, PropagationFlags.None, AccessControlType.Allow));
         DataRootNative.SetProtectedDacl(root, ToBytes(security));
 
-        ResetChildren(fullPath, rootFinal, allowOwnerFallback, reportSkipped ?? (_ => { }));
+        ResetChildren(fullPath, rootFinal, allowOwnerFallback);
     }
 
     /// <summary>
@@ -170,7 +169,7 @@ internal static class DataRootPreparer
         return bytes;
     }
 
-    private static void ResetChildren(string directory, string directoryFinal, bool allowOwnerFallback, Action<string> reportSkipped)
+    private static void ResetChildren(string directory, string directoryFinal, bool allowOwnerFallback)
     {
         foreach (string childPath in Directory.EnumerateFileSystemEntries(directory).ToList())
         {
@@ -185,26 +184,21 @@ internal static class DataRootPreparer
             }
 
             FileAttributes attributes = DataRootNative.GetAttributes(child);
-            if (attributes.HasFlag(FileAttributes.ReparsePoint))
+            bool isReparsePoint = attributes.HasFlag(FileAttributes.ReparsePoint);
+            if (isReparsePoint && DataRootNative.GetReparseTag(child) is DataRootNative.MountPointTag or DataRootNative.SymlinkTag)
             {
-                if (DataRootNative.GetReparseTag(child) is DataRootNative.MountPointTag or DataRootNative.SymlinkTag)
-                {
-                    // Only the link goes, never the target.
-                    DeleteSame(childPath, child);
-                }
-                else
-                {
-                    reportSkipped($"skipped '{childPath}': a reparse point that is not a symbolic link or a mount point.");
-                }
-
+                // Only the link goes, never the target.
+                DeleteSame(childPath, child);
                 continue;
             }
 
+            // Any other child, including a reparse point that is not a link (compression, placeholders), is owned and
+            // reset through the same handle. Such a directory is not walked into.
             ApplyOwner(child, allowOwnerFallback);
             DataRootNative.ResetToInherited(child);
-            if (attributes.HasFlag(FileAttributes.Directory))
+            if (attributes.HasFlag(FileAttributes.Directory) && !isReparsePoint)
             {
-                ResetChildren(childPath, expected, allowOwnerFallback, reportSkipped);
+                ResetChildren(childPath, expected, allowOwnerFallback);
             }
         }
     }

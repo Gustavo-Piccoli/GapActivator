@@ -1,8 +1,10 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using GapActivator.Service.Setup;
 using GapActivator.Service.Tests.Support;
+using Microsoft.Win32.SafeHandles;
 
 namespace GapActivator.Service.Tests.Setup;
 
@@ -185,7 +187,7 @@ public sealed class DataRootPreparerTests : IDisposable
     }
 
     [Fact]
-    public void Prepare_ReparseChildrenAreDeletedAndNothingIsReportedSkipped()
+    public void Prepare_LinkChildrenAreDeleted()
     {
         string target = Path.Combine(_temp, "target");
         Directory.CreateDirectory(target);
@@ -193,14 +195,54 @@ public sealed class DataRootPreparerTests : IDisposable
         Directory.CreateDirectory(path);
         Junction(Path.Combine(path, "a"), target);
         Junction(Path.Combine(path, "b"), target);
-        var skipped = new List<string>();
 
-        DataRootPreparer.Prepare(path, CurrentUser(), allowOwnerFallback: true, skipped.Add);
+        DataRootPreparer.Prepare(path, CurrentUser(), allowOwnerFallback: true);
 
-        skipped.ShouldBeEmpty();
         Directory.GetFileSystemEntries(path).ShouldBeEmpty();
         Directory.Exists(target).ShouldBeTrue();
     }
+
+    [Fact]
+    public void Prepare_NonLinkReparseChild_IsResetLikeAnyOtherChild()
+    {
+        string path = Path.Combine(_temp, "root");
+        Directory.CreateDirectory(path);
+        string file = Path.Combine(path, "tagged.txt");
+        File.WriteAllText(file, new string('a', 200_000));
+        var info = new FileInfo(file);
+        FileSecurity foreign = info.GetAccessControl();
+        foreign.AddAccessRule(new FileSystemAccessRule(Users, FileSystemRights.FullControl, AccessControlType.Allow));
+        info.SetAccessControl(foreign);
+        SetCustomReparseTag(file);
+        info.Refresh();
+        info.Attributes.HasFlag(FileAttributes.ReparsePoint).ShouldBeTrue();
+
+        DataRootPreparer.Prepare(path, CurrentUser(), allowOwnerFallback: true);
+
+        File.Exists(file).ShouldBeTrue();
+        FileSecurity security = new FileInfo(file).GetAccessControl();
+        security.AreAccessRulesProtected.ShouldBeFalse();
+        Explicit(security).ShouldBeEmpty();
+    }
+
+    private static void SetCustomReparseTag(string file)
+    {
+        // A Microsoft-range tag that is neither a symbolic link nor a mount point, with 4 bytes of data.
+        byte[] buffer = [0x23, 0x01, 0x00, 0x80, 4, 0, 0, 0, 1, 2, 3, 4];
+        using SafeFileHandle handle = File.OpenHandle(file, FileMode.Open, FileAccess.Write);
+#pragma warning disable SYSLIB1054 // Test-only call.
+        bool ok = DeviceIoControl(handle, 0x900A4, buffer, buffer.Length, null, 0, out _, 0);
+#pragma warning restore SYSLIB1054
+        ok.ShouldBeTrue("FSCTL_SET_REPARSE_POINT failed with " + Marshal.GetLastWin32Error());
+    }
+
+#pragma warning disable SYSLIB1054
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeviceIoControl(
+        SafeFileHandle device, uint code, byte[] input, int inputSize, byte[]? output, int outputSize, out int returned, nint overlapped);
+#pragma warning restore SYSLIB1054
+
 
     [Fact]
     public void ByHandleFileInformation_MatchesTheNative52ByteLayout() =>
@@ -225,10 +267,11 @@ public sealed class DataRootPreparerTests : IDisposable
             Hostile(file);
             Hostile(folder);
 
-            // Not protected, but with an explicit Deny for Administrators (propagation must still reach it).
+            // Not protected, owned by LOCAL SERVICE, with an explicit Deny for Administrators (propagation must still reach it).
             var deniedInfo = new DirectoryInfo(denied);
             DirectorySecurity deny = deniedInfo.GetAccessControl();
             deny.AddAccessRule(new FileSystemAccessRule(Administrators, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Deny));
+            deny.SetOwner(LocalService);
             deniedInfo.SetAccessControl(deny);
             Hostile(path);
         }
