@@ -5,6 +5,7 @@
         x:Class="GapActivator.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding L.AppName}"
+        Icon="avares://GapActivator/Assets/Icons/gapactivator.ico"
         Width="1100" Height="720"
         MinWidth="640" MinHeight="480">
   <!--

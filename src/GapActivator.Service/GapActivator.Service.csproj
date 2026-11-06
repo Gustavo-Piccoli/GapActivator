@@ -5,6 +5,7 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>GapActivator.Service</AssemblyName>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationIcon>..\GapActivator.App\Assets\Icons\gapactivator.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
