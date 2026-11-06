@@ -184,7 +184,7 @@ jobs:
           $testArgs += "$ns.DataRootPreparerTests.Prepare_NotElevatedWithoutFallback_FailsInsteadOfKeepingTheOwner"
           $output = & dotnet @testArgs 2>&1 | ForEach-Object { Write-Host "$_"; "$_" }
           $exit = $LASTEXITCODE
-          $text = ($output -join "`n")
+          $text = ($output -join "`n") -replace '\x1b\[[0-9;]*m', ''
           if ($exit -ne 0) { throw "dotnet test failed with exit code $exit" }
           if ($text -notmatch '(?m)^\s*total:\s*(\d+)') { throw 'The test summary has no total line.' }
           $total = [int]$Matches[1]
