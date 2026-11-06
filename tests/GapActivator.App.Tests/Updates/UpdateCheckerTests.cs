@@ -200,7 +200,12 @@ public class UpdateCheckerTests
         await _source.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         checker.Dispose();
         await _source.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
-        await Task.Delay(150, TestContext.Current.CancellationToken);
+
+        // The scheduled check has finished once it is no longer running; only then can "nothing happened" be asserted.
+        while (checker.ScheduledCheckRunning)
+        {
+            await Task.Delay(1, TestContext.Current.CancellationToken);
+        }
 
         _settings.Updates.ShouldBe(0);
         raised.ShouldBe(0);

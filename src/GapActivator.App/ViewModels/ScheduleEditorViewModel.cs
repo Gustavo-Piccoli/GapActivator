@@ -171,6 +171,9 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<string> Preview { get; } = [];
 
+    /// <summary>The latest preview request; tests await it, the screen does not need to.</summary>
+    internal Task PreviewRefresh { get; private set; } = Task.CompletedTask;
+
     public ScheduleModeOption SelectedModeOption
     {
         get => ModeOptions.First(o => o.Mode == Mode);
@@ -458,7 +461,7 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
         // The debouncer's timer fires on a thread-pool thread; the view-model state is touched only after the hop to the UI thread.
         _debouncer.Schedule(() =>
         {
-            _ui.Post(() => _ = RefreshPreviewAsync());
+            _ui.Post(() => PreviewRefresh = RefreshPreviewAsync());
             return Task.CompletedTask;
         });
     }
@@ -540,7 +543,8 @@ public sealed partial class ScheduleEditorViewModel : ViewModelBase, IDisposable
         cts.Dispose();
     }
 
-    // The connection loop raises this on its own thread; coming back means a failed preview can work now.
+    // The gateway raises this through the UI dispatcher already; the post only defers the refresh until the handlers are done.
+    // Coming back means a failed preview can work now.
     private void OnConnectionChanged(object? sender, GatewayStatus status)
     {
         if (status.State == ConnectionState.Connected)

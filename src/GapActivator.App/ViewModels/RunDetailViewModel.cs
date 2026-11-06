@@ -98,6 +98,9 @@ public sealed partial class RunDetailViewModel : PageViewModel, IDisposable
 
     public bool HasRunError => !string.IsNullOrEmpty(RunErrorText);
 
+    /// <summary>The latest timer refresh; tests await it, the screen does not need to.</summary>
+    internal Task Refreshing { get; private set; } = Task.CompletedTask;
+
     public bool HasEvents => Events.Count > 0;
 
     public bool HasData => _current is not null;
@@ -272,7 +275,7 @@ public sealed partial class RunDetailViewModel : PageViewModel, IDisposable
     }
 
     // Runs on a timer thread: touch nothing but the dispatcher here.
-    private void OnTick(object? state) => _ui.Post(() => _ = RefreshAsync());
+    private void OnTick(object? state) => _ui.Post(() => Refreshing = RefreshAsync());
 
     private async Task RefreshAsync()
     {

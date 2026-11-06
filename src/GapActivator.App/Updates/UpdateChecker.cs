@@ -29,6 +29,9 @@ public sealed partial class UpdateChecker(IReleaseSource source, Version current
 
     public UpdateCheckResult? Last => Volatile.Read(ref _last);
 
+    /// <summary>True while a scheduled (timer-started) check is in progress; tests wait for it to end before asserting that nothing happened.</summary>
+    internal bool ScheduledCheckRunning => Volatile.Read(ref _running) == 1;
+
     /// <summary>Starts the hourly tick, the first at once; a second call does nothing.</summary>
     public void StartBackground()
     {

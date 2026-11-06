@@ -108,10 +108,12 @@ public class RunDetailViewModelTests : IAsyncDisposable
         TaskCompletionSource hold = _gateway.Hold(nameof(FakeServiceGateway.GetRunAsync));
         _gateway.Runs[run.Id] = Dtos.RunDetails(run, output: "late");
         _time.Advance(TimeSpan.FromSeconds(1));
+        Task refresh = vm.Refreshing;
+        refresh.IsCompleted.ShouldBeFalse();
 
         vm.Close();
         hold.SetResult();
-        await Task.Delay(50, TestContext.Current.CancellationToken);
+        await refresh;
 
         vm.Output.ShouldBe("first");
     }

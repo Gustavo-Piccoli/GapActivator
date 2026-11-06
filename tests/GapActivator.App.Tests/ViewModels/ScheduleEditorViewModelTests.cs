@@ -137,16 +137,19 @@ public sealed class ScheduleEditorViewModelTests : IAsyncDisposable
         _vm.Load(null);
         TaskCompletionSource first = _gateway.Hold(nameof(IServiceGateway.PreviewScheduleAsync));
         _time.Advance(Delay);
+        Task firstRefresh = _vm.PreviewRefresh;
         TaskCompletionSource second = _gateway.Hold(nameof(IServiceGateway.PreviewScheduleAsync));
         _vm.Time = TimeSpan.FromHours(13);
         _time.Advance(Delay);
+        Task secondRefresh = _vm.PreviewRefresh;
         PreviewCalls().ShouldBe(2);
 
         second.SetResult();
-        await EventuallyAsync(() => _vm.Preview.Count == 5);
+        await secondRefresh;
+        _vm.Preview.Count.ShouldBe(5);
         string latest = _vm.Preview[0];
         first.SetResult();
-        await Task.Delay(100, TestContext.Current.CancellationToken);
+        await firstRefresh;
 
         latest.ShouldBe(_times.WithWeekday(new DateTimeOffset(2030, 1, 8, 13, 0, 0, TimeSpan.FromHours(-3))));
         _vm.Preview[0].ShouldBe(latest);
@@ -390,12 +393,13 @@ public sealed class ScheduleEditorViewModelTests : IAsyncDisposable
         _time.Advance(Delay);
         CancellationToken token = _gateway.LastPreviewToken;
         token.IsCancellationRequested.ShouldBeFalse();
+        Task refresh = _vm.PreviewRefresh;
 
         _vm.Dispose();
 
         token.IsCancellationRequested.ShouldBeTrue();
         hold.SetResult();
-        await Task.Delay(50, TestContext.Current.CancellationToken);
+        await refresh;
         _vm.Preview.ShouldBeEmpty();
     }
 
