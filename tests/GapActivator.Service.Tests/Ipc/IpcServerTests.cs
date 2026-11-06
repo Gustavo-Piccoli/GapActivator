@@ -420,6 +420,10 @@ public sealed class IpcServerTests
             await raw.DisposeAsync();
         }
 
+        // The server notices each vanished client only when its read ends. Until then those clients still count against
+        // the 16-connection cap and the next one would be told busy, so wait for the registry to drain first.
+        (await BecomesTrueAsync(() => server.Registry.Count == 0, Long)).ShouldBeTrue();
+
         await using GapActivatorClient client = await server.ConnectAsync();
         (await client.GetDashboardAsync(TestContext.Current.CancellationToken)).ShouldNotBeNull();
         server.Running.IsCompleted.ShouldBeFalse();
