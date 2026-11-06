@@ -160,9 +160,9 @@ public class HistoryViewTests(HeadlessFixture fixture)
                 h.Navigator.OpenRun(run.Id);
                 Dispatcher.UIThread.RunJobs();
                 Dispatcher.UIThread.RunJobs();
-                var list = window.GetVisualDescendants().OfType<ListBox>().First(l => l.Name == "OutputList");
+                var list = window.GetVisualDescendants().OfType<ItemsControl>().First(l => l.Name == "OutputList");
                 var scroller = list.GetVisualDescendants().OfType<ScrollViewer>().First();
-                var result = (h.History.Detail!.OutputLines.Count, list.GetVisualDescendants().OfType<ListBoxItem>().Count(), scroller.Offset.Y, scroller.Extent.Height, scroller.Viewport.Height);
+                var result = (h.History.Detail!.OutputLines.Count, list.GetVisualDescendants().OfType<TextBlock>().Count(), scroller.Offset.Y, scroller.Extent.Height, scroller.Viewport.Height);
                 window.Close();
                 return result;
             },
@@ -174,5 +174,47 @@ public class HistoryViewTests(HeadlessFixture fixture)
 
         // Not scrolled yet: the list follows the tail, so the last page of lines is in view.
         (offset + viewport).ShouldBeGreaterThanOrEqualTo(extent - 1);
+    }
+
+    [Fact]
+    public async Task HistoryView_RefreshWithTheSameLineCount_KeepsTheTailOrTheScrolledPosition()
+    {
+        var h = new DashboardHarness();
+        var run = Dtos.RunRow("Alpha", state: RunState.Running, outcome: null, exitCode: null);
+        static string Output(string prefix) => string.Join("\n", Enumerable.Range(0, 5000).Select(i => $"{prefix} {i}"));
+        h.Gateway.Runs[run.Id] = Dtos.RunDetails(run, output: Output("a"));
+
+        (bool atEndFirst, bool atEndAfterRefresh, double scrolledTo, double keptAt) = await fixture.Session.Dispatch(
+            () =>
+            {
+                var window = Show(h);
+                h.Navigator.OpenRun(run.Id);
+                Dispatcher.UIThread.RunJobs();
+                var list = window.GetVisualDescendants().OfType<ItemsControl>().First(l => l.Name == "OutputList");
+                var scroller = list.GetVisualDescendants().OfType<ScrollViewer>().First();
+                bool AtEnd() => scroller.Offset.Y + scroller.Viewport.Height >= scroller.Extent.Height - 1;
+                var first = AtEnd();
+
+                h.Gateway.Runs[run.Id] = Dtos.RunDetails(run, output: Output("b"));
+                h.Time.Advance(TimeSpan.FromSeconds(1));
+                Dispatcher.UIThread.RunJobs();
+                var afterRefresh = AtEnd();
+
+                scroller.Offset = new Avalonia.Vector(0, 1000);
+                Dispatcher.UIThread.RunJobs();
+                var scrolled = scroller.Offset.Y;
+                h.Gateway.Runs[run.Id] = Dtos.RunDetails(run, output: Output("c"));
+                h.Time.Advance(TimeSpan.FromSeconds(1));
+                Dispatcher.UIThread.RunJobs();
+                var kept = scroller.Offset.Y;
+                window.Close();
+                return (first, afterRefresh, scrolled, kept);
+            },
+            TestContext.Current.CancellationToken);
+
+        atEndFirst.ShouldBeTrue();
+        atEndAfterRefresh.ShouldBeTrue();
+        scrolledTo.ShouldBe(1000, 1);
+        keptAt.ShouldBe(scrolledTo, 1);
     }
 }

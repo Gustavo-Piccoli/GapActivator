@@ -99,29 +99,31 @@
             <!--
               The tail can be a mebibyte. One text box would lay all of it out again on every change; a virtualized list of lines
               realizes only the lines in view. A long line scrolls sideways, nothing wraps. The code-behind keeps the list at the end
-              while the user has not scrolled up.
+              while the user has not scrolled up. Nothing in it is selectable, so a refresh loses no selection.
             -->
-            <ListBox x:Name="OutputList" Classes="output" ItemsSource="{Binding OutputLines}" Height="400"
-                     SelectionMode="Single" FontFamily="Cascadia Mono, Consolas, monospace" FontSize="13"
-                     ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     AutomationProperties.Name="{Binding L.RunOutput}">
-              <ListBox.Styles>
-                <Style Selector="ListBox.output ListBoxItem">
-                  <Setter Property="Padding" Value="6,0" />
-                  <Setter Property="MinHeight" Value="0" />
-                </Style>
-              </ListBox.Styles>
-              <ListBox.ItemsPanel>
+            <ItemsControl x:Name="OutputList" ItemsSource="{Binding OutputLines}" Height="400" Focusable="True"
+                          FontFamily="Cascadia Mono, Consolas, monospace" FontSize="13"
+                          AutomationProperties.Name="{Binding L.RunOutput}">
+              <ItemsControl.Template>
+                <ControlTemplate>
+                  <Border BorderBrush="{DynamicResource GaHairlineBrush}" BorderThickness="1" CornerRadius="4">
+                    <ScrollViewer x:Name="PART_ScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                      <ItemsPresenter ItemsPanel="{TemplateBinding ItemsPanel}" />
+                    </ScrollViewer>
+                  </Border>
+                </ControlTemplate>
+              </ItemsControl.Template>
+              <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                   <VirtualizingStackPanel />
                 </ItemsPanelTemplate>
-              </ListBox.ItemsPanel>
-              <ListBox.ItemTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="x:String">
-                  <TextBlock Text="{Binding}" TextWrapping="NoWrap" />
+                  <TextBlock Text="{Binding}" TextWrapping="NoWrap" Margin="6,0" />
                 </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
           </StackPanel>
         </Border>
       </StackPanel>

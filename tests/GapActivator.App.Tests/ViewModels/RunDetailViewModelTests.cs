@@ -322,4 +322,40 @@ public class RunDetailViewModelTests : IAsyncDisposable
         _time.Advance(TimeSpan.FromSeconds(1));
         vm.ErrorText.ShouldBeNull();
     }
+
+    [Fact]
+    public async Task CopyOutput_Success_LeavesAnUnrelatedPollErrorAlone()
+    {
+        var run = Dtos.RunRow(state: RunState.Running, outcome: null, exitCode: null);
+        _gateway.Runs[run.Id] = Dtos.RunDetails(run, output: "x");
+        using var vm = Create();
+        await vm.LoadAsync(run.Id);
+        _gateway.FailNext(nameof(FakeServiceGateway.GetRunAsync), new GapActivator.Ipc.GapActivatorRequestException(GapActivator.Ipc.IpcErrorCodes.Disconnected, "x", retryable: true));
+        _time.Advance(TimeSpan.FromSeconds(1));
+        vm.ErrorText.ShouldBe("Not connected to the service.");
+        var raised = 0;
+        vm.PropertyChanged += (_, e) => raised += e.PropertyName == nameof(RunDetailViewModel.ErrorText) ? 1 : 0;
+
+        await vm.CopyOutputCommand.ExecuteAsync(null);
+
+        vm.ErrorText.ShouldBe("Not connected to the service.");
+        raised.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task CopyOutput_FailureThenSuccess_ClearsTheCopyError()
+    {
+        var run = Dtos.RunRow();
+        _gateway.Runs[run.Id] = Dtos.RunDetails(run, output: "x");
+        using var vm = Create();
+        await vm.LoadAsync(run.Id);
+        _clipboard.Failure = new InvalidOperationException("busy");
+        await vm.CopyOutputCommand.ExecuteAsync(null);
+        vm.ErrorText.ShouldNotBeNull();
+
+        _clipboard.Failure = null;
+        await vm.CopyOutputCommand.ExecuteAsync(null);
+
+        vm.ErrorText.ShouldBeNull();
+    }
 }

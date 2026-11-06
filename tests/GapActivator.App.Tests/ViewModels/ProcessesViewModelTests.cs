@@ -374,5 +374,26 @@ public class ProcessesViewModelTests
 
         Vm.NewProcessCommand.CanExecute(null).ShouldBeFalse();
     }
-}
 
+    [Fact]
+    public async Task Delete_StillRunningTwice_ShowsTheNotStoppedErrorAfterTheSecondOne()
+    {
+        var process = Dtos.Summary("Busy", activeRun: Active());
+        _h.Gateway.Details[process.Id] = Dtos.Details(process);
+        await LoadAsync(process);
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            _h.Dialogs.Enqueue(DialogChoice.Primary);
+            Task delete = Vm.Items.Single().DeleteCommand.ExecuteAsync(null);
+            for (var i = 0; i < 2000 && !delete.IsCompleted; i++)
+            {
+                await Task.Delay(1, TestContext.Current.CancellationToken);
+                _h.Time.Advance(ProcessActions.DeletePollInterval);
+            }
+
+            await delete.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Vm.ErrorText.ShouldBe("The run has not stopped yet. Try deleting again in a moment.");
+        }
+    }
+}

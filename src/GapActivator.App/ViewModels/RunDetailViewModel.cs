@@ -26,6 +26,7 @@ public sealed partial class RunDetailViewModel : PageViewModel, IDisposable
     private int _version;
     private bool _refreshing;
     private bool _closed;
+    private string? _copyError;
 
     public RunDetailViewModel(Localizer l, IServiceGateway gateway, TimeProvider time, TimeDisplay times, IClipboardService clipboard, IUiDispatcher ui)
         : base(l)
@@ -216,11 +217,19 @@ public sealed partial class RunDetailViewModel : PageViewModel, IDisposable
         try
         {
             await _clipboard.SetTextAsync(Output).ConfigureAwait(true);
-            ErrorText = null;
+
+            // Only the copy failure is the copy's to clear; a poll error that is on screen stays.
+            if (_copyError is not null && string.Equals(ErrorText, _copyError, StringComparison.Ordinal))
+            {
+                ErrorText = null;
+            }
+
+            _copyError = null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            ErrorText = L.ErrorUnexpected(ex.Message);
+            _copyError = L.ErrorUnexpected(ex.Message);
+            ErrorText = _copyError;
         }
     }
 

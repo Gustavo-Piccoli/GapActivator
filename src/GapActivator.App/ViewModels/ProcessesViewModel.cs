@@ -123,21 +123,30 @@ public sealed partial class ProcessesViewModel : PageViewModel, IFreshnessNotes
 
     internal Task<bool> RunAsync(Func<Task> action) => TryAsync(action);
 
-    internal async Task<bool> DeleteAsync(ProcessRowViewModel row) =>
-        await TryAsync(async () =>
+    internal async Task<bool> DeleteAsync(ProcessRowViewModel row)
+    {
+        // The lambda only captures the result: TryAsync clears the error after a call that worked, so a text set inside it
+        // (the same one a failed retry left on screen) would be wiped as "unchanged".
+        var stillRunning = false;
+        var ok = await TryAsync(async () =>
         {
             try
             {
-                if (await Actions.DeleteAsync(row.Summary, () => SetStopping(row.Summary.Name)).ConfigureAwait(true) == DeleteResult.StillRunning)
-                {
-                    ErrorText = L.DeleteNotStopped;
-                }
+                stillRunning = await Actions.DeleteAsync(row.Summary, () => SetStopping(row.Summary.Name)).ConfigureAwait(true) == DeleteResult.StillRunning;
             }
             finally
             {
                 SetStopping(null);
             }
         }).ConfigureAwait(true);
+
+        if (ok && stillRunning)
+        {
+            ErrorText = L.DeleteNotStopped;
+        }
+
+        return ok;
+    }
 
     /// <summary>Opens the editor for the process and reads it from the service; the form is on screen while it loads.</summary>
     internal async Task OpenEditorAsync(Guid processId)

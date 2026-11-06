@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 
 namespace GapActivator.App.Views;
 
@@ -14,12 +15,18 @@ public sealed partial class RunDetailView : UserControl
         InitializeComponent();
         OutputList.TemplateApplied += (_, e) =>
         {
+            if (_scroller is not null)
+            {
+                _scroller.ScrollChanged -= OnScrollChanged;
+            }
+
             _scroller = e.NameScope.Find<ScrollViewer>("PART_ScrollViewer");
             if (_scroller is not null)
             {
                 _scroller.ScrollChanged += OnScrollChanged;
             }
         };
+        OutputList.KeyDown += OnOutputKeyDown;
     }
 
     // Tail following: the list stays at the last line after a refresh while the user has not scrolled up; once they have, their
@@ -40,5 +47,40 @@ public sealed partial class RunDetailView : UserControl
         {
             scroller.Offset = new Vector(scroller.Offset.X, _following ? double.MaxValue : _offsetY);
         }
+    }
+
+    // The output list is focusable but has no selection, so the keys that move through it scroll it.
+    private void OnOutputKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_scroller is not { } scroller)
+        {
+            return;
+        }
+
+        switch (e.Key)
+        {
+            case Key.Up:
+                scroller.LineUp();
+                break;
+            case Key.Down:
+                scroller.LineDown();
+                break;
+            case Key.PageUp:
+                scroller.PageUp();
+                break;
+            case Key.PageDown:
+                scroller.PageDown();
+                break;
+            case Key.Home:
+                scroller.ScrollToHome();
+                break;
+            case Key.End:
+                scroller.ScrollToEnd();
+                break;
+            default:
+                return;
+        }
+
+        e.Handled = true;
     }
 }
