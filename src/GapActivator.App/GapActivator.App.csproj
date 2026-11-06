@@ -32,6 +32,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="GapActivator.App.Tests" />
+    <InternalsVisibleTo Include="GapActivator.Screenshots" />
   </ItemGroup>
 
 </Project>
