@@ -35,7 +35,7 @@ The layers and what each may reference are in [docs/architecture.md](docs/archit
 - The app references only `GapActivator.Ipc`, and `src/GapActivator.App` must stay Native AOT compatible.
 - A new package needs a stated reason, and versions are pinned exactly in `Directory.Packages.props`.
 
-The architecture tests in `tests/GapActivator.Architecture.Tests` enforce these rules, so a violation fails the build.
+The architecture tests in `tests/GapActivator.Architecture.Tests` enforce these rules, so a violation fails the test run and CI.
 
 ## Workflow
 

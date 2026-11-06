@@ -6,7 +6,7 @@ Accepted.
 
 ## Context
 
-GapActivator registers a Windows service, creates a local group and an event source, and sets access rights on a data folder. Doing so needs administrator rights and must be repeatable, upgradable and removable. Releases must reach users as signed-off artifacts for both architectures without a code-signing certificate in the first version.
+GapActivator registers a Windows service, creates a local group and an event source, and sets access rights on a data folder. Doing so needs administrator rights and must be repeatable, upgradable and removable. Releases must reach users as checksummed artifacts for both architectures without a code-signing certificate in the first version.
 
 ## Decision
 
@@ -16,7 +16,7 @@ GapActivator registers a Windows service, creates a local group and an event sou
 - **Upgrades keep the account.** An upgrade stops the service, replaces the files, keeps the configured account, re-applies the start type and starts it again. The uninstaller keeps the data unless the user opts in, or `/DELETEDATA` is passed.
 - **Scripts double as tests.** `build/Publish-*.ps1`, `Test-Publish.ps1` and `Test-Installer.ps1` are what CI runs, and they are what a developer runs.
 - **release-please plus a reusable workflow.** release-please opens the release PR and creates the tag. A tag created with the default token does not start other workflows, so release-please calls `release.yml` directly. A manual `v*` tag push works too.
-- **Dry runs.** Pull requests that touch packaging files, `feat/**` branches and manual runs without a tag build and test everything with the version `0.0.0-ci.<run_number>` and publish nothing.
+- **Dry runs.** Pull requests that touch packaging files, `feat/**` pushes that touch the same files and manual runs without a tag build and test everything with the version `0.0.0-ci.<run_number>` and publish nothing.
 - **Unsigned in v1.** Code signing and a winget package come later.
 
 ## Consequences

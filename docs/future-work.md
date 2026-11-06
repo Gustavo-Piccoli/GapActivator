@@ -24,4 +24,4 @@ Things GapActivator does not do yet, and known limits. Nothing here is promised 
 These are small gaps found in review and parked:
 
 - A look-ahead test in the occurrence calculator does not discriminate: it passes with and without the behavior it is meant to guard.
-- There is no test for a recurrence rule with a large `INTERVAL`.
+- The occurrence calculator has no test for the cost of a sub-daily rule (such as `MINUTELY`) with a large `INTERVAL`. Large intervals are tested only for a yearly rule.

@@ -35,11 +35,15 @@ The GapActivator switches are:
 |---|---|
 | `/ACCOUNT=<DOMAIN\user>` | Run the service under this account instead of the virtual account. It needs a password. |
 | `/PASSWORD=<password>` | The password for `/ACCOUNT`. |
+
+On an upgrade, `/ACCOUNT` and `/PASSWORD` are ignored: the service keeps the account it already has.
 | `/DELETEDATA` | For the uninstaller: also delete `%ProgramData%\GapActivator`. |
 
 Without `/ACCOUNT`, a silent install uses the virtual account.
 
 > **Warning: `/PASSWORD` is visible.** A switch on the command line can be seen in the process list while the installer runs, and Setup's own `/LOG` file records its command line, so `/PASSWORD` ends up in the log. Prefer the environment variable `GAPACTIVATOR_SETUP_PASSWORD`; the installer reads it once and then clears it. If both are given, `/PASSWORD` wins. The installer itself never passes the password to any other program: it validates it with `LogonUserW` and sets it on the service with `ChangeServiceConfigW`.
+
+Run this from an elevated shell: a variable set in a non-elevated shell does not reach the elevated installer.
 
 ```powershell
 $env:GAPACTIVATOR_SETUP_PASSWORD = Read-Host -AsSecureString | ConvertFrom-SecureString -AsPlainText   # PowerShell 7
@@ -80,5 +84,5 @@ The data folder stays by default. Interactive uninstall asks whether to delete i
 ## Troubleshooting
 
 - **The app says the service is stopped.** Start the service from the app, or with `sc.exe start GapActivator`.
-- **A process fails with "access denied".** The virtual account can only reach what you grant it. Give `NT SERVICE\GapActivator` access to the folders the process uses.
+- **A process fails with "access denied".** The virtual account has few rights of its own, so folders that only specific users can reach are closed to it. Give `NT SERVICE\GapActivator` access to the folders the process uses.
 - **Where to look.** The logs are under `%ProgramData%\GapActivator\logs`. Severe service errors also go to the Windows Event Log, source `GapActivator`. To run the service by hand in a console, see [running the service](running-the-service.md).

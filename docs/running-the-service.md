@@ -33,7 +33,7 @@ If the pipe name is already in use by another process, the service logs a Critic
 
 ## Installing as a Windows Service (developers only)
 
-The installer does this for users; see [installing.md](installing.md). For real installs, use the installer. For development, run an elevated PowerShell with the path of your build:
+For real installs, use the installer; see [installing.md](installing.md). For development, run an elevated PowerShell with the path of your build:
 
 ```powershell
 sc.exe create GapActivator binPath= "C:\path\to\GapActivator.Service.exe" start= demand

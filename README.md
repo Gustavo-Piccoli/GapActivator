@@ -42,7 +42,7 @@ flowchart LR
     Run -- "Job Object" --> Child[Your processes]
 ```
 
-[docs/architecture.md](docs/architecture.md) describes the layers and the pipe protocol.
+[docs/architecture.md](docs/architecture.md) shows the same picture, the layers behind it and the pipe protocol.
 
 ## Install
 
@@ -60,7 +60,7 @@ The builds are not code-signed yet, so Windows SmartScreen may warn you. Choose 
 
 **Choosing the account.** The installer asks which account the service runs under.
 
-- **Virtual service account `NT SERVICE\GapActivator` (recommended).** No password and least privilege. Your processes can only reach what you grant that account access to. The installing user is added to the local group `GapActivator Operators`, whose members can change processes and settings.
+- **Virtual service account `NT SERVICE\GapActivator` (recommended).** No password and few rights of its own. A process gets "access denied" on folders that only specific users can reach, until you grant `NT SERVICE\GapActivator` access to them. The installing user is added to the local group `GapActivator Operators`, whose members can change processes and settings.
 - **A specific account.** Your processes behave as if you ran them by hand. The installer asks for the password and the account gets the "Log on as a service" right. Because whoever changes the process list then runs programs with that account's rights, only Administrators can change anything in this mode.
 
 [docs/installing.md](docs/installing.md) covers the installer pages, the silent switches, what gets created, upgrades and uninstall.
@@ -86,7 +86,7 @@ Any executable works as it is. Exit code `0` is success and any other code is a 
 | Administrators (elevated token) | Everything. |
 | Members of `GapActivator Operators` | Everything, but only when the service runs under the virtual account. |
 
-Captured run output is visible to every viewer, so a process should never print secrets. [docs/running-the-service.md](docs/running-the-service.md) has the details.
+Captured run output is visible to every viewer, so a process should never print secrets (see [docs/child-contract.md](docs/child-contract.md)). [docs/running-the-service.md](docs/running-the-service.md) has the authorization details.
 
 ## Where things live
 
