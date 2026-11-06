@@ -24,7 +24,7 @@ The service listens on the named pipe `GapActivator`. The name comes from the co
 
 Who may do what:
 
-- Anyone with an interactive logon (a console or Remote Desktop session) may view: read state, runs and settings. Batch and service logons of non-administrator accounts get no access to the pipe; SYSTEM, Administrators and the service identity have full control whatever the logon type.
+- Anyone with an interactive logon (a console or Remote Desktop session) may view: read state, runs and settings. Batch and service logons of non-administrator accounts get no access to the pipe; SYSTEM, Administrators and the service identity have full control. For Administrators this needs an elevated (unfiltered) token: a UAC-filtered administrator token is treated as a normal user. A network logon gets no access.
 - Only Administrators and, when enabled, members of the local group `GapActivator Operators` may change state.
 
 The configuration key `GapActivator:Authorization:OperatorsGroup` takes `Auto`, `Enabled` or `Disabled`; the default is `Auto`. `Auto` enables the operators group only when the service runs under a virtual service account (an `S-1-5-80-*` SID, such as `NT SERVICE\GapActivator`); in console mode and under any other account, only Administrators may change state. An invalid value stops the service at startup with exit code `1`.
