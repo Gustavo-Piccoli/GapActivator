@@ -50,6 +50,10 @@ public sealed class App : Avalonia.Application
             shell.ActivationRequested += (_, _) => windows.Show();
             shell.SessionEnding += (_, _) => services.GetRequiredService<IAppLifetime>().Exit();
 
+            // The tray follows the connection and the live state, so it starts after both; the presenter listens for the service's notifications.
+            services.GetRequiredService<TrayCoordinator>().Start();
+            services.GetRequiredService<NotificationPresenter>().Start();
+
             if (!services.GetRequiredService<StartupOptions>().Minimized)
             {
                 windows.Show();

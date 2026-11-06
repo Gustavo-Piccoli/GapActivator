@@ -36,6 +36,7 @@ public static class AppComposition
         AddShell(services);
         AddUpdates(services);
         AddUi(services);
+        AddTray(services);
         AddShutdown(services);
 
         overrides?.Invoke(services);
@@ -236,6 +237,28 @@ public static class AppComposition
         services.AddSingleton<IMainWindowService>(sp => sp.GetRequiredService<MainWindowService>());
     }
 
+    private static void AddTray(IServiceCollection services)
+    {
+        services.AddSingleton(sp => new TrayCoordinator(
+            sp.GetRequiredService<Localizer>(),
+            sp.GetRequiredService<IServiceGateway>(),
+            sp.GetRequiredService<LiveState>(),
+            sp.GetRequiredService<FailureAcknowledgements>(),
+            sp.GetRequiredService<ITrayIcon>(),
+            sp.GetRequiredService<IMainWindowService>(),
+            sp.GetRequiredService<IAppLifetime>(),
+            sp.GetRequiredService<ServiceActions>(),
+            sp.GetRequiredService<INavigator>(),
+            sp.GetRequiredService<IUiDispatcher>()));
+        services.AddSingleton(sp => new NotificationPresenter(
+            sp.GetRequiredService<IServiceGateway>(),
+            sp.GetRequiredService<ITrayIcon>(),
+            sp.GetRequiredService<IAppSettingsService>(),
+            sp.GetRequiredService<Localizer>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<IUiDispatcher>()));
+    }
+
     private static void AddShutdown(IServiceCollection services)
     {
         services.AddSingleton<IAppLifetime>(sp => sp.GetRequiredService<AppShutdown>());
@@ -245,11 +268,16 @@ public static class AppComposition
             T Get<T>()
                 where T : notnull => sp.GetRequiredService<T>();
 
-            // Later tasks insert their steps in front of the shell window: the tray icon goes before it, the gateway first.
+            // The tray icon goes before the shell window that owns its message loop; the gateway goes after the things that listen to it.
             Action[] steps =
             [
+                () => Get<TrayCoordinator>().Dispose(),
+                () => Get<NotificationPresenter>().Dispose(),
+                () => Get<UpdateChecker>().Dispose(),
+
                 // The gateway loop runs off the UI context, so this wait cannot deadlock; it is bounded.
                 () => Get<IServiceGateway>().DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5)),
+                () => Get<ITrayIcon>().Dispose(),
                 () => Get<ShellWindow>().Dispose(),
                 RequestDesktopShutdown,
             ];

@@ -15,6 +15,7 @@ public sealed partial class Localizer(AppLanguage language) : ObservableObject
         nameof(AppName),
         nameof(LanguageEnglish),
         nameof(LanguagePortuguese),
+        nameof(TrayTooltip),
     };
 
     public AppLanguage Language { get; private set; } = language;
