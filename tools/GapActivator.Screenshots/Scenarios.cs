@@ -53,24 +53,24 @@ internal static class Scenes
         var invoices = Guid.Parse("11111111-0000-0000-0000-000000000006");
 
         var reportRun = Row(Run(1), report, "Report export", RunState.Running, null, RunTrigger.Schedule, At(6, 14, 28, 5), null, null);
-        var cleanupFail = Row(Run(3), cleanup, "Disk cleanup", RunState.Completed, RunOutcome.Failed, RunTrigger.Schedule, At(6, 14, 0, 2), At(6, 14, 0, 19), 2);
-        var invoiceTimeout = Row(Run(4), invoices, "Invoice sync", RunState.Completed, RunOutcome.TimedOut, RunTrigger.Retry, At(6, 9, 30), At(6, 9, 35), null);
+        var cleanupFail = Row(Run(3), cleanup, "Disk cleanup", RunState.Completed, RunOutcome.Failed, RunTrigger.Schedule, At(6, 14, 31, 50), At(6, 14, 32, 2), 2);
+        var invoiceTimeout = Row(Run(4), invoices, "Invoice sync", RunState.Completed, RunOutcome.TimedOut, RunTrigger.Schedule, At(6, 9, 0), At(6, 9, 5), null);
 
         gateway.Processes.AddRange(
         [
             Summary(nightly, "Nightly backup", ProcessKind.RunToCompletion, ProcessLifecycle.Enabled, null, RunOutcome.Succeeded, At(7, 2, 0), At(6, 2, 4), 0),
             Summary(report, "Report export", ProcessKind.RunToCompletion, ProcessLifecycle.Enabled, new ActiveRunViewDto(reportRun.Id, RunState.Running, RunTrigger.Schedule, reportRun.StartedAt, 4120), RunOutcome.Succeeded, At(6, 15, 30), At(5, 14, 28), 0),
-            Summary(cleanup, "Disk cleanup", ProcessKind.RunToCompletion, ProcessLifecycle.Enabled, null, RunOutcome.Failed, At(6, 15, 0), At(6, 14, 0), 1),
-            Summary(worker, "Queue worker", ProcessKind.Service, ProcessLifecycle.Enabled, null, RunOutcome.Stopped, null, At(5, 23, 0), 0),
+            Summary(cleanup, "Disk cleanup", ProcessKind.RunToCompletion, ProcessLifecycle.Enabled, null, RunOutcome.Failed, At(6, 14, 32, 40), At(6, 14, 32, 2), 1, retryPending: true),
+            Summary(worker, "Queue worker", ProcessKind.Service, ProcessLifecycle.Disabled, null, RunOutcome.Stopped, null, At(5, 23, 0), 0),
             Summary(rotation, "Log rotation", ProcessKind.RunToCompletion, ProcessLifecycle.Disabled, null, RunOutcome.Succeeded, null, At(1, 3, 0), 0),
-            Summary(invoices, "Invoice sync", ProcessKind.RunToCompletion, ProcessLifecycle.Blocked, null, RunOutcome.TimedOut, null, At(6, 9, 35), 3),
+            Summary(invoices, "Invoice sync", ProcessKind.RunToCompletion, ProcessLifecycle.Blocked, null, RunOutcome.TimedOut, null, At(6, 9, 5), 3),
         ]);
 
         gateway.Dashboard = new DashboardDto(
             false,
             [reportRun],
             [
-                new UpcomingRunDto(cleanup, "Disk cleanup", At(6, 15, 0)),
+                new UpcomingRunDto(cleanup, "Disk cleanup", At(6, 14, 32, 40)),
                 new UpcomingRunDto(report, "Report export", At(6, 15, 30)),
                 new UpcomingRunDto(nightly, "Nightly backup", At(7, 2, 0)),
             ],
@@ -102,6 +102,7 @@ internal static class Scenes
             Row(Run(6), report, "Report export", RunState.Completed, RunOutcome.Succeeded, RunTrigger.Manual, At(5, 16, 10), At(5, 16, 12), 0),
             Row(Run(7), cleanup, "Disk cleanup", RunState.Completed, RunOutcome.Succeeded, RunTrigger.Schedule, At(5, 14, 0, 1), At(5, 14, 0, 33), 0),
             Row(Run(8), invoices, "Invoice sync", RunState.Completed, RunOutcome.Failed, RunTrigger.Schedule, At(5, 9, 0, 3), At(5, 9, 0, 21), 2),
+            Row(Run(13), invoices, "Invoice sync", RunState.Completed, RunOutcome.Failed, RunTrigger.Retry, At(5, 9, 0, 51), At(5, 9, 1, 10), 2),
             Row(Run(9), nightly, "Nightly backup", RunState.Completed, RunOutcome.Succeeded, RunTrigger.Schedule, At(5, 2, 0, 1), At(5, 2, 3, 48), 0),
             Row(Run(10), report, "Report export", RunState.Completed, RunOutcome.Cancelled, RunTrigger.Manual, At(4, 11, 45), At(4, 11, 46), null),
             Row(Run(11), cleanup, "Disk cleanup", RunState.Completed, RunOutcome.Skipped, RunTrigger.Schedule, At(4, 14, 0), At(4, 14, 0), null),
@@ -112,8 +113,8 @@ internal static class Scenes
             cleanupFail,
             "The process exited with code 2.",
             [
-                Entry(HistoryEntryKind.RunStarted, At(6, 14, 0, 2), null),
-                Entry(HistoryEntryKind.RunCompleted, At(6, 14, 0, 19), "Failed with exit code 2."),
+                Entry(HistoryEntryKind.RunStarted, At(6, 14, 31, 50), null),
+                Entry(HistoryEntryKind.RunCompleted, At(6, 14, 32, 2), "Failed with exit code 2."),
             ],
             new RunOutputDto(
                 true,
@@ -181,8 +182,8 @@ internal static class Scenes
     private static RunRowDto Row(Guid id, Guid processId, string name, RunState state, RunOutcome? outcome, RunTrigger trigger, DateTimeOffset startedAt, DateTimeOffset? endedAt, int? exitCode) =>
         new(id, processId, name, name == "Queue worker" ? ProcessKind.Service : ProcessKind.RunToCompletion, trigger, state, outcome, false, null, startedAt, startedAt, endedAt, exitCode, false);
 
-    private static ProcessSummaryDto Summary(Guid id, string name, ProcessKind kind, ProcessLifecycle lifecycle, ActiveRunViewDto? active, RunOutcome? last, DateTimeOffset? next, DateTimeOffset? lastEnded, int failures) =>
-        new(id, name, kind, lifecycle, failures, false, next, active, last, lastEnded);
+    private static ProcessSummaryDto Summary(Guid id, string name, ProcessKind kind, ProcessLifecycle lifecycle, ActiveRunViewDto? active, RunOutcome? last, DateTimeOffset? next, DateTimeOffset? lastEnded, int failures, bool retryPending = false) =>
+        new(id, name, kind, lifecycle, failures, retryPending, next, active, last, lastEnded);
 
     private static HistoryEntryDto Entry(HistoryEntryKind kind, DateTimeOffset at, string? message) =>
         new(Guid.NewGuid(), at, kind, null, null, null, null, message);

@@ -11,7 +11,7 @@ using GapActivator.App.ViewModels;
 using GapActivator.App.Views;
 using GapActivator.Screenshots;
 
-var outDir = Path.Combine(RepositoryRoot(), "docs", "images");
+string? outDir = null;
 for (var i = 0; i < args.Length; i++)
 {
     if (args[i] == "--out" && i + 1 < args.Length)
@@ -20,6 +20,8 @@ for (var i = 0; i < args.Length; i++)
     }
 }
 
+// Only look for the solution file when no --out was given, so --out works anywhere.
+outDir ??= Path.Combine(RepositoryRoot(), "docs", "images");
 Directory.CreateDirectory(outDir);
 
 // The real app applies this culture through ThemeApplier; without it the date pickers show the OS pattern.
