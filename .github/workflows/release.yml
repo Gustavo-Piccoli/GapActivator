@@ -42,7 +42,8 @@ permissions:
 
 concurrency:
   group: release-${{ inputs.tag || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_type == 'branch') }}
+  # Never cancel a release: under workflow_call the context is the caller's push to main, so require an empty tag input.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_type == 'branch' && inputs.tag == '') }}
 
 jobs:
   version:
@@ -62,10 +63,11 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
-          tag=""
+          # Under workflow_call the github context is the caller's (a push to main), so only the input
+          # carries the tag. inputs.tag is empty on a plain push and on a pull request.
           if [ "$EVENT" = "push" ] && [ "$REF_TYPE" = "tag" ]; then
             tag="$REF_NAME"
-          elif [ "$EVENT" != "push" ]; then
+          else
             tag="$INPUT_TAG"
           fi
           # Pull requests, branch pushes and dispatches without a tag are dry runs.
@@ -177,9 +179,9 @@ jobs:
         shell: pwsh
         run: |
           $ns = 'GapActivator.Service.Tests.Setup'
-          $classes = 'DataRootPreparerTests', 'EventSourceRegistrarTests', 'OperatorsGroupTests', 'ServiceLogonRightTests', 'SetupCommandTests'
           $testArgs = @('test', '-c', 'Release', '--project', 'tests/GapActivator.Service.Tests', '--')
-          foreach ($class in $classes) { $testArgs += '--filter-class'; $testArgs += "$ns.$class" }
+          $testArgs += '--filter-namespace'
+          $testArgs += $ns
           $testArgs += '--filter-not-method'
           $testArgs += "$ns.DataRootPreparerTests.Prepare_NotElevatedWithoutFallback_FailsInsteadOfKeepingTheOwner"
           $output = & dotnet @testArgs 2>&1 | ForEach-Object { Write-Host "$_"; "$_" }
