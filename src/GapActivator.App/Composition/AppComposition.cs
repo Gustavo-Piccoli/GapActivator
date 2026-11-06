@@ -272,9 +272,13 @@ public static class AppComposition
             // The tray icon goes before the shell window that owns its message loop; the gateway goes after the things that listen to it.
             Action[] steps =
             [
+                // Quit does not go through the window's close button, so the position is saved here, before the window goes away.
+                () => Get<MainWindowService>().SaveBoundsIfVisible(),
                 () => Get<TrayCoordinator>().Dispose(),
                 () => Get<NotificationPresenter>().Dispose(),
+                () => Get<AboutViewModel>().Dispose(),
                 () => Get<UpdateChecker>().Dispose(),
+                () => Get<HttpClient>().Dispose(),
 
                 // The gateway loop runs off the UI context, so this wait cannot deadlock; it is bounded.
                 () => Get<IServiceGateway>().DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5)),

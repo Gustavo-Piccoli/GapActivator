@@ -58,6 +58,81 @@ public class MainWindowServiceTests(HeadlessFixture fixture)
     }
 
     [Fact]
+    public async Task MainWindowService_SaveBoundsIfVisible_VisibleWindow_SavesWhereItIsNow()
+    {
+        using var dir = new TempDirectory();
+        var settings = NewSettings(dir);
+        var service = new MainWindowService(() => NewWindow(new FakeServiceGateway()), settings, () => [new PixelRect(0, 0, 1920, 1080)]);
+
+        await fixture.Session.Dispatch(
+            () =>
+            {
+                service.Show();
+                var window = service.Window.ShouldNotBeNull();
+                window.Position = new PixelPoint(120, 80);
+                window.Width = 900;
+                window.Height = 600;
+                service.SaveBoundsIfVisible();
+                window.Close();
+                return 0;
+            },
+            TestContext.Current.CancellationToken);
+
+        WindowBounds saved = settings.Current.Window.ShouldNotBeNull();
+        saved.X.ShouldBe(120);
+        saved.Y.ShouldBe(80);
+        saved.Maximized.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task MainWindowService_SaveBoundsIfVisible_NoWindowOrHiddenWindow_SavesNothing()
+    {
+        using var dir = new TempDirectory();
+        var settings = NewSettings(dir);
+        var service = new MainWindowService(() => NewWindow(new FakeServiceGateway()), settings, () => [new PixelRect(0, 0, 1920, 1080)]);
+
+        await fixture.Session.Dispatch(
+            () =>
+            {
+                service.SaveBoundsIfVisible();
+                service.Show();
+                service.Window.ShouldNotBeNull().Close();
+                settings.Update(s => s with { Window = null });
+                service.SaveBoundsIfVisible();
+                return 0;
+            },
+            TestContext.Current.CancellationToken);
+
+        settings.Current.Window.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task MainWindowService_SavedBoundsOnAMonitorThatNoLongerExists_OpensOnAVisibleScreenAtTheDefaultSize()
+    {
+        using var dir = new TempDirectory();
+        var settings = NewSettings(dir);
+        settings.Update(s => s with { Window = new WindowBounds(4000, 300, 1000, 700, false) });
+        PixelRect only = new(0, 0, 1920, 1080);
+        var service = new MainWindowService(() => NewWindow(new FakeServiceGateway()), settings, () => [only]);
+
+        (PixelPoint position, double width, double height, WindowStartupLocation location) = await fixture.Session.Dispatch(
+            () =>
+            {
+                service.Show();
+                var window = service.Window.ShouldNotBeNull();
+                var result = (window.Position, window.Width, window.Height, window.WindowStartupLocation);
+                window.Close();
+                return result;
+            },
+            TestContext.Current.CancellationToken);
+
+        location.ShouldBe(WindowStartupLocation.CenterScreen);
+        width.ShouldBe(WindowPlacement.DefaultWidth);
+        height.ShouldBe(WindowPlacement.DefaultHeight);
+        only.Contains(position).ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task MainWindowService_ShowAfterHide_ShowsTheSameWindow()
     {
         using var dir = new TempDirectory();

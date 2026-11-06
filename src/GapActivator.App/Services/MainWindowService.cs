@@ -31,6 +31,18 @@ public sealed class MainWindowService(Func<MainWindow> factory, IAppSettingsServ
         window.Topmost = false;
     }
 
+    /// <summary>
+    /// Saves where the window is now, when it is on screen. A Quit from the tray or a Windows session end does not go through the
+    /// close button, so without this a move since the last hide would be lost. Call it on the UI thread.
+    /// </summary>
+    public void SaveBoundsIfVisible()
+    {
+        if (_window is { IsVisible: true } window)
+        {
+            SaveBounds(window);
+        }
+    }
+
     private MainWindow Create()
     {
         var window = factory();

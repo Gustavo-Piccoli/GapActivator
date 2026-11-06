@@ -30,6 +30,7 @@ internal static class Program
             .UsePlatformDetect()
             .StartWithClassicDesktopLifetime(args, ShutdownMode.OnExplicitShutdown);
     }
+
     // The first instance may hold the mutex before its shell window exists, so retry briefly.
     private static void SignalRunningInstance()
     {
