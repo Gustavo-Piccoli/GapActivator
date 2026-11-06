@@ -35,11 +35,9 @@ The GapActivator switches are:
 |---|---|
 | `/ACCOUNT=<DOMAIN\user>` | Run the service under this account instead of the virtual account. It needs a password. |
 | `/PASSWORD=<password>` | The password for `/ACCOUNT`. |
-
-On an upgrade, `/ACCOUNT` and `/PASSWORD` are ignored: the service keeps the account it already has.
 | `/DELETEDATA` | For the uninstaller: also delete `%ProgramData%\GapActivator`. |
 
-Without `/ACCOUNT`, a silent install uses the virtual account.
+Without `/ACCOUNT`, a silent install uses the virtual account. On an upgrade, `/ACCOUNT` and `/PASSWORD` are ignored: the service keeps the account it already has.
 
 > **Warning: `/PASSWORD` is visible.** A switch on the command line can be seen in the process list while the installer runs, and Setup's own `/LOG` file records its command line, so `/PASSWORD` ends up in the log. Prefer the environment variable `GAPACTIVATOR_SETUP_PASSWORD`; the installer reads it once and then clears it. If both are given, `/PASSWORD` wins. The installer itself never passes the password to any other program: it validates it with `LogonUserW` and sets it on the service with `ChangeServiceConfigW`.
 

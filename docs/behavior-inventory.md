@@ -1,6 +1,6 @@
-# Behavior inventory of the legacy activator
+# Behavior inventory
 
-This document lists the observable rules of the private predecessor (the **legacy activator**, see the design, section 13), read from its source code and its unit tests. Each rule is written in neutral English domain language and gets a verdict:
+This document lists the candidate behavior rules considered while designing GapActivator. Each rule is written in neutral English domain language and gets a verdict:
 
 - **keep**: GapActivator preserves the rule as stated.
 - **redesign**: GapActivator preserves the intent with a different rule (column *New rule*).
@@ -10,7 +10,7 @@ Every **keep** and **redesign** row becomes at least one test in the new codebas
 
 Column *Spec §* points to the section of the project design document (kept outside this repository) that decides the row. Rules the design did not originally decide were put to the owner; the column then names the owner decision (Q-n), listed in the final section. Column *Plan* says where the rule lands: 1 = domain rule, 2 = application/orchestration, 3 = infrastructure/service, 4 = IPC/app, 5 = installer/distribution.
 
-Vocabulary used for the legacy behavior: the legacy activator kept a single *status* per process that mixed lifecycle, run state and pending operator requests, an installation-wide *state* that switched between normal operation, a pause and a restart request, and a *run record* per execution attempt. Operators changed statuses and states by writing directly to the database.
+Vocabulary used in the candidate rules: a single *status* per process that mixes lifecycle, run state and pending operator requests, an installation-wide *state* that switches between normal operation, a pause and a restart request, and a *run record* per execution attempt. In the candidate rules, operators change statuses and states by writing directly to the database.
 
 ## Process Catalog
 
@@ -64,7 +64,7 @@ Vocabulary used for the legacy behavior: the legacy activator kept a single *sta
 |---|---|---|---|---|---|---|
 | BI-037 | A cycle starts every configured interval; the interval is re-read before each wait, so a change applies without a restart. | keep | | §6.5 | 2 | SchedulerLoopTests.Loop_IntervalChanged_NextWaitUsesNewInterval |
 | BI-038 | A new cycle starts on time even when runs from previous cycles are still active; a long run never delays the scheduling of other processes. | keep | | §8 | 2 | SchedulerLoopTests.Loop_LongRunActive_NextCycleStillOnTime |
-| BI-039 | All processes of a cycle are handled concurrently and independently. Legacy defect: an unexpected error in one process's handling cancels the whole dispatch, cancelling the other processes' active runs (later counted as failures) and skipping the ones not started. | redesign | A failure in one process never stops, cancels or skips the handling of the others. | §8 | 2 | CycleRunnerTests.Cycle_OneProcessThrows_OthersStillEvaluated |
+| BI-039 | All processes of a cycle are handled concurrently and independently. Defect in the candidate rule: an unexpected error in one process's handling cancels the whole dispatch, cancelling the other processes' active runs (later counted as failures) and skipping the ones not started. | redesign | A failure in one process never stops, cancels or skips the handling of the others. | §8 | 2 | CycleRunnerTests.Cycle_OneProcessThrows_OthersStillEvaluated |
 | BI-040 | An unexpected cycle failure is logged and alerted, never crashes the service (the alert is the CycleFailed event, BI-093); a shutdown cancellation ends the cycle silently, without an alert. | keep | | §8 | 2 | SchedulerLoopTests.Loop_CycleThrows_RecordsCycleFailedAndContinues, SchedulerLoopTests.Loop_StoppingToken_EndsWithoutCycleFailed |
 | BI-041 | Two runs of the same process never overlap: a run is first reserved in memory, then claimed with an atomic compare-and-set on the stored status; a process already owned by another cycle is skipped and an informational line is logged. | keep | | §8 | 2 | RunRecordingTests.StartPendingRun_ActiveRun_SkippedAndLogged, RunSupervisorTests.Start_SecondTicketSameProcess_Ignored, RunSupervisorTests.Start_WhilePreviousRunIsBeingRecordedAsEnded_LaunchesAfterItsEntryIsRemoved, RunSupervisorTests.Start_DeferredRun_IsTrackedAndAThirdTicketIsIgnored, RunSupervisorTests.Adopt_ProcessAlreadyTracked_IgnoredAndHandleDisposed |
 | BI-042 | Stored state changes are guarded: a writer that finds the state changed since it read it gives up without overwriting (blocking, completing a run, reverting a cancel request). | keep | | §16 (builder's call) | 3 | UnitOfWorkTests.Commit_RunChangedByAnotherScope_ThrowsAndFirstWriteWins, UnitOfWorkTests.Commit_ScheduleOnlyChangeByTwoScopes_SecondThrowsConcurrency |
