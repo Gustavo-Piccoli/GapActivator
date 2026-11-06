@@ -35,7 +35,7 @@ Merge PRs with rebase, not squash, so commit footers such as `Release-As:` survi
 
 A dry run builds and tests everything but publishes nothing (version `0.0.0-ci.<run_number>`). It happens on:
 
-- pull requests touching packaging files (`build/**`, `installer/**`, `release.yml`, `Directory.Packages.props`, `Directory.Build.props`, `global.json`, `GapActivator.App.csproj`, `src/GapActivator.Service/**`);
+- pull requests touching packaging files (`build/**`, `installer/**`, `release.yml`, `Directory.Packages.props`, `Directory.Build.props`, `global.json`, `GapActivator.App.csproj`, `src/GapActivator.Service/**`, `tests/GapActivator.Service.Tests/Setup/**`);
 - pushes to `feat/**` branches touching the same files, so a plan branch gets the installer test without a pull request;
 - `workflow_dispatch` with an empty tag.
 

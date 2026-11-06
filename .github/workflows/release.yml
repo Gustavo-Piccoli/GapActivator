@@ -13,6 +13,7 @@ on:
       - 'global.json'
       - 'src/GapActivator.App/GapActivator.App.csproj'
       - 'src/GapActivator.Service/**'
+      - 'tests/GapActivator.Service.Tests/Setup/**'
   workflow_dispatch:
     inputs:
       tag:
@@ -34,6 +35,7 @@ on:
       - 'global.json'
       - 'src/GapActivator.App/GapActivator.App.csproj'
       - 'src/GapActivator.Service/**'
+      - 'tests/GapActivator.Service.Tests/Setup/**'
 
 permissions:
   contents: read
