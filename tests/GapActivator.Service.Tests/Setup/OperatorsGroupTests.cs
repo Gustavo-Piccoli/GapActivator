@@ -15,8 +15,9 @@ public sealed class OperatorsGroupTests
         Assert.SkipWhen(GroupExists(), "A real GapActivator Operators group exists; the test would delete it.");
         string user = "gatest" + Guid.NewGuid().ToString("N")[..8];
 
-        // A throwaway local account with a generated value that is never reused or logged.
-        Net("user", user, "Aa1!" + Guid.NewGuid().ToString("N"), "/add");
+        // A throwaway local account with a generated value that is never reused or logged. net.exe asks for
+        // confirmation (and fails without a console) when the value is longer than 14 characters, so keep it at 14.
+        Run("user", user, "Aa1!" + Guid.NewGuid().ToString("N")[..10], "/add").Code.ShouldBe(0);
         try
         {
             var sid = (SecurityIdentifier)new NTAccount(Environment.MachineName + "\\" + user)

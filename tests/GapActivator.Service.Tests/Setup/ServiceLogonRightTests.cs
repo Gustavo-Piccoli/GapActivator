@@ -14,9 +14,10 @@ public sealed class ServiceLogonRightTests
         Elevation.SkipUnlessElevated();
         string user = "gatest" + Guid.NewGuid().ToString("N")[..8];
 
-        // A throwaway local account with a generated value that is never reused or logged.
-        string secret = "Aa1!" + Guid.NewGuid().ToString("N");
-        Net("user", user, secret, "/add");
+        // A throwaway local account with a generated value that is never reused or logged. net.exe asks for
+        // confirmation (and fails without a console) when the value is longer than 14 characters, so keep it at 14.
+        string secret = "Aa1!" + Guid.NewGuid().ToString("N")[..10];
+        Net("user", user, secret, "/add").ShouldBe(0);
         try
         {
             var sid = (SecurityIdentifier)new NTAccount(Environment.MachineName + "\\" + user)
@@ -31,7 +32,7 @@ public sealed class ServiceLogonRightTests
         }
     }
 
-    private static void Net(params string[] args)
+    private static int Net(params string[] args)
     {
         var info = new ProcessStartInfo("net.exe")
         {
@@ -49,5 +50,6 @@ public sealed class ServiceLogonRightTests
         p.StandardOutput.ReadToEnd();
         p.StandardError.ReadToEnd();
         p.WaitForExit();
+        return p.ExitCode;
     }
 }
