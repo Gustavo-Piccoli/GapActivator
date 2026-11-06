@@ -616,6 +616,49 @@ public sealed class ProcessEditorViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task NoticeText_ShownInEnglish_SwitchesToPortugueseLive()
+    {
+        FillNew();
+        _gateway.Saved = new ProcessSavedDto(Guid.NewGuid(), ["Hidden sibling"]);
+        await _vm.SaveCommand.ExecuteAsync(null);
+        _vm.NoticeText.ShouldBe("Saved. Also used by: Hidden sibling.");
+
+        _l.SetLanguage(AppLanguage.Portuguese);
+
+        _vm.NoticeText.ShouldBe(_l.SharedExecutableNote("Hidden sibling"));
+        _vm.NoticeText.ShouldNotBeNull().ShouldNotContain("Also used by");
+    }
+
+    [Fact]
+    public async Task ScheduleErrorTextAndErrorText_ShownInEnglish_SwitchToPortugueseLive()
+    {
+        var id = LoadExisting(Dtos.Details());
+        await _vm.LoadAsync(id);
+        _gateway.FailNext(nameof(IServiceGateway.UpdateProcessAsync), Failure(IpcErrorCodes.ScheduleInPast));
+        await _vm.SaveCommand.ExecuteAsync(null);
+        _vm.ScheduleErrorText.ShouldBe("A one-time schedule must be in the future.");
+
+        _l.SetLanguage(AppLanguage.Portuguese);
+
+        _vm.ScheduleErrorText.ShouldBe(ServiceErrors.Describe(IpcErrorCodes.ScheduleInPast, "service said so", _l));
+        _vm.ScheduleErrorText.ShouldNotBeNull().ShouldNotContain("must be in the future");
+        _vm.ErrorText.ShouldBe(_l.ScheduleProblemFooter);
+    }
+
+    [Fact]
+    public void ErrorText_ValidationErrorShownInEnglish_SwitchesToPortugueseLive()
+    {
+        _vm.LoadNew();
+        _vm.SaveCommand.Execute(null);
+        _vm.ErrorText.ShouldBe("Enter a name.");
+
+        _l.SetLanguage(AppLanguage.Portuguese);
+
+        _vm.ErrorText.ShouldBe(_l.RequiredName);
+        _vm.ErrorText.ShouldNotBe("Enter a name.");
+    }
+
+    [Fact]
     public async Task Viewer_IsReadOnlyAndShowsHiddenValues()
     {
         _gateway.SetStatus(FakeServiceGateway.Viewer());

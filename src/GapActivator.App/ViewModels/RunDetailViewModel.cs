@@ -26,7 +26,7 @@ public sealed partial class RunDetailViewModel : PageViewModel, IDisposable
     private int _version;
     private bool _refreshing;
     private bool _closed;
-    private string? _copyError;
+    private Func<string>? _copyError;
 
     public RunDetailViewModel(Localizer l, IServiceGateway gateway, TimeProvider time, TimeDisplay times, IClipboardService clipboard, IUiDispatcher ui)
         : base(l)
@@ -134,6 +134,7 @@ public sealed partial class RunDetailViewModel : PageViewModel, IDisposable
     {
         Close();
         L.PropertyChanged -= OnLanguageChanged;
+        StopFollowingLanguage();
     }
 
     private void Apply(RunDetailsDto details, int version)
@@ -172,7 +173,7 @@ public sealed partial class RunDetailViewModel : PageViewModel, IDisposable
             : null;
         ExitCodeText = run.ExitCode?.ToString(L.Culture);
 
-        var failure = run.Outcome is { } o && (RunOutcomes.Failures.Contains(o) || o == RunOutcome.FailedToStart);
+        var failure = run.Outcome is { } o && (RunOutcomes.Failures.Contains(o));
         ErrorLabel = failure ? L.RunError : L.RunReason;
         RunErrorText = details.Error;
         OnPropertyChanged(nameof(HasRunError));
@@ -219,17 +220,18 @@ public sealed partial class RunDetailViewModel : PageViewModel, IDisposable
             await _clipboard.SetTextAsync(Output).ConfigureAwait(true);
 
             // Only the copy failure is the copy's to clear; a poll error that is on screen stays.
-            if (_copyError is not null && string.Equals(ErrorText, _copyError, StringComparison.Ordinal))
+            if (_copyError is not null && ReferenceEquals(CurrentError, _copyError))
             {
-                ErrorText = null;
+                SetError(null);
             }
 
             _copyError = null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _copyError = L.ErrorUnexpected(ex.Message);
-            ErrorText = _copyError;
+            var message = ex.Message;
+            _copyError = () => L.ErrorUnexpected(message);
+            SetError(_copyError);
         }
     }
 

@@ -41,6 +41,8 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
     private bool _sensitiveHidden;
     private ScheduleItemViewModel? _editingSchedule;
     private bool _disposed;
+    private Func<string>? _notice;
+    private Func<string>? _scheduleError;
 
     public ProcessEditorViewModel(
         Localizer l,
@@ -143,12 +145,13 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
     [ObservableProperty]
     public partial bool ShowKeptInput { get; private set; }
 
-    [ObservableProperty]
-    public partial string? NoticeText { get; private set; }
+    public string? NoticeText => _notice?.Invoke();
+
+    /// <summary>How <see cref="NoticeText"/> is built, for a list page that shows it after this editor closed.</summary>
+    internal Func<string>? NoticeSource => _notice;
 
     /// <summary>The service's "a one-time schedule must be in the future" message, shown with the schedules it is about.</summary>
-    [ObservableProperty]
-    public partial string? ScheduleErrorText { get; private set; }
+    public string? ScheduleErrorText => _scheduleError?.Invoke();
 
     [ObservableProperty]
     public partial ScheduleEditorViewModel? ScheduleEditor { get; private set; }
@@ -292,6 +295,7 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
         _disposed = true;
         _permissions.PropertyChanged -= OnPermissionsChanged;
         L.PropertyChanged -= OnLanguageChanged;
+        StopFollowingLanguage();
         DisposeScheduleEditor();
     }
 
@@ -303,11 +307,23 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
 
     partial void OnLoadFailedChanged(bool value) => RaiseCommandStates();
 
+    private void SetNotice(Func<string>? notice)
+    {
+        _notice = notice;
+        OnPropertyChanged(nameof(NoticeText));
+    }
+
+    private void SetScheduleError(Func<string>? error)
+    {
+        _scheduleError = error;
+        OnPropertyChanged(nameof(ScheduleErrorText));
+    }
+
     private void ClearMessages()
     {
-        ErrorText = null;
-        NoticeText = null;
-        ScheduleErrorText = null;
+        SetError(null);
+        SetNotice(null);
+        SetScheduleError(null);
         ShowKeptInput = false;
     }
 
@@ -396,7 +412,7 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
     private void OpenScheduleEditor(ScheduleItemViewModel? item)
     {
         DisposeScheduleEditor();
-        ScheduleErrorText = null;
+        SetScheduleError(null);
         ScheduleEditorViewModel editor = _scheduleEditors();
         editor.Load(item?.AsView());
         editor.PropertyChanged += OnScheduleEditorChanged;
@@ -424,7 +440,7 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
             Schedules.Add(item);
         }
 
-        ScheduleErrorText = null;
+        SetScheduleError(null);
         DisposeScheduleEditor();
     }
 
@@ -441,7 +457,7 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
         }
 
         Schedules.Remove(item);
-        ScheduleErrorText = null;
+        SetScheduleError(null);
     }
 
     private void DisposeScheduleEditor()
@@ -469,28 +485,30 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
 
     // ----- save
 
-    private string? Validate()
+    // What is wrong, as the words to show: built when read, so they follow a language switch.
+    private Func<string>? Validate()
     {
         if (Name.Trim().Length == 0)
         {
-            return L.RequiredName;
+            return () => L.RequiredName;
         }
 
         if (ExecutableInput.Normalize(Executable).Length == 0)
         {
-            return L.RequiredExecutable;
+            return () => L.RequiredExecutable;
         }
 
         foreach (EnvironmentVariableRowViewModel row in Environment)
         {
             if (row.Name.Trim().Length == 0)
             {
-                return L.RequiredVariableName;
+                return () => L.RequiredVariableName;
             }
 
             if (row.NeedsValue)
             {
-                return L.RequiredVariableValue(row.Name.Trim());
+                var name = row.Name.Trim();
+                return () => L.RequiredVariableValue(name);
             }
         }
 
@@ -502,13 +520,13 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
         ClearMessages();
         if (ScheduleEditor is not null)
         {
-            ErrorText = L.FinishScheduleFirst;
+            SetError(() => L.FinishScheduleFirst);
             return;
         }
 
         if (Validate() is { } problem)
         {
-            ErrorText = problem;
+            SetError(problem);
             return;
         }
 
@@ -552,8 +570,8 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
                 if (scheduleInPast)
                 {
                     // The line in the Schedules card has the service's words; the footer, which is always on screen, points to it.
-                    ScheduleErrorText = ErrorText;
-                    ErrorText = L.ScheduleProblemFooter;
+                    SetScheduleError(CurrentError);
+                    SetError(() => L.ScheduleProblemFooter);
                 }
 
                 return;
@@ -567,7 +585,8 @@ public sealed partial class ProcessEditorViewModel : PageViewModel, IDisposable
             var unseen = saved.ProcessesSharingExecutable.Where(n => !shown.Contains(n, StringComparer.OrdinalIgnoreCase)).ToList();
             if (unseen.Count > 0)
             {
-                NoticeText = L.SharedExecutableNote(string.Join(", ", unseen));
+                var names = string.Join(", ", unseen);
+                SetNotice(() => L.SharedExecutableNote(names));
             }
 
             Closed?.Invoke(this, true);

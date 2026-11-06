@@ -309,7 +309,7 @@ public sealed partial class SettingsViewModel : PageViewModel
         SetStatus(Outcome.None);
         if (Validate() is { } invalid)
         {
-            ErrorText = invalid;
+            SetError(invalid);
             return;
         }
 
@@ -521,23 +521,24 @@ public sealed partial class SettingsViewModel : PageViewModel
     }
 
     // The domain's bounds; the numeric boxes enforce them too, this covers a value typed past them.
-    private string? Validate() =>
-        Check(CycleIntervalSeconds, L.CycleIntervalLabel, 5, 3600)
-        ?? Check(FailureLimit, L.FailureLimitLabel, 1, 100)
-        ?? Check(DefaultGracePeriodSeconds, L.DefaultGraceLabel, 1, 600)
-        ?? Check(LogRetentionDays, L.LogRetentionLabel, 1, MaxDays)
-        ?? Check(HistoryRetentionDays, L.HistoryRetentionLabel, 1, MaxDays)
-        ?? Check(SmtpPort, L.SmtpPortLabel, 1, 65535)
-        ?? (DefaultTimeLimitSeconds is { } limit && limit != decimal.Truncate(limit) ? L.SettingsNotWholeNumber(L.DefaultTimeLimitLabel) : null);
+    // What is wrong, as the words to show: built when read, so they follow a language switch.
+    private Func<string>? Validate() =>
+        Check(CycleIntervalSeconds, () => L.CycleIntervalLabel, 5, 3600)
+        ?? Check(FailureLimit, () => L.FailureLimitLabel, 1, 100)
+        ?? Check(DefaultGracePeriodSeconds, () => L.DefaultGraceLabel, 1, 600)
+        ?? Check(LogRetentionDays, () => L.LogRetentionLabel, 1, MaxDays)
+        ?? Check(HistoryRetentionDays, () => L.HistoryRetentionLabel, 1, MaxDays)
+        ?? Check(SmtpPort, () => L.SmtpPortLabel, 1, 65535)
+        ?? (DefaultTimeLimitSeconds is { } limit && limit != decimal.Truncate(limit) ? () => L.SettingsNotWholeNumber(L.DefaultTimeLimitLabel) : null);
 
-    private string? Check(decimal value, string label, int min, int max)
+    private Func<string>? Check(decimal value, Func<string> label, int min, int max)
     {
         if (value != decimal.Truncate(value))
         {
-            return L.SettingsNotWholeNumber(label);
+            return () => L.SettingsNotWholeNumber(label());
         }
 
-        return value >= min && value <= max ? null : L.SettingsOutOfRange(label, min, max);
+        return value >= min && value <= max ? null : () => L.SettingsOutOfRange(label(), min, max);
     }
 
     private void RebuildTexts()

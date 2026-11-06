@@ -203,7 +203,7 @@ public sealed partial class HistoryViewModel : PageViewModel, IFreshnessNotes
         DateTime? to = ToDate?.Date;
         if (from is { } f && to is { } t && f > t)
         {
-            ErrorText = L.FilterDatesInverted;
+            SetError(() => L.FilterDatesInverted);
             return;
         }
 

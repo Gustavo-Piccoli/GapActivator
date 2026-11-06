@@ -561,4 +561,35 @@ public class SettingsViewModelTests
         Count(nameof(IServiceGateway.UpdateSettingsAsync)).ShouldBe(0);
         Vm.ErrorText.ShouldBe(_h.L.SettingsOutOfRange(_h.L.SmtpPortLabel, 1, 65535));
     }
+
+    [Fact]
+    public async Task ErrorText_ServiceFailureShownInEnglish_SwitchesToPortugueseLive()
+    {
+        await LoadAsync();
+        _h.Gateway.FailNext(nameof(IServiceGateway.SendTestEmailAsync), new GapActivatorRequestException(IpcErrorCodes.EmailTestFailed, "connection refused", retryable: false));
+        await Vm.SendTestEmailCommand.ExecuteAsync(null);
+        Vm.ErrorText.ShouldBe("The test e-mail failed: connection refused");
+        var raised = new List<string?>();
+        Vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        _h.L.SetLanguage(AppLanguage.Portuguese);
+
+        Vm.ErrorText.ShouldBe(ServiceErrors.Describe(IpcErrorCodes.EmailTestFailed, "connection refused", _h.L));
+        Vm.ErrorText.ShouldNotBeNull().ShouldNotContain("The test e-mail failed");
+        raised.ShouldContain(nameof(SettingsViewModel.ErrorText));
+    }
+
+    [Fact]
+    public async Task ErrorText_ValidationErrorShownInEnglish_SwitchesToPortugueseLive()
+    {
+        await LoadAsync();
+        Vm.CycleIntervalSeconds = 4;
+        await Vm.SaveCommand.ExecuteAsync(null);
+        Vm.ErrorText.ShouldBe("Cycle interval (seconds) must be between 5 and 3600.");
+
+        _h.L.SetLanguage(AppLanguage.Portuguese);
+
+        Vm.ErrorText.ShouldBe(_h.L.SettingsOutOfRange(_h.L.CycleIntervalLabel, 5, 3600));
+        Vm.ErrorText.ShouldNotBeNull().ShouldNotContain("must be between");
+    }
 }

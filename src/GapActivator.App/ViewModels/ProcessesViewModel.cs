@@ -67,6 +67,7 @@ public sealed partial class ProcessesViewModel : PageViewModel, IFreshnessNotes
             }
 
             OnPropertyChanged(nameof(ProgressText));
+            OnPropertyChanged(nameof(NoticeText));
             NotifyFreshness();
         };
         Rebuild();
@@ -79,8 +80,7 @@ public sealed partial class ProcessesViewModel : PageViewModel, IFreshnessNotes
     public partial ProcessEditorViewModel? Editor { get; private set; }
 
     /// <summary>What the last saved editor wanted the user to know ("also used by"); shown above the list.</summary>
-    [ObservableProperty]
-    public partial string? NoticeText { get; private set; }
+    public string? NoticeText => _notice?.Invoke();
 
     /// <summary>The read of the process the last navigation request opened; tests await it, the screen does not need to.</summary>
     internal Task OpeningEditor { get; private set; } = Task.CompletedTask;
@@ -117,6 +117,7 @@ public sealed partial class ProcessesViewModel : PageViewModel, IFreshnessNotes
 
     // The name of the process being deleted while its run is stopped; the text is built from it, so it follows a language switch.
     private string? _stoppingName;
+    private Func<string>? _notice;
 
     /// <summary>Shown while a delete waits for the run to stop (up to a minute); null otherwise.</summary>
     public string? ProgressText => _stoppingName is null ? null : L.DeleteStopping(_stoppingName);
@@ -142,7 +143,7 @@ public sealed partial class ProcessesViewModel : PageViewModel, IFreshnessNotes
 
         if (ok && stillRunning)
         {
-            ErrorText = L.DeleteNotStopped;
+            SetError(() => L.DeleteNotStopped);
         }
 
         return ok;
@@ -160,7 +161,7 @@ public sealed partial class ProcessesViewModel : PageViewModel, IFreshnessNotes
     private ProcessEditorViewModel ShowEditor()
     {
         CloseEditor();
-        NoticeText = null;
+        SetNotice(null);
         ProcessEditorViewModel editor = _editors();
         editor.Closed += OnEditorClosed;
         Editor = editor;
@@ -184,10 +185,16 @@ public sealed partial class ProcessesViewModel : PageViewModel, IFreshnessNotes
     {
         if (sender is ProcessEditorViewModel editor)
         {
-            NoticeText = saved ? editor.NoticeText : null;
+            SetNotice(saved ? editor.NoticeSource : null);
         }
 
         CloseEditor();
+    }
+
+    private void SetNotice(Func<string>? notice)
+    {
+        _notice = notice;
+        OnPropertyChanged(nameof(NoticeText));
     }
 
     private void SetStopping(string? name)
