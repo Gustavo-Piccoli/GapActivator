@@ -11,7 +11,7 @@ internal sealed record SetupActions(
     Action<SecurityIdentifier> GrantLogonRight,
     Action RegisterEventSource,
     Action UnregisterEventSource,
-    Action<SecurityIdentifier> AddOperator,
+    Action<SecurityIdentifier?> AddOperator,
     Action RemoveOperatorsGroup)
 {
     public static SetupActions Default { get; } = new(
@@ -46,7 +46,7 @@ internal static class SetupCommand
 
     private const string Usage1 =
         "usage: setup prepare-data-root --account <account> [--path <dir>] | grant-logon-right --account <account> | "
-        + "register-event-source | unregister-event-source | add-operator --account <account> | remove-operators-group";
+        + "register-event-source | unregister-event-source | add-operator [--account <account>] | remove-operators-group";
 
     /// <summary>True when the first argument is exactly <c>setup</c>.</summary>
     public static bool IsSetup(string[] args)
@@ -116,13 +116,16 @@ internal static class SetupCommand
 
             case "add-operator":
                 {
-                    if (!Accepts(options, ["--account"]) || !options.TryGetValue("--account", out string? account))
+                    if (!Accepts(options, ["--account"]))
                     {
-                        return UsageError(stderr, "add-operator needs --account <account>.");
+                        return UsageError(stderr, "add-operator takes an optional --account <account>.");
                     }
 
-                    return Execute(stdout, stderr, "operator added: " + account, () =>
-                        actions.AddOperator(Resolve(actions, account)));
+                    // Without --account the verb only makes sure the group exists.
+                    return options.TryGetValue("--account", out string? account)
+                        ? Execute(stdout, stderr, "operator added: " + account, () =>
+                            actions.AddOperator(Resolve(actions, account)))
+                        : Execute(stdout, stderr, "operators group ensured", () => actions.AddOperator(null));
                 }
 
             case "remove-operators-group":

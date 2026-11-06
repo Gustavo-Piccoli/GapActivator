@@ -19,11 +19,16 @@ internal static partial class OperatorsGroup
     private const uint NerrGroupNotFound = 2220;
     private const uint NerrGroupExists = 2223;
 
-    /// <summary>Creates the group if it is missing, then adds the account. An existing group or membership is success.</summary>
-    public static void AddOperator(SecurityIdentifier account)
+    /// <summary>
+    /// Creates the group if it is missing, then adds the account when one is given. An existing group or membership is success.
+    /// </summary>
+    public static void AddOperator(SecurityIdentifier? account)
     {
-        ArgumentNullException.ThrowIfNull(account);
         EnsureGroup();
+        if (account is null)
+        {
+            return;
+        }
 
         var sid = new byte[account.BinaryLength];
         account.GetBinaryForm(sid, 0);

@@ -21,7 +21,7 @@ public sealed class SetupCommandTests
             sid => Calls.Add("grant:" + sid.Value),
             () => Calls.Add("register"),
             () => Calls.Add("unregister"),
-            sid => Calls.Add("operator:" + sid.Value),
+            sid => Calls.Add("operator:" + (sid?.Value ?? "none")),
             () => Calls.Add("remove-group"));
     }
 
@@ -60,7 +60,8 @@ public sealed class SetupCommandTests
     [InlineData("grant-logon-right", "--account", "a", "--path", "C:\\x")]
     [InlineData("register-event-source", "extra")]
     [InlineData("unregister-event-source", "--account", "a")]
-    [InlineData("add-operator")]
+    [InlineData("add-operator", "--account")]
+    [InlineData("add-operator", "--bogus", "x")]
     [InlineData("add-operator", "--account", "a", "--path", "C:\\x")]
     [InlineData("remove-operators-group", "--account", "a")]
     public async Task Run_UsageError_Returns2WithOneStderrLine(params string[] args)
@@ -155,6 +156,19 @@ public sealed class SetupCommandTests
         code.ShouldBe(1);
         stderr.ToString().ShouldContain("5");
         stderr.ToString().TrimEnd().Split('\n').Length.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Run_AddOperatorWithoutAccount_OnlyEnsuresTheGroup()
+    {
+        var recorder = new Recorder();
+
+        (int code, string stdout, string stderr) = await RunAsync(recorder, "add-operator");
+
+        code.ShouldBe(0);
+        stdout.ShouldContain("ensured");
+        stderr.ShouldBeEmpty();
+        recorder.Calls.ShouldBe(["operator:none"]);
     }
 
     [Fact]
