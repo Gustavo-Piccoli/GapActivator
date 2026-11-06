@@ -32,7 +32,7 @@
     <PackageVersion Include="Avalonia" Version="12.1.4" />
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.4" />
     <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.4" />
-    <!-- Headless platform for the view tests only; never referenced by the app. -->
+    <!-- Headless platform for the view tests and the screenshot tool; never referenced by the app. -->
     <PackageVersion Include="Avalonia.Headless" Version="12.1.4" />
     <!-- Source-generated MVVM, the same as GapMouse. -->
     <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />

@@ -53,7 +53,6 @@ internal static class Scenes
         var invoices = Guid.Parse("11111111-0000-0000-0000-000000000006");
 
         var reportRun = Row(Run(1), report, "Report export", RunState.Running, null, RunTrigger.Schedule, At(6, 14, 28, 5), null, null);
-        var workerRun = Row(Run(2), worker, "Queue worker", RunState.Running, null, RunTrigger.ServiceKeepAlive, At(4, 6, 0), null, null);
         var cleanupFail = Row(Run(3), cleanup, "Disk cleanup", RunState.Completed, RunOutcome.Failed, RunTrigger.Schedule, At(6, 14, 0, 2), At(6, 14, 0, 19), 2);
         var invoiceTimeout = Row(Run(4), invoices, "Invoice sync", RunState.Completed, RunOutcome.TimedOut, RunTrigger.Retry, At(6, 9, 30), At(6, 9, 35), null);
 
@@ -62,7 +61,7 @@ internal static class Scenes
             Summary(nightly, "Nightly backup", ProcessKind.RunToCompletion, ProcessLifecycle.Enabled, null, RunOutcome.Succeeded, At(7, 2, 0), At(6, 2, 4), 0),
             Summary(report, "Report export", ProcessKind.RunToCompletion, ProcessLifecycle.Enabled, new ActiveRunViewDto(reportRun.Id, RunState.Running, RunTrigger.Schedule, reportRun.StartedAt, 4120), RunOutcome.Succeeded, At(6, 15, 30), At(5, 14, 28), 0),
             Summary(cleanup, "Disk cleanup", ProcessKind.RunToCompletion, ProcessLifecycle.Enabled, null, RunOutcome.Failed, At(6, 15, 0), At(6, 14, 0), 1),
-            Summary(worker, "Queue worker", ProcessKind.Service, ProcessLifecycle.Enabled, new ActiveRunViewDto(workerRun.Id, RunState.Running, RunTrigger.ServiceKeepAlive, workerRun.StartedAt, 2288), null, null, null, 0),
+            Summary(worker, "Queue worker", ProcessKind.Service, ProcessLifecycle.Enabled, null, RunOutcome.Stopped, null, At(5, 23, 0), 0),
             Summary(rotation, "Log rotation", ProcessKind.RunToCompletion, ProcessLifecycle.Disabled, null, RunOutcome.Succeeded, null, At(1, 3, 0), 0),
             Summary(invoices, "Invoice sync", ProcessKind.RunToCompletion, ProcessLifecycle.Blocked, null, RunOutcome.TimedOut, null, At(6, 9, 35), 3),
         ]);
@@ -72,6 +71,7 @@ internal static class Scenes
             [reportRun],
             [
                 new UpcomingRunDto(cleanup, "Disk cleanup", At(6, 15, 0)),
+                new UpcomingRunDto(report, "Report export", At(6, 15, 30)),
                 new UpcomingRunDto(nightly, "Nightly backup", At(7, 2, 0)),
             ],
             [cleanupFail]);
@@ -88,7 +88,6 @@ internal static class Scenes
             TimeSpan.FromSeconds(30),
             [
                 new ScheduleViewDto(Guid.NewGuid(), ScheduleInputKind.Recurring, At(7, 2, 0), "FREQ=DAILY;BYHOUR=2;BYMINUTE=0", At(7, 2, 0), null),
-                new ScheduleViewDto(Guid.NewGuid(), ScheduleInputKind.Recurring, At(8, 4, 0), "FREQ=WEEKLY;BYDAY=SU;BYHOUR=4;BYMINUTE=0", At(8, 4, 0), null),
             ],
             At(1, 9, 0),
             At(3, 11, 20),
@@ -97,17 +96,16 @@ internal static class Scenes
         gateway.Runs.AddRange(
         [
             reportRun,
-            workerRun,
             cleanupFail,
             invoiceTimeout,
-            Row(Run(5), nightly, "Nightly backup", RunState.Completed, RunOutcome.Succeeded, RunTrigger.Schedule, At(6, 2, 0, 1), At(6, 2, 4, 12), 1),
-            Row(Run(6), report, "Report export", RunState.Completed, RunOutcome.Succeeded, RunTrigger.Manual, At(5, 16, 10), At(5, 16, 12), 1),
-            Row(Run(7), cleanup, "Disk cleanup", RunState.Completed, RunOutcome.Succeeded, RunTrigger.Schedule, At(5, 14, 0, 1), At(5, 14, 0, 33), 1),
+            Row(Run(5), nightly, "Nightly backup", RunState.Completed, RunOutcome.Succeeded, RunTrigger.Schedule, At(6, 2, 0, 1), At(6, 2, 4, 12), 0),
+            Row(Run(6), report, "Report export", RunState.Completed, RunOutcome.Succeeded, RunTrigger.Manual, At(5, 16, 10), At(5, 16, 12), 0),
+            Row(Run(7), cleanup, "Disk cleanup", RunState.Completed, RunOutcome.Succeeded, RunTrigger.Schedule, At(5, 14, 0, 1), At(5, 14, 0, 33), 0),
             Row(Run(8), invoices, "Invoice sync", RunState.Completed, RunOutcome.Failed, RunTrigger.Schedule, At(5, 9, 0, 3), At(5, 9, 0, 21), 2),
-            Row(Run(9), nightly, "Nightly backup", RunState.Completed, RunOutcome.Succeeded, RunTrigger.Schedule, At(5, 2, 0, 1), At(5, 2, 3, 48), 1),
-            Row(Run(10), report, "Report export", RunState.Completed, RunOutcome.Cancelled, RunTrigger.Manual, At(4, 11, 45), At(4, 11, 46), 3),
+            Row(Run(9), nightly, "Nightly backup", RunState.Completed, RunOutcome.Succeeded, RunTrigger.Schedule, At(5, 2, 0, 1), At(5, 2, 3, 48), 0),
+            Row(Run(10), report, "Report export", RunState.Completed, RunOutcome.Cancelled, RunTrigger.Manual, At(4, 11, 45), At(4, 11, 46), null),
             Row(Run(11), cleanup, "Disk cleanup", RunState.Completed, RunOutcome.Skipped, RunTrigger.Schedule, At(4, 14, 0), At(4, 14, 0), null),
-            Row(Run(12), nightly, "Nightly backup", RunState.Completed, RunOutcome.Succeeded, RunTrigger.Schedule, At(4, 2, 0, 1), At(4, 2, 4, 2), 1),
+            Row(Run(12), nightly, "Nightly backup", RunState.Completed, RunOutcome.Succeeded, RunTrigger.Schedule, At(4, 2, 0, 1), At(4, 2, 4, 2), 0),
         ]);
 
         gateway.RunDetails[cleanupFail.Id] = new RunDetailsDto(
@@ -131,7 +129,7 @@ internal static class Scenes
                 day = day.AddDays(1);
                 if (day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday))
                 {
-                    times.Add(new DateTimeOffset(day.AddHours(2), TimeSpan.Zero));
+                    times.Add(new DateTimeOffset(day.AddHours(6), TimeSpan.Zero));
                 }
             }
 

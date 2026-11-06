@@ -1,3 +1,4 @@
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -10,7 +11,7 @@ using GapActivator.App.ViewModels;
 using GapActivator.App.Views;
 using GapActivator.Screenshots;
 
-var outDir = Path.GetFullPath("docs/images");
+var outDir = Path.Combine(RepositoryRoot(), "docs", "images");
 for (var i = 0; i < args.Length; i++)
 {
     if (args[i] == "--out" && i + 1 < args.Length)
@@ -20,6 +21,9 @@ for (var i = 0; i < args.Length; i++)
 }
 
 Directory.CreateDirectory(outDir);
+
+// The real app applies this culture through ThemeApplier; without it the date pickers show the OS pattern.
+new ProcessCultureApplier().Apply(CultureInfo.GetCultureInfo("en-US"));
 
 AppBuilder.Configure<GapActivator.App.App>()
     .UseSkia()
@@ -41,7 +45,7 @@ AppBuilder.Configure<GapActivator.App.App>()
         schedule.Mode = GapActivator.App.Scheduling.ScheduleMode.Weekly;
         schedule.Monday = schedule.Tuesday = schedule.Wednesday = schedule.Thursday = schedule.Friday = true;
         schedule.Saturday = schedule.Sunday = false;
-        schedule.Time = TimeSpan.FromHours(2);
+        schedule.Time = TimeSpan.FromHours(6);
         // The preview waits 300 ms on the injected clock, so move that clock instead of the wall.
         s.Time.Advance(TimeSpan.FromSeconds(1));
         Pump(schedule.PreviewRefresh);
@@ -69,7 +73,7 @@ foreach (var (name, theme, prepare) in shots)
     // The pages scroll, so the two that matter below the fold are scrolled to their card.
     if (name == "schedule-editor-light")
     {
-        ScrollTo(window, "ScheduleEditorCard", 130);
+        ScrollTo(window, "SchedulesSection", -24);
     }
     else if (name == "settings-light")
     {
@@ -133,4 +137,18 @@ static void ScrollTo(Window window, string name, double margin)
     var content = (Visual)viewer.Content!;
     viewer.Offset = new Vector(0, target.TranslatePoint(default, content)!.Value.Y - margin);
     Dispatcher.UIThread.RunJobs();
+}
+
+// The default output does not depend on the current directory: walk up from the build output to the solution file.
+static string RepositoryRoot()
+{
+    for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+    {
+        if (File.Exists(Path.Combine(dir.FullName, "GapActivator.slnx")))
+        {
+            return dir.FullName;
+        }
+    }
+
+    throw new InvalidOperationException("GapActivator.slnx was not found above the tool; pass --out.");
 }
