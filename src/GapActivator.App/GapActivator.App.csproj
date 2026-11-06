@@ -13,11 +13,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Development builds only. GHSA-p3jp-9v83-76w9 is a .NET runtime advisory (versions before 10.0.14). An AOT publish with this SDK would statically link the affected 10.0.8 NativeAOT runtime into GapActivator.exe. No release publish happens before Plan 5, which must publish with an SDK whose bundled runtime is 10.0.14 or later and then remove this suppression. -->
-    <NuGetAuditSuppress Include="https://github.com/advisories/GHSA-p3jp-9v83-76w9" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
     <PackageReference Include="Avalonia.Themes.Fluent" />
