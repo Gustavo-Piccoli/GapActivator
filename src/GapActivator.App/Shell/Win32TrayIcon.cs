@@ -14,7 +14,7 @@ public sealed unsafe class Win32TrayIcon : ITrayIcon
     private readonly Dictionary<TrayIconState, nint> _icons = [];
     private TrayIconState _state;
     private string _tooltip = string.Empty;
-    private string? _balloonTag;
+    private readonly BalloonTagState _balloon = new();
     private bool _disposed;
     private bool _desired;
 
@@ -69,7 +69,7 @@ public sealed unsafe class Win32TrayIcon : ITrayIcon
             return false;
         }
 
-        _balloonTag = tag;
+        _balloon.Shown(tag);
         var data = NewData(NIF_INFO);
         data.hWnd = _window.Handle;
         CopyTo(data.szInfoTitle, 64, title);
@@ -269,8 +269,12 @@ public sealed unsafe class Win32TrayIcon : ITrayIcon
             case WM_LBUTTONDBLCLK:
                 OpenRequested?.Invoke(this, EventArgs.Empty);
                 break;
+            case NIN_BALLOONTIMEOUT:
+            case NIN_BALLOONHIDE:
+                _balloon.Ended();
+                break;
             case NIN_BALLOONUSERCLICK:
-                BalloonClicked?.Invoke(this, _balloonTag);
+                BalloonClicked?.Invoke(this, _balloon.Clicked());
                 break;
         }
     }

@@ -100,26 +100,41 @@ public sealed class NotificationPresenter(
 
         _holdTimer?.Dispose();
         _holdTimer = null;
-        var held = _held;
-        var count = _heldCount;
-        _held = null;
-        _heldCount = 0;
-        if (held is null || !settings.Current.Notifications)
+        if (_held is not { } held)
         {
             return;
         }
 
-        Show(held, time.GetUtcNow(), count - 1);
+        if (!settings.Current.Notifications)
+        {
+            _held = null;
+            _heldCount = 0;
+            return;
+        }
+
+        if (Show(held, time.GetUtcNow(), _heldCount - 1))
+        {
+            _held = null;
+            _heldCount = 0;
+        }
+        else
+        {
+            // The icon was not ready: keep the notification and its count and try again at the next interval.
+            _holdTimer = time.CreateTimer(_ => ui.Post(ReleaseHeld), null, MinInterval, Timeout.InfiniteTimeSpan);
+        }
     }
 
-    private void Show(NotificationDto notification, DateTimeOffset now, int more)
+    private bool Show(NotificationDto notification, DateTimeOffset now, int more)
     {
         var message = more > 0 ? notification.Message + " " + l.MoreNotifications(more) : notification.Message;
         var tag = notification.RunId is { } runId ? $"run:{runId:D}" : null;
-        if (tray.ShowBalloon(notification.Title, message, tag, Map(notification.Severity)))
+        if (!tray.ShowBalloon(notification.Title, message, tag, Map(notification.Severity)))
         {
-            _lastShown = now;
+            return false;
         }
+
+        _lastShown = now;
+        return true;
     }
 
     // True when the run is new (and now remembered); false when it was already shown.

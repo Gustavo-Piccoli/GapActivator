@@ -1,7 +1,9 @@
 using System.ComponentModel;
+using System.Runtime.ExceptionServices;
 using GapActivator.App.Localization;
 using GapActivator.App.Services;
 using GapActivator.App.Shell;
+using GapActivator.Ipc;
 using GapActivator.Ipc.Contracts;
 
 namespace GapActivator.App.ViewModels;
@@ -171,14 +173,23 @@ public sealed class TrayCoordinator(
             // Asks first, then restarts; "no" sends nothing.
             await service.RestartServiceAsync().ConfigureAwait(true);
         }
+        catch (Exception ex) when (ex is GapActivatorRequestException or TimeoutException)
+        {
+            // A menu click has no page to show the error on, so it becomes an error balloon.
+            if (!_disposed)
+            {
+                tray.ShowBalloon(l.RestartServiceTitle, ServiceErrors.Describe(ex, l), null, BalloonSeverity.Error);
+            }
+        }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            // The coordinator has no logger and a menu click has no place to show an error.
+            // A programming error must not be hidden, and this task is not awaited: rethrow it on the UI thread, where the
+            // app's unhandled-exception handler logs it.
+            ui.Post(() => ExceptionDispatchInfo.Capture(ex).Throw());
         }
     }
 
-    // The balloon tag is a single, last-wins field, so with overlapping balloons the tag may belong to another run.
-    // A click therefore only shows the window and then asks the history for the run, which tolerates one it cannot find.
+    // A null tag (no balloon, or an ambiguous one) only shows the window.
     private void OnBalloonClicked(object? sender, string? tag)
     {
         if (_disposed)

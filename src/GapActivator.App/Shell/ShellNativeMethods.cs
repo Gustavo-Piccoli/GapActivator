@@ -12,6 +12,8 @@ internal static unsafe partial class ShellNativeMethods
     internal const uint WM_CONTEXTMENU = 0x007B;
     internal const uint WM_LBUTTONDBLCLK = 0x0203;
     internal const uint WM_APP = 0x8000;
+    internal const uint NIN_BALLOONHIDE = 0x0403;
+    internal const uint NIN_BALLOONTIMEOUT = 0x0404;
     internal const uint NIN_BALLOONUSERCLICK = 0x0405;
 
     internal const uint WS_POPUP = 0x80000000u;

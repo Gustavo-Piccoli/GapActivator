@@ -3,6 +3,7 @@ using GapActivator.App.Services;
 using GapActivator.App.Shell;
 using GapActivator.App.Tests.Fakes;
 using GapActivator.App.ViewModels;
+using GapActivator.Ipc;
 using GapActivator.Ipc.Contracts;
 
 namespace GapActivator.App.Tests.ViewModels;
@@ -221,13 +222,57 @@ public class TrayCoordinatorTests : IDisposable
     }
 
     [Fact]
-    public void Menu_Restart_WhenTheCallFails_DoesNotThrow()
+    public void Menu_Restart_WhenTheServiceFails_ShowsAnErrorBalloon()
     {
+        var failure = new GapActivatorRequestException(IpcErrorCodes.Disconnected, "The service went away.", retryable: true);
         _h.Dialogs.Enqueue(DialogChoice.Primary);
-        _h.Gateway.FailNext(nameof(IServiceGateway.RestartServiceAsync), new InvalidOperationException("down"));
+        _h.Gateway.FailNext(nameof(IServiceGateway.RestartServiceAsync), failure);
         _tray.MenuChoice = "restart";
 
-        Should.NotThrow(() => _tray.RaiseMenu());
+        _tray.RaiseMenu();
+
+        var balloon = _tray.Balloons.ShouldHaveSingleItem();
+        balloon.Severity.ShouldBe(BalloonSeverity.Error);
+        balloon.Title.ShouldBe(_h.L.RestartServiceTitle);
+        balloon.Message.ShouldBe(ServiceErrors.Describe(failure, _h.L));
+        balloon.Tag.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Menu_Restart_WhenTheRequestTimesOut_ShowsAnErrorBalloon()
+    {
+        _h.Dialogs.Enqueue(DialogChoice.Primary);
+        _h.Gateway.FailNext(nameof(IServiceGateway.RestartServiceAsync), new TimeoutException());
+        _tray.MenuChoice = "restart";
+
+        _tray.RaiseMenu();
+
+        _tray.Balloons.ShouldHaveSingleItem().Severity.ShouldBe(BalloonSeverity.Error);
+    }
+
+    [Fact]
+    public void Menu_Restart_WhenTheCodeIsWrong_IsRethrownOnTheUiDispatcher()
+    {
+        var posted = new List<Action>();
+        _coordinator.Dispose();
+        using var coordinator = new TrayCoordinator(
+            _h.L, _h.Gateway, _h.Live, _h.Seen, _tray, _window, _lifetime, _h.Service, _h.Navigator, new RecordingDispatcher(posted));
+        coordinator.Start();
+        _h.Dialogs.Enqueue(DialogChoice.Primary);
+        _h.Gateway.FailNext(nameof(IServiceGateway.RestartServiceAsync), new InvalidOperationException("bug"));
+        _tray.MenuChoice = "restart";
+        posted.Clear();
+
+        _tray.RaiseMenu();
+
+        _tray.Balloons.ShouldBeEmpty();
+        posted.Count.ShouldBe(1);
+        Should.Throw<InvalidOperationException>(() => posted[0]());
+    }
+
+    private sealed class RecordingDispatcher(List<Action> posted) : IUiDispatcher
+    {
+        public void Post(Action action) => posted.Add(action);
     }
 
     [Fact]

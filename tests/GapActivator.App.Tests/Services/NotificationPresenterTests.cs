@@ -165,6 +165,26 @@ public class NotificationPresenterTests : IDisposable
     }
 
     [Fact]
+    public void Notification_HeldAndTheIconIsNotReadyAtRelease_IsKeptWithItsCountForTheNextInterval()
+    {
+        _gateway.RaiseNotification(Note(null, message: "First"));
+        _gateway.RaiseNotification(Note(null, message: "Second"));
+        _gateway.RaiseNotification(Note(null, message: "Third"));
+
+        _tray.BalloonResult = false;
+        _time.Advance(NotificationPresenter.MinInterval);
+        _tray.Balloons.Count.ShouldBe(1);
+
+        _tray.BalloonResult = true;
+        _time.Advance(NotificationPresenter.MinInterval);
+
+        _tray.Balloons.Select(b => b.Message).ShouldBe(["First", "Third (+1 more)"]);
+
+        _time.Advance(TimeSpan.FromMinutes(1));
+        _tray.Balloons.Count.ShouldBe(2);
+    }
+
+    [Fact]
     public void Dispose_WithAHeldNotification_DropsItSilently()
     {
         _gateway.RaiseNotification(Note(null, message: "First"));
