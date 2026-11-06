@@ -1,0 +1,249 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+    branches: ['feat/**']
+    paths:
+      - 'build/**'
+      - 'installer/**'
+      - '.github/workflows/release.yml'
+      - 'Directory.Packages.props'
+      - 'Directory.Build.props'
+      - 'global.json'
+      - 'src/GapActivator.App/GapActivator.App.csproj'
+      - 'src/GapActivator.Service/**'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release (empty = dry run)
+        type: string
+        required: false
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  pull_request:
+    paths:
+      - 'build/**'
+      - 'installer/**'
+      - '.github/workflows/release.yml'
+      - 'Directory.Packages.props'
+      - 'Directory.Build.props'
+      - 'global.json'
+      - 'src/GapActivator.App/GapActivator.App.csproj'
+      - 'src/GapActivator.Service/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref_type == 'branch') }}
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      dry_run: ${{ steps.v.outputs.dry_run }}
+    steps:
+      - id: v
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          tag=""
+          if [ "$EVENT" = "push" ] && [ "$REF_TYPE" = "tag" ]; then
+            tag="$REF_NAME"
+          elif [ "$EVENT" != "push" ]; then
+            tag="$INPUT_TAG"
+          fi
+          # Pull requests, branch pushes and dispatches without a tag are dry runs.
+          if [ "$EVENT" = "pull_request" ] || [ -z "$tag" ]; then
+            echo "version=0.0.0-ci.$RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version="${tag#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Tag '$tag' is not a valid SemVer version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "dry_run=false" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            rid: win-x64
+            runner: windows-latest
+          - arch: arm64
+            rid: win-arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      - name: Publish service
+        shell: pwsh
+        run: ./build/Publish-Service.ps1 -Runtime ${{ matrix.rid }} -Version ${{ needs.version.outputs.version }}
+      - name: Publish app
+        shell: pwsh
+        run: ./build/Publish-App.ps1 -Runtime ${{ matrix.rid }} -Version ${{ needs.version.outputs.version }}
+      - name: Smoke test publish
+        shell: pwsh
+        run: ./build/Test-Publish.ps1 -PublishDir artifacts/publish/${{ matrix.arch }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: publish-${{ matrix.arch }}
+          path: artifacts/publish/${{ matrix.arch }}
+
+  installer:
+    needs: [version, build]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      # Pinned to the version Chocolatey served when this job was written (Inno Setup 6.7.1).
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress --version 6.7.1
+      - uses: actions/download-artifact@v8
+        with:
+          name: publish-x64
+          path: artifacts/publish/x64
+      - uses: actions/download-artifact@v8
+        with:
+          name: publish-arm64
+          path: artifacts/publish/arm64
+      - name: Build installers
+        shell: pwsh
+        run: |
+          foreach ($arch in 'x64', 'arm64') {
+            & ./build/New-Installer.ps1 -PublishDir "artifacts/publish/$arch" -Version ${{ needs.version.outputs.version }} -Arch $arch -OutputDir artifacts/installer
+          }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer-x64
+          path: artifacts/installer/GapActivator-Setup-${{ needs.version.outputs.version }}-x64.exe
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer-arm64
+          path: artifacts/installer/GapActivator-Setup-${{ needs.version.outputs.version }}-arm64.exe
+
+  installer-test:
+    needs: [version, installer]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+      # The setup-verb tests that need elevation skip themselves on a normal machine. The runners are
+      # elevated, so none of these classes may report a skipped test. The one test that is meant to skip
+      # when elevated (the non-elevated failure path) is excluded by name.
+      - name: Setup verb tests (elevated)
+        shell: pwsh
+        run: |
+          $ns = 'GapActivator.Service.Tests.Setup'
+          $classes = 'DataRootPreparerTests', 'EventSourceRegistrarTests', 'OperatorsGroupTests', 'ServiceLogonRightTests', 'SetupCommandTests'
+          $testArgs = @('test', '-c', 'Release', '--project', 'tests/GapActivator.Service.Tests', '--')
+          foreach ($class in $classes) { $testArgs += '--filter-class'; $testArgs += "$ns.$class" }
+          $testArgs += '--filter-not-method'
+          $testArgs += "$ns.DataRootPreparerTests.Prepare_NotElevatedWithoutFallback_FailsInsteadOfKeepingTheOwner"
+          $output = & dotnet @testArgs 2>&1 | ForEach-Object { Write-Host "$_"; "$_" }
+          $exit = $LASTEXITCODE
+          $text = ($output -join "`n")
+          if ($exit -ne 0) { throw "dotnet test failed with exit code $exit" }
+          if ($text -notmatch '(?m)^\s*total:\s*(\d+)') { throw 'The test summary has no total line.' }
+          $total = [int]$Matches[1]
+          if ($text -notmatch '(?m)^\s*skipped:\s*(\d+)') { throw 'The test summary has no skipped line.' }
+          $skipped = [int]$Matches[1]
+          Write-Host "Setup verb tests: total=$total skipped=$skipped"
+          if ($total -lt 1) { throw 'No setup verb tests ran.' }
+          if ($skipped -ne 0) { throw "$skipped setup verb test(s) were skipped; the elevated runner must run them all." }
+      - uses: actions/download-artifact@v8
+        with:
+          name: installer-${{ matrix.arch }}
+          path: artifacts/installer
+      - name: Smoke test installer
+        shell: pwsh
+        run: ./build/Test-Installer.ps1 -InstallerPath artifacts/installer/GapActivator-Setup-${{ needs.version.outputs.version }}-${{ matrix.arch }}.exe
+      - name: Upload installer test logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: installer-test-logs-${{ matrix.arch }}
+          path: artifacts/installer-test
+          if-no-files-found: ignore
+
+  publish:
+    if: needs.version.outputs.dry_run == 'false'
+    needs: [version, installer-test]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: installer-x64
+          path: artifacts/dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: installer-arm64
+          path: artifacts/dist
+          merge-multiple: true
+      - name: Checksums
+        shell: pwsh
+        run: ./build/New-Checksums.ps1 -Directory artifacts/dist
+      - name: Create or update release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          assets=("artifacts/dist/GapActivator-Setup-$VERSION-x64.exe" "artifacts/dist/GapActivator-Setup-$VERSION-arm64.exe" artifacts/dist/SHA256SUMS.txt)
+          pre=()
+          if [[ "$VERSION" == *-* ]]; then pre=(--prerelease); fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --clobber
+            if [ "${#pre[@]}" -gt 0 ]; then gh release edit "$TAG" --prerelease; fi
+          else
+            gh release create "$TAG" "${assets[@]}" --title "GapActivator $VERSION" --generate-notes --verify-tag "${pre[@]}"
+          fi
