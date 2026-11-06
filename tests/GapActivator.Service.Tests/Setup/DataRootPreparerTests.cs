@@ -11,6 +11,7 @@ public sealed class DataRootPreparerTests : IDisposable
     private static readonly SecurityIdentifier Administrators = new(WellKnownSidType.BuiltinAdministratorsSid, null);
     private static readonly SecurityIdentifier LocalSystem = new(WellKnownSidType.LocalSystemSid, null);
     private static readonly SecurityIdentifier Users = new(WellKnownSidType.BuiltinUsersSid, null);
+    private static readonly SecurityIdentifier LocalService = new(WellKnownSidType.LocalServiceSid, null);
 
     private readonly string _temp = Path.Combine(Path.GetTempPath(), "ga-dr-" + Guid.NewGuid().ToString("N"));
     private readonly List<string> _junctions = [];
@@ -27,6 +28,7 @@ public sealed class DataRootPreparerTests : IDisposable
             }
         }
 
+        using var privileges = new DataRootNative.PrivilegeScope("SeTakeOwnershipPrivilege", "SeRestorePrivilege", "SeBackupPrivilege");
         Directory.Delete(_temp, recursive: true);
     }
 
@@ -171,6 +173,40 @@ public sealed class DataRootPreparerTests : IDisposable
     }
 
     [Fact]
+    public void Prepare_RegularFileAtThePath_IsReplacedByAFolder()
+    {
+        string path = Path.Combine(_temp, "root");
+        File.WriteAllText(path, "not a folder");
+
+        DataRootPreparer.Prepare(path, CurrentUser(), allowOwnerFallback: true);
+
+        Directory.Exists(path).ShouldBeTrue();
+        File.Exists(path).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Prepare_ReparseChildrenAreDeletedAndNothingIsReportedSkipped()
+    {
+        string target = Path.Combine(_temp, "target");
+        Directory.CreateDirectory(target);
+        string path = Path.Combine(_temp, "root");
+        Directory.CreateDirectory(path);
+        Junction(Path.Combine(path, "a"), target);
+        Junction(Path.Combine(path, "b"), target);
+        var skipped = new List<string>();
+
+        DataRootPreparer.Prepare(path, CurrentUser(), allowOwnerFallback: true, skipped.Add);
+
+        skipped.ShouldBeEmpty();
+        Directory.GetFileSystemEntries(path).ShouldBeEmpty();
+        Directory.Exists(target).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ByHandleFileInformation_MatchesTheNative52ByteLayout() =>
+        DataRootNative.ByHandleInfoSize.ShouldBe(52);
+
+    [Fact]
     [Trait("Category", "Integration")]
     public void Prepare_Elevated_HostileFolderOwnedByAUserWithoutAdministrators_IsTakenOver()
     {
@@ -180,13 +216,31 @@ public sealed class DataRootPreparerTests : IDisposable
         string file = Path.Combine(folder, "x.txt");
         Directory.CreateDirectory(folder);
         File.WriteAllText(file, "x");
-        using var privileges = new DataRootNative.PrivilegeScope("SeTakeOwnershipPrivilege", "SeRestorePrivilege", "SeBackupPrivilege");
-        Hostile(file);
-        Hostile(folder);
-        Hostile(path);
+        string denied = Path.Combine(path, "denied");
+        string deniedFile = Path.Combine(denied, "y.txt");
+        Directory.CreateDirectory(denied);
+        File.WriteAllText(deniedFile, "y");
+        using (new DataRootNative.PrivilegeScope("SeTakeOwnershipPrivilege", "SeRestorePrivilege", "SeBackupPrivilege"))
+        {
+            Hostile(file);
+            Hostile(folder);
 
+            // Not protected, but with an explicit Deny for Administrators (propagation must still reach it).
+            var deniedInfo = new DirectoryInfo(denied);
+            DirectorySecurity deny = deniedInfo.GetAccessControl();
+            deny.AddAccessRule(new FileSystemAccessRule(Administrators, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Deny));
+            deniedInfo.SetAccessControl(deny);
+            Hostile(path);
+        }
+
+        // The privileges are back to their previous state: Prepare has to enable them itself.
         DataRootPreparer.Prepare(path, CurrentUser());
 
+        using var cleanup = new DataRootNative.PrivilegeScope("SeTakeOwnershipPrivilege", "SeRestorePrivilege", "SeBackupPrivilege");
+        DirectorySecurity deniedSecurity = new DirectoryInfo(denied).GetAccessControl();
+        deniedSecurity.AreAccessRulesProtected.ShouldBeFalse();
+        Explicit(deniedSecurity).ShouldBeEmpty();
+        Explicit(new FileInfo(deniedFile).GetAccessControl()).ShouldBeEmpty();
         foreach (string target in new[] { path, folder })
         {
             new DirectoryInfo(target).GetAccessControl().GetOwner(typeof(SecurityIdentifier)).ShouldBe(Administrators);
@@ -199,25 +253,26 @@ public sealed class DataRootPreparerTests : IDisposable
         Explicit(fileSecurity).ShouldBeEmpty();
     }
 
-    // Owned by Users, protected DACL granting only Users: Administrators have no rights from the DACL.
+    // Owned by LOCAL SERVICE, protected DACL granting only LOCAL SERVICE: an elevated administrator is not a member of it,
+    // so neither the DACL nor group ownership gives access; only the take-ownership, restore and backup privileges do.
     private static void Hostile(string target)
     {
         if (Directory.Exists(target))
         {
             var info = new DirectoryInfo(target);
             var security = new DirectorySecurity();
-            security.SetOwner(Users);
+            security.SetOwner(LocalService);
             security.SetAccessRuleProtection(true, false);
-            security.AddAccessRule(new FileSystemAccessRule(Users, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+            security.AddAccessRule(new FileSystemAccessRule(LocalService, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
             info.SetAccessControl(security);
         }
         else
         {
             var info = new FileInfo(target);
             var security = new FileSecurity();
-            security.SetOwner(Users);
+            security.SetOwner(LocalService);
             security.SetAccessRuleProtection(true, false);
-            security.AddAccessRule(new FileSystemAccessRule(Users, FileSystemRights.FullControl, AccessControlType.Allow));
+            security.AddAccessRule(new FileSystemAccessRule(LocalService, FileSystemRights.FullControl, AccessControlType.Allow));
             info.SetAccessControl(security);
         }
     }

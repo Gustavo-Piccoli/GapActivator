@@ -14,7 +14,7 @@ internal sealed record SetupActions(
 {
     public static SetupActions Default { get; } = new(
         account => (SecurityIdentifier)new NTAccount(account).Translate(typeof(SecurityIdentifier)),
-        (path, sid) => DataRootPreparer.Prepare(path, sid),
+        (path, sid) => DataRootPreparer.Prepare(path, sid, reportSkipped: message => Console.Error.WriteLine("setup: " + message)),
         ServiceLogonRight.Grant,
         () => new EventSourceRegistrar().Register(),
         () => new EventSourceRegistrar().Unregister());

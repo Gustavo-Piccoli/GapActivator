@@ -23,6 +23,9 @@ internal static unsafe partial class DataRootNative
     private const int ErrorNotAllAssigned = 1300;
     private const uint PrivilegeEnabled = 0x2;
     private const int FileDispositionInfo = 4;
+    private const int FileAttributeTagInfo = 9;
+    public const uint MountPointTag = 0xA0000003;
+    public const uint SymlinkTag = 0xA000000C;
     private const int FileObject = 1;
     private const uint OwnerSecurityInformation = 0x1;
     private const uint DaclSecurityInformation = 0x4;
@@ -107,6 +110,30 @@ internal static unsafe partial class DataRootNative
         return false;
     }
 
+    /// <summary>Volume and file index: the same pair on two handles means the same object.</summary>
+    public static (uint Volume, uint High, uint Low) GetIdentity(SafeFileHandle handle)
+    {
+        if (GetFileInformationByHandle(handle, out ByHandleFileInformation info) == 0)
+        {
+            throw new Win32Exception(Marshal.GetLastPInvokeError());
+        }
+
+        return (info.VolumeSerialNumber, info.FileIndexHigh, info.FileIndexLow);
+    }
+
+    /// <summary>The reparse tag of the opened object (0 when it is not a reparse point).</summary>
+    public static uint GetReparseTag(SafeFileHandle handle)
+    {
+        if (GetFileInformationByHandleEx(handle, FileAttributeTagInfo, out AttributeTagInfo info, (uint)sizeof(AttributeTagInfo)) == 0)
+        {
+            throw new Win32Exception(Marshal.GetLastPInvokeError());
+        }
+
+        return info.ReparseTag;
+    }
+
+    internal static int ByHandleInfoSize => sizeof(ByHandleFileInformation);
+
     public static FileAttributes GetAttributes(SafeFileHandle handle)
     {
         if (GetFileInformationByHandle(handle, out ByHandleFileInformation info) == 0)
@@ -189,7 +216,14 @@ internal static unsafe partial class DataRootNative
         public uint Attributes;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    private struct AttributeTagInfo
+    {
+        public uint FileAttributes;
+        public uint ReparseTag;
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
     private struct ByHandleFileInformation
     {
         public uint FileAttributes;
@@ -210,6 +244,9 @@ internal static unsafe partial class DataRootNative
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     private static partial int GetFileInformationByHandle(SafeFileHandle file, out ByHandleFileInformation information);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    private static partial int GetFileInformationByHandleEx(SafeFileHandle file, int informationClass, out AttributeTagInfo information, uint size);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     private static partial uint GetFinalPathNameByHandleW(SafeFileHandle file, char* path, uint length, uint flags);
