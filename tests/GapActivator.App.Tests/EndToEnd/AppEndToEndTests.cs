@@ -18,16 +18,19 @@ namespace GapActivator.App.Tests.EndToEnd;
 [Trait("Category", "Integration")]
 public sealed class AppEndToEndTests
 {
+    private const int TestTimeoutMs = 120_000;
+
     private static readonly TimeSpan ConnectWait = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ReconnectWait = TimeSpan.FromSeconds(15);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    [Fact]
+    [Fact(Timeout = TestTimeoutMs)]
     public async Task RegisterRunNowAndHistory_ThroughTheViewModels_ShowsSucceededWithOutput()
     {
+        CancellationToken ct = TestContext.Current.CancellationToken;
         using var localAppData = new TempDirectory();
-        await using AppE2EHost host = await AppE2EHost.StartAsync(Ct);
+        await using AppE2EHost host = await AppE2EHost.StartAsync(ct);
         await using ServiceProvider app = host.ComposeApp(localAppData.Path);
         StartApp(app);
         IServiceGateway gateway = app.GetRequiredService<IServiceGateway>();
@@ -39,23 +42,34 @@ public sealed class AppEndToEndTests
         ProcessesViewModel processes = app.GetRequiredService<ProcessesViewModel>();
         await RegisterThroughTheEditorAsync(processes, "Sample via app", "1");
 
-        await Eventually(() => processes.Items.Any(i => i.Name == "Sample via app"), TimeSpan.FromSeconds(5), "The process did not reach the list.");
-        ProcessRowViewModel row = processes.Items.First(i => i.Name == "Sample via app");
-        await row.RunNowCommand.ExecuteAsync(null);
+        // The gateway thread updates these collections (the dispatcher here runs inline), so they are only read inside the poll.
+        ProcessRowViewModel? row = null;
+        await Eventually(
+            () => (row = processes.Items.FirstOrDefault(i => i.Name == "Sample via app")) is not null,
+            TimeSpan.FromSeconds(5),
+            "The process did not reach the list.");
+        await row!.RunNowCommand.ExecuteAsync(null);
 
         HistoryViewModel history = app.GetRequiredService<HistoryViewModel>();
-        history.SelectedProcess = history.ProcessOptions.First(o => o.Name == "Sample via app");
+        ProcessOption? option = null;
+        await Eventually(
+            () => (option = history.ProcessOptions.FirstOrDefault(o => o.Name == "Sample via app")) is not null,
+            TimeSpan.FromSeconds(5),
+            "The process filter did not list the process.");
+        history.SelectedProcess = option!;
+        RunRowItemViewModel? succeeded = null;
         await Eventually(
             async () =>
             {
                 await history.ApplyCommand.ExecuteAsync(null);
-                return history.Items.Count > 0 && history.Items[0].StatusText == "Succeeded";
+                succeeded = history.Items.FirstOrDefault(i => i.StatusText == "Succeeded");
+                return succeeded is not null;
             },
             TimeSpan.FromSeconds(30),
             "The run did not show as Succeeded.",
             TimeSpan.FromMilliseconds(500));
 
-        await history.OpenRunCommand.ExecuteAsync(history.Items[0]);
+        await history.OpenRunCommand.ExecuteAsync(succeeded);
         RunDetailViewModel detail = history.Detail!;
         detail.Output.ShouldContain("Done.");
         detail.Output.ShouldContain($"Started by GapActivator (PID {Environment.ProcessId}).");
@@ -63,61 +77,89 @@ public sealed class AppEndToEndTests
         history.CloseDetailCommand.Execute(null);
     }
 
-    [Fact]
+    [Fact(Timeout = TestTimeoutMs)]
     public async Task ServiceStopsAndStartsAgain_GatewayReconnectsAndTheListReturns()
     {
+        CancellationToken ct = TestContext.Current.CancellationToken;
         using var localAppData = new TempDirectory();
-        await using AppE2EHost first = await AppE2EHost.StartAsync(Ct);
-        await using ServiceProvider app = first.ComposeApp(localAppData.Path);
-        StartApp(app);
-        IServiceGateway gateway = app.GetRequiredService<IServiceGateway>();
-        await Eventually(() => gateway.Status.IsConnected, ConnectWait, "The gateway did not connect.");
+        await using AppE2EHost first = await AppE2EHost.StartAsync(ct);
+        ServiceProvider app = first.ComposeApp(localAppData.Path);
+        var later = new Stack<AppE2EHost>();
+        try
+        {
+            StartApp(app);
+            IServiceGateway gateway = app.GetRequiredService<IServiceGateway>();
+            await Eventually(() => gateway.Status.IsConnected, ConnectWait, "The gateway did not connect.");
 
-        ProcessesViewModel processes = app.GetRequiredService<ProcessesViewModel>();
-        await RegisterThroughTheEditorAsync(processes, "Sample kept", "1");
-        LiveState live = app.GetRequiredService<LiveState>();
-        await Eventually(() => live.Processes.Any(p => p.Name == "Sample kept"), TimeSpan.FromSeconds(5), "The process did not reach the live state.");
+            ProcessesViewModel processes = app.GetRequiredService<ProcessesViewModel>();
+            await RegisterThroughTheEditorAsync(processes, "Sample kept", "1");
+            LiveState live = app.GetRequiredService<LiveState>();
+            await Eventually(() => live.Processes.Any(p => p.Name == "Sample kept"), TimeSpan.FromSeconds(5), "The process did not reach the live state.");
 
-        await first.StopAsync();
-        await Eventually(() => !gateway.Status.IsConnected, TimeSpan.FromSeconds(5), "The gateway stayed connected after the host stopped.");
-        TrayIconState tray = TrayCoordinator.Compute(
-            gateway.Status, live.Dashboard, live.Processes, app.GetRequiredService<FailureAcknowledgements>());
-        tray.ShouldBe(TrayIconState.Unreachable);
+            // The live state keeps its last snapshot across a disconnect, so the list returning is only proven by a new snapshot.
+            IReadOnlyList<ProcessSummaryDto> before = live.Processes;
+            await first.StopAsync();
+            await Eventually(() => !gateway.Status.IsConnected, TimeSpan.FromSeconds(5), "The gateway stayed connected after the host stopped.");
+            TrayIconState tray = TrayCoordinator.Compute(
+                gateway.Status, live.Dashboard, live.Processes, app.GetRequiredService<FailureAcknowledgements>());
+            tray.ShouldBe(TrayIconState.Unreachable);
 
-        // The second host reuses the data root and the pipe; it neither seeds nor deletes the root, and is disposed first.
-        await using AppE2EHost second = await AppE2EHost.StartAsync(Ct, first.PipeName, first.DataRoot);
-        await Eventually(() => gateway.Status.IsConnected, ReconnectWait, "The gateway did not reconnect.");
-        await Eventually(() => live.Processes.Any(p => p.Name == "Sample kept"), TimeSpan.FromSeconds(5), "The list did not return.");
+            // The second host reuses the data root and the pipe; it neither seeds nor deletes the root.
+            later.Push(await AppE2EHost.StartAsync(ct, first.PipeName, first.DataRoot));
+            await Eventually(() => gateway.Status.IsConnected, ReconnectWait, "The gateway did not reconnect.");
+            await Eventually(
+                () => !ReferenceEquals(live.Processes, before) && !live.RefreshFailed && live.Processes.Any(p => p.Name == "Sample kept"),
+                TimeSpan.FromSeconds(5),
+                "The list was not fetched again from the second host.");
+        }
+        finally
+        {
+            await DisposeInOrderAsync(app, later);
+        }
     }
 
-    [Fact]
+    [Fact(Timeout = TestTimeoutMs)]
     public async Task ServiceRestartedRightAfterAReconnect_GatewayReturnsToConnected()
     {
+        CancellationToken ct = TestContext.Current.CancellationToken;
         using var localAppData = new TempDirectory();
-        await using AppE2EHost first = await AppE2EHost.StartAsync(Ct);
-        await using ServiceProvider app = first.ComposeApp(localAppData.Path);
-        StartApp(app);
-        IServiceGateway gateway = app.GetRequiredService<IServiceGateway>();
-        await Eventually(() => gateway.Status.IsConnected, ConnectWait, "The gateway did not connect.");
+        await using AppE2EHost first = await AppE2EHost.StartAsync(ct);
+        ServiceProvider app = first.ComposeApp(localAppData.Path);
+        var later = new Stack<AppE2EHost>();
+        try
+        {
+            StartApp(app);
+            IServiceGateway gateway = app.GetRequiredService<IServiceGateway>();
+            await Eventually(() => gateway.Status.IsConnected, ConnectWait, "The gateway did not connect.");
 
-        await first.StopAsync();
-        await Eventually(() => !gateway.Status.IsConnected, TimeSpan.FromSeconds(5), "The gateway stayed connected after the first stop.");
+            await first.StopAsync();
+            await Eventually(() => !gateway.Status.IsConnected, TimeSpan.FromSeconds(5), "The gateway stayed connected after the first stop.");
 
-        await using AppE2EHost second = await AppE2EHost.StartAsync(Ct, first.PipeName, first.DataRoot);
-        await Eventually(() => gateway.Status.IsConnected, ReconnectWait, "The gateway did not reconnect to the second host.");
+            AppE2EHost second = await AppE2EHost.StartAsync(ct, first.PipeName, first.DataRoot);
+            later.Push(second);
+            await Eventually(() => gateway.Status.IsConnected, ReconnectWait, "The gateway did not reconnect to the second host.");
 
-        // Stop it again at once and bring up a third host on the same root and pipe: the same gateway must find it.
-        await second.StopAsync();
-        await using AppE2EHost third = await AppE2EHost.StartAsync(Ct, first.PipeName, first.DataRoot);
-        await Eventually(() => gateway.Status.IsConnected, ReconnectWait, "The gateway did not return to Connected after the quick restart.");
+            // Stop it again at once: the status must leave Connected, or the last check below could pass on a stale one.
+            await second.StopAsync();
+            await Eventually(() => !gateway.Status.IsConnected, TimeSpan.FromSeconds(5), "The gateway stayed connected after the second stop.");
+
+            // A third host on the same root and pipe: the same gateway must find it.
+            later.Push(await AppE2EHost.StartAsync(ct, first.PipeName, first.DataRoot));
+            await Eventually(() => gateway.Status.IsConnected, ReconnectWait, "The gateway did not return to Connected after the quick restart.");
+        }
+        finally
+        {
+            await DisposeInOrderAsync(app, later);
+        }
     }
 
-    [Fact]
+    [Fact(Timeout = TestTimeoutMs)]
     public async Task Viewer_EditorHidesArgumentsAndCannotSave()
     {
+        CancellationToken ct = TestContext.Current.CancellationToken;
         using var operatorData = new TempDirectory();
         using var viewerData = new TempDirectory();
-        await using AppE2EHost host = await AppE2EHost.StartAsync(Ct);
+        await using AppE2EHost host = await AppE2EHost.StartAsync(ct);
         await using ServiceProvider operatorApp = host.ComposeApp(operatorData.Path);
         StartApp(operatorApp);
         IServiceGateway operatorGateway = operatorApp.GetRequiredService<IServiceGateway>();
@@ -155,6 +197,21 @@ public sealed class AppEndToEndTests
         viewerEditor.SaveCommand.CanExecute(null).ShouldBeFalse();
         StringsOf(viewerEditor).ShouldNotContain(s => s.Contains("--secret-arg", StringComparison.Ordinal));
         StringsOf(viewerEditor.Environment[0]).ShouldNotContain(s => s.Contains("fast", StringComparison.Ordinal));
+
+        ProcessesViewModel viewerProcesses = viewerApp.GetRequiredService<ProcessesViewModel>();
+        ProcessRowViewModel[] rows = [];
+        await Eventually(() => (rows = [.. viewerProcesses.Items]).Length > 0, TimeSpan.FromSeconds(5), "The viewer's list stayed empty.");
+        rows.SelectMany(StringsOf).ShouldNotContain(s => s.Contains("--secret-arg", StringComparison.Ordinal));
+    }
+
+    /// <summary>The app goes first, so no host stops under a connected gateway; then the hosts started later, newest first.</summary>
+    private static async Task DisposeInOrderAsync(ServiceProvider app, Stack<AppE2EHost> later)
+    {
+        await app.DisposeAsync();
+        while (later.TryPop(out AppE2EHost? host))
+        {
+            await host.DisposeAsync();
+        }
     }
 
     private static void StartApp(ServiceProvider app)
@@ -194,6 +251,7 @@ public sealed class AppEndToEndTests
     {
         TimeSpan delay = interval ?? TimeSpan.FromMilliseconds(100);
         var watch = Stopwatch.StartNew();
+        InvalidOperationException? lastFailure = null;
         while (true)
         {
             try
@@ -203,14 +261,15 @@ public sealed class AppEndToEndTests
                     return;
                 }
             }
-            catch (InvalidOperationException)
+            catch (InvalidOperationException ex)
             {
-                // A list was modified by the gateway thread while it was read.
+                // A list was modified by the gateway thread while it was read; kept as the cause if the wait runs out.
+                lastFailure = ex;
             }
 
             if (watch.Elapsed > timeout)
             {
-                throw new TimeoutException($"{failure} (waited {timeout}).");
+                throw new TimeoutException($"{failure} (waited {timeout}).", lastFailure);
             }
 
             await Task.Delay(delay, Ct);

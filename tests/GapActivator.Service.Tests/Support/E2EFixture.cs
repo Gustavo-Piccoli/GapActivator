@@ -16,7 +16,6 @@ using GapActivator.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
-using DiagnosticsProcess = System.Diagnostics.Process;
 
 namespace GapActivator.Service.Tests.Support;
 
@@ -41,7 +40,6 @@ internal sealed class E2EFixture : IAsyncDisposable
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(200);
     private static readonly TimeSpan StartWait = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ReconcileWait = TimeSpan.FromSeconds(10);
-    private static readonly TimeSpan ChildExitWait = TimeSpan.FromSeconds(10);
     private static readonly string[] ChildProcessNames = ["GapActivator.SampleChild", "GapActivator.TestChild"];
 
     private readonly TempDataRoot _root;
@@ -272,7 +270,9 @@ internal sealed class E2EFixture : IAsyncDisposable
             await client.DisposeAsync();
         }
 
-        List<DiagnosticsProcess> children = _stopped ? [] : await OpenActiveChildrenAsync();
+        LeftoverChildren? children = _stopped
+            ? null
+            : await LeftoverChildren.OpenAsync(_host.Services.GetRequiredService<IQueryDispatcher>(), ChildProcessNames);
         List<int> leftovers;
         try
         {
@@ -281,7 +281,7 @@ internal sealed class E2EFixture : IAsyncDisposable
         finally
         {
             _host.Dispose();
-            leftovers = KillLeftovers(children);
+            leftovers = children?.KillAndReport() ?? [];
             GapActivatorDatabase.ReleasePooledConnections();
             await _root.DisposeAsync();
         }
@@ -301,68 +301,6 @@ internal sealed class E2EFixture : IAsyncDisposable
         TimeSpan? gracePeriod,
         IReadOnlyList<ScheduleInput> schedules) =>
         new(name, "", ProcessKind.RunToCompletion, executable, arguments, null, [], timeLimit, gracePeriod, schedules);
-
-    private static List<int> KillLeftovers(List<DiagnosticsProcess> children)
-    {
-        var leftovers = new List<int>();
-        foreach (DiagnosticsProcess child in children)
-        {
-            using (child)
-            {
-                if (child.HasExited)
-                {
-                    continue;
-                }
-
-                leftovers.Add(child.Id);
-                child.Kill(entireProcessTree: true);
-                child.WaitForExit(ChildExitWait);
-            }
-        }
-
-        return leftovers;
-    }
-
-    /// <summary>
-    /// Handles to the children of the active runs, taken before the stop so a leftover can be found afterwards. Only a
-    /// process with a child's name is taken, so a reused PID never points at an unrelated process.
-    /// </summary>
-    private async Task<List<DiagnosticsProcess>> OpenActiveChildrenAsync()
-    {
-        var children = new List<DiagnosticsProcess>();
-        IReadOnlyList<ProcessSummary> summaries;
-        try
-        {
-            summaries = await Query<ListProcesses, IReadOnlyList<ProcessSummary>>(new ListProcesses(), CancellationToken.None);
-        }
-        catch (Exception)
-        {
-            // The stop below still runs; the safety net is best-effort.
-            return children;
-        }
-
-        foreach (int pid in summaries.Select(s => s.ActiveRun?.Pid).OfType<int>())
-        {
-            try
-            {
-                DiagnosticsProcess child = DiagnosticsProcess.GetProcessById(pid);
-                if (ChildProcessNames.Contains(child.ProcessName, StringComparer.OrdinalIgnoreCase))
-                {
-                    children.Add(child);
-                }
-                else
-                {
-                    child.Dispose();
-                }
-            }
-            catch (Exception e) when (e is ArgumentException or InvalidOperationException)
-            {
-                // Already gone.
-            }
-        }
-
-        return children;
-    }
 }
 
 /// <summary>

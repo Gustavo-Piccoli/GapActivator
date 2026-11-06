@@ -2,6 +2,7 @@ using System.Globalization;
 using GapActivator.App.Composition;
 using GapActivator.App.Services;
 using GapActivator.App.Settings;
+using GapActivator.App.Shell;
 using GapActivator.App.Tests.Fakes;
 using GapActivator.App.Updates;
 using GapActivator.Application;
@@ -22,7 +23,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using DiagnosticsProcess = System.Diagnostics.Process;
 
 namespace GapActivator.App.Tests.EndToEnd;
 
@@ -38,7 +38,7 @@ internal sealed class AppE2EHost : IAsyncDisposable
     private static readonly TimeSpan StartWait = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan ReconcileWait = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan StopWait = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan ChildExitWait = TimeSpan.FromSeconds(10);
+    private static readonly string[] ChildProcessNames = ["GapActivator.SampleChild"];
     private static readonly CultureInfo English = CultureInfo.GetCultureInfo("en-US");
 
     private readonly TempDataRoot? _ownedRoot;
@@ -77,7 +77,7 @@ internal sealed class AppE2EHost : IAsyncDisposable
             }
 
             HostApplicationBuilder builder = GapActivatorHost.CreateBuilder(
-                ["--GapActivator:DataRoot=" + root, $"--{IpcOptions.PipeNameKey}={pipeName ?? $"GapActivator.Tests.{Guid.NewGuid():N}"}"]);
+                [$"--{GapActivatorPaths.DataRootKey}={root}", $"--{IpcOptions.PipeNameKey}={pipeName ?? $"GapActivator.Tests.{Guid.NewGuid():N}"}"]);
             string pipe = builder.Configuration[IpcOptions.PipeNameKey]
                 ?? throw new InvalidOperationException("The test host has no pipe name.");
 
@@ -116,7 +116,10 @@ internal sealed class AppE2EHost : IAsyncDisposable
         }
     }
 
-    /// <summary>Stops the host, bounded to 30 seconds. Safe to call more than once.</summary>
+    /// <summary>
+    /// Stops the host, bounded to 30 seconds, and fails if a sample child is still running afterwards (it is killed first). Safe
+    /// to call more than once; disposing the host calls it too, so a host a test stopped by hand is checked as well.
+    /// </summary>
     public async Task StopAsync()
     {
         if (_stopped)
@@ -125,7 +128,22 @@ internal sealed class AppE2EHost : IAsyncDisposable
         }
 
         _stopped = true;
-        await StopHostAsync(_host);
+        LeftoverChildren children = await LeftoverChildren.OpenAsync(_host.Services.GetRequiredService<IQueryDispatcher>(), ChildProcessNames);
+        List<int> leftovers;
+        try
+        {
+            await StopHostAsync(_host);
+        }
+        finally
+        {
+            leftovers = children.KillAndReport();
+        }
+
+        if (leftovers.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"The host stopped but left children running (killed now): PIDs {string.Join(", ", leftovers)}.");
+        }
     }
 
     /// <summary>
@@ -151,6 +169,7 @@ internal sealed class AppE2EHost : IAsyncDisposable
                     ConnectTimeout = TimeSpan.FromSeconds(2),
                     ClientVersion = AppVersion.Display,
                 }));
+                services.Replace(ServiceDescriptor.Singleton<IServiceStatusProbe>(new FakeServiceStatusProbe { State = ServiceInstallState.NotInstalled }));
                 services.Replace(ServiceDescriptor.Singleton<IUiDispatcher>(new ImmediateUiDispatcher()));
                 services.Replace(ServiceDescriptor.Singleton<IDialogService>(new AlwaysPrimaryDialogService()));
 
@@ -160,14 +179,9 @@ internal sealed class AppE2EHost : IAsyncDisposable
             });
     }
 
-    /// <summary>
-    /// Stops the host, disposes it and deletes the root it created. A child the stop left running is killed and then reported
-    /// as a failure: the host must never leave one behind.
-    /// </summary>
+    /// <summary>Stops the host (see <see cref="StopAsync"/>), disposes it and deletes the root it created.</summary>
     public async ValueTask DisposeAsync()
     {
-        List<DiagnosticsProcess> children = _stopped ? [] : await OpenActiveChildrenAsync();
-        List<int> leftovers;
         try
         {
             await StopAsync();
@@ -175,18 +189,11 @@ internal sealed class AppE2EHost : IAsyncDisposable
         finally
         {
             _host.Dispose();
-            leftovers = KillLeftovers(children);
             GapActivatorDatabase.ReleasePooledConnections();
             if (_ownedRoot is not null)
             {
                 await _ownedRoot.DisposeAsync();
             }
-        }
-
-        if (leftovers.Count > 0)
-        {
-            throw new InvalidOperationException(
-                $"The host stopped but left children running (killed now): PIDs {string.Join(", ", leftovers)}.");
         }
     }
 
@@ -243,69 +250,6 @@ internal sealed class AppE2EHost : IAsyncDisposable
         {
             GapActivatorDatabase.ReleasePooledConnections();
         }
-    }
-
-    private static List<int> KillLeftovers(List<DiagnosticsProcess> children)
-    {
-        var leftovers = new List<int>();
-        foreach (DiagnosticsProcess child in children)
-        {
-            using (child)
-            {
-                if (child.HasExited)
-                {
-                    continue;
-                }
-
-                leftovers.Add(child.Id);
-                child.Kill(entireProcessTree: true);
-                child.WaitForExit(ChildExitWait);
-            }
-        }
-
-        return leftovers;
-    }
-
-    /// <summary>
-    /// Handles to the sample children of the active runs, taken before the stop so a leftover can be found afterwards. Only a
-    /// process with the child's name is taken, so a reused PID never points at an unrelated process.
-    /// </summary>
-    private async Task<List<DiagnosticsProcess>> OpenActiveChildrenAsync()
-    {
-        var children = new List<DiagnosticsProcess>();
-        IReadOnlyList<ProcessSummary> summaries;
-        try
-        {
-            summaries = await _host.Services.GetRequiredService<IQueryDispatcher>()
-                .QueryAsync<ListProcesses, IReadOnlyList<ProcessSummary>>(new ListProcesses(), Caller.System, CancellationToken.None);
-        }
-        catch (Exception)
-        {
-            // The stop still runs; the safety net is best-effort.
-            return children;
-        }
-
-        foreach (int pid in summaries.Select(s => s.ActiveRun?.Pid).OfType<int>())
-        {
-            try
-            {
-                DiagnosticsProcess child = DiagnosticsProcess.GetProcessById(pid);
-                if (string.Equals(child.ProcessName, "GapActivator.SampleChild", StringComparison.OrdinalIgnoreCase))
-                {
-                    children.Add(child);
-                }
-                else
-                {
-                    child.Dispose();
-                }
-            }
-            catch (Exception e) when (e is ArgumentException or InvalidOperationException)
-            {
-                // Already gone.
-            }
-        }
-
-        return children;
     }
 
     private sealed class NoCultureApplier : ICultureApplier
