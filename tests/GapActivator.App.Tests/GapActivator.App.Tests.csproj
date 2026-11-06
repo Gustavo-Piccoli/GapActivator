@@ -20,6 +20,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\GapActivator.App\GapActivator.App.csproj" />
+    <ProjectReference Include="..\..\src\GapActivator.Domain\GapActivator.Domain.csproj" />
+    <ProjectReference Include="..\..\src\GapActivator.Application\GapActivator.Application.csproj" />
+    <ProjectReference Include="..\..\src\GapActivator.Infrastructure\GapActivator.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\GapActivator.Service\GapActivator.Service.csproj" />
+    <ProjectReference Include="..\..\samples\GapActivator.SampleChild\GapActivator.SampleChild.csproj" />
+    <ProjectReference Include="..\GapActivator.Testing\GapActivator.Testing.csproj" />
   </ItemGroup>
 
   <ItemGroup>

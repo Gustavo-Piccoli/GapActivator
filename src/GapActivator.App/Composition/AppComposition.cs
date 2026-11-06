@@ -68,11 +68,12 @@ public static class AppComposition
             var store = sp.GetRequiredService<AppSettingsStore>();
             return new AppSettingsService(store, store.Load());
         });
+        services.AddSingleton<ICultureApplier>(_ => new ProcessCultureApplier());
         services.AddSingleton(sp => new ThemeApplier(
             sp.GetRequiredService<Localizer>(),
             sp.GetRequiredService<IAppSettingsService>(),
             sp.GetRequiredService<IUiDispatcher>(),
-            new ProcessCultureApplier()));
+            sp.GetRequiredService<ICultureApplier>()));
     }
 
     private static void AddGateway(IServiceCollection services)

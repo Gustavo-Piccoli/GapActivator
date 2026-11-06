@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="GapActivator.Service.Tests" />
+    <InternalsVisibleTo Include="GapActivator.App.Tests" />
   </ItemGroup>
 
 </Project>
