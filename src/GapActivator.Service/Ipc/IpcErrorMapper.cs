@@ -22,7 +22,7 @@ internal static class IpcErrorMapper
                 new IpcError(IpcErrorCodes.Conflict, "The data changed while the request ran. Try again.", true),
             IpcUnknownMessageException unknown => new IpcError(IpcErrorCodes.UnknownMessage, unknown.Message, false),
             JsonException json => new IpcError(
-                IpcErrorCodes.Invalid, $"The payload of {type} is not valid: {NotificationText.Sanitize(json.Message)}", false),
+                IpcErrorCodes.Invalid, $"The payload of {type} is not valid: {NotificationText.Sanitize(json.Message, NotificationText.MaxReasonLength)}", false),
             IpcInvalidPayloadException or DomainException or ArgumentException =>
                 new IpcError(IpcErrorCodes.Invalid, Clean(exception.Message), false),
             OperationCanceledException when stopping => new IpcError(

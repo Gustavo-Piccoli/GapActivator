@@ -69,6 +69,16 @@ public sealed class ErrorMapperTests
         }
     }
 
+    [Fact]
+    public void Map_JsonExceptionWithLongMessage_IsCapped()
+    {
+        IpcError error = IpcErrorMapper.Map(new JsonException(new string('j', 1000)), "RunNow", false);
+
+        error.Code.ShouldBe(IpcErrorCodes.Invalid);
+        error.Message.Length.ShouldBeLessThanOrEqualTo("The payload of RunNow is not valid: ".Length + 200);
+        error.Message.ShouldEndWith("\u2026");
+    }
+
     private static (Exception Exception, bool Stopping, string Code, bool Retryable, string Message, bool Unexpected) Row(string row) =>
         row switch
         {
