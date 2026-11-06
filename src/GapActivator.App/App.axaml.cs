@@ -32,34 +32,43 @@ public sealed class App : Avalonia.Application
                 e.Handled = true;
             };
 
-            services.GetRequiredService<ThemeApplier>().Start();
-
-            // Every view model exists before the gateway starts, so none misses the first connection change.
-            _ = services.GetRequiredService<MainWindowViewModel>();
-            services.GetRequiredService<IServiceGateway>().Start();
-
-            // The live state follows the gateway from here on; it refreshes after every connect, and once now if already connected.
-            services.GetRequiredService<LiveState>().Start();
-
-            // The daily release check starts last, once the view models that listen to it exist; it is quiet unless a release is newer.
-            services.GetRequiredService<UpdateChecker>().StartBackground();
-
-            // The shell window is created here, on the UI thread, and disposed by AppShutdown on the UI thread.
-            var shell = services.GetRequiredService<ShellWindow>();
-            var windows = services.GetRequiredService<IMainWindowService>();
-            shell.ActivationRequested += (_, _) => windows.Show();
-            shell.SessionEnding += (_, _) => services.GetRequiredService<IAppLifetime>().Exit();
-
-            // The tray follows the connection and the live state, so it starts after both; the presenter listens for the service's notifications.
-            services.GetRequiredService<TrayCoordinator>().Start();
-            services.GetRequiredService<NotificationPresenter>().Start();
-
-            if (!services.GetRequiredService<StartupOptions>().Minimized)
-            {
-                windows.Show();
-            }
+            StartServices(services);
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// Resolves and starts everything the app needs at launch, in the order that matters. Kept apart from the Avalonia lifetime so a
+    /// test can run the same sequence against a composed provider.
+    /// </summary>
+    internal static void StartServices(IServiceProvider services)
+    {
+        services.GetRequiredService<ThemeApplier>().Start();
+
+        // Every view model exists before the gateway starts, so none misses the first connection change.
+        _ = services.GetRequiredService<MainWindowViewModel>();
+        services.GetRequiredService<IServiceGateway>().Start();
+
+        // The live state follows the gateway from here on; it refreshes after every connect, and once now if already connected.
+        services.GetRequiredService<LiveState>().Start();
+
+        // The daily release check starts last, once the view models that listen to it exist; it is quiet unless a release is newer.
+        services.GetRequiredService<UpdateChecker>().StartBackground();
+
+        // The shell window is created here, on the UI thread, and disposed by AppShutdown on the UI thread.
+        var shell = services.GetRequiredService<ShellWindow>();
+        var windows = services.GetRequiredService<IMainWindowService>();
+        shell.ActivationRequested += (_, _) => windows.Show();
+        shell.SessionEnding += (_, _) => services.GetRequiredService<IAppLifetime>().Exit();
+
+        // The tray follows the connection and the live state, so it starts after both; the presenter listens for the service's notifications.
+        services.GetRequiredService<TrayCoordinator>().Start();
+        services.GetRequiredService<NotificationPresenter>().Start();
+
+        if (!services.GetRequiredService<StartupOptions>().Minimized)
+        {
+            windows.Show();
+        }
     }
 }
