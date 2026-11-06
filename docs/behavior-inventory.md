@@ -8,7 +8,7 @@ This document lists the observable rules of the private predecessor (the **legac
 
 Every **keep** and **redesign** row becomes at least one test in the new codebase.
 
-Column *Spec §* points to the section of the design (`docs/superpowers/specs/2026-11-03-gapactivator-design.md`) that decides the row. Rules the design did not originally decide were put to the owner; the column then names the owner decision (Q-n), listed in the final section. Column *Plan* says where the rule lands: 1 = domain rule, 2 = application/orchestration, 3 = infrastructure/service, 4 = IPC/app, 5 = installer/distribution.
+Column *Spec §* points to the section of the project design document (kept outside this repository) that decides the row. Rules the design did not originally decide were put to the owner; the column then names the owner decision (Q-n), listed in the final section. Column *Plan* says where the rule lands: 1 = domain rule, 2 = application/orchestration, 3 = infrastructure/service, 4 = IPC/app, 5 = installer/distribution.
 
 Vocabulary used for the legacy behavior: the legacy activator kept a single *status* per process that mixed lifecycle, run state and pending operator requests, an installation-wide *state* that switched between normal operation, a pause and a restart request, and a *run record* per execution attempt. Operators changed statuses and states by writing directly to the database.
 
