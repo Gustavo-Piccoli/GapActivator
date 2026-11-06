@@ -1,15 +1,23 @@
+using System.ComponentModel;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using Microsoft.Win32.SafeHandles;
 
 namespace GapActivator.Service.Setup;
 
 /// <summary>
-/// Makes the data root safe against a folder pre-created by a local user: removes a reparse point at the path (never its
-/// target), creates the folder, makes Administrators the owner, replaces the DACL with a protected one and resets every
-/// existing child to inherit only. Reparse points among the children are deleted, never followed.
+/// Makes the data root safe against a folder pre-created by a local user. Every object is opened once, without following
+/// reparse points, and the reparse check, the owner and the DACL all go through that one handle, so a link swapped in
+/// after the check cannot redirect the writes. The root is locked down first (owner Administrators, protected DACL), so
+/// a non-administrator cannot create or swap entries while the children are walked. The take-ownership, restore and
+/// backup privileges are enabled for the duration, so a DACL that excludes Administrators does not stop the takeover.
+/// Reparse points are deleted (the link only, never the target).
 /// </summary>
 internal static class DataRootPreparer
 {
+    private const uint Rights = DataRootNative.ReadControl | DataRootNative.WriteDac | DataRootNative.WriteOwner
+        | DataRootNative.FileReadAttributes | DataRootNative.Delete;
+
     private static readonly SecurityIdentifier Administrators = new(WellKnownSidType.BuiltinAdministratorsSid, null);
     private static readonly SecurityIdentifier LocalSystem = new(WellKnownSidType.LocalSystemSid, null);
 
@@ -22,102 +30,111 @@ internal static class DataRootPreparer
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(account);
 
-        RemoveLink(path);
-        Directory.CreateDirectory(path);
+        using var privileges = new DataRootNative.PrivilegeScope("SeTakeOwnershipPrivilege", "SeRestorePrivilege", "SeBackupPrivilege");
 
-        var root = new DirectoryInfo(path);
-        TrySetOwner(root, allowOwnerFallback);
-        root.SetAccessControl(BuildRootSecurity(account));
+        string fullPath = Path.GetFullPath(path).TrimEnd('\\');
+        using SafeFileHandle root = OpenRoot(fullPath);
+        string rootFinal = DataRootNative.GetFinalPath(root);
 
-        ResetChildren(root, allowOwnerFallback);
-    }
-
-    private static void RemoveLink(string path)
-    {
-        if (Directory.Exists(path) && IsReparsePoint(new DirectoryInfo(path)))
-        {
-            // Not recursive: on a link this removes the link only, never the target.
-            Directory.Delete(path);
-        }
-        else if (File.Exists(path))
-        {
-            File.Delete(path);
-        }
-    }
-
-    private static bool IsReparsePoint(FileSystemInfo info) => info.Attributes.HasFlag(FileAttributes.ReparsePoint);
-
-    private static DirectorySecurity BuildRootSecurity(SecurityIdentifier account)
-    {
+        ApplyOwner(root, allowOwnerFallback);
         var security = new DirectorySecurity();
         security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
         const InheritanceFlags both = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
         security.AddAccessRule(new FileSystemAccessRule(LocalSystem, FileSystemRights.FullControl, both, PropagationFlags.None, AccessControlType.Allow));
         security.AddAccessRule(new FileSystemAccessRule(Administrators, FileSystemRights.FullControl, both, PropagationFlags.None, AccessControlType.Allow));
         security.AddAccessRule(new FileSystemAccessRule(account, FileSystemRights.Modify, both, PropagationFlags.None, AccessControlType.Allow));
-        return security;
+        DataRootNative.SetProtectedDacl(root, ToBytes(security));
+
+        ResetChildren(fullPath, rootFinal, allowOwnerFallback);
     }
 
-    private static void TrySetOwner(FileSystemInfo info, bool allowFallback)
+    /// <summary>
+    /// Opens the root itself. A reparse point there is deleted (the link only), the folder is created and opened again,
+    /// and a second reparse point is refused.
+    /// </summary>
+    private static SafeFileHandle OpenRoot(string path)
+    {
+        if (DataRootNative.TryOpenNoFollow(path, Rights, out SafeFileHandle existing))
+        {
+            if (!IsReparsePoint(existing))
+            {
+                RequireDirectory(existing, path);
+                return existing;
+            }
+
+            DataRootNative.MarkForDelete(existing);
+            existing.Dispose();
+        }
+
+        Directory.CreateDirectory(path);
+        SafeFileHandle created = DataRootNative.OpenNoFollow(path, Rights);
+        if (IsReparsePoint(created))
+        {
+            created.Dispose();
+            throw new IOException($"'{path}' became a reparse point again; refusing to use it.");
+        }
+
+        RequireDirectory(created, path);
+        return created;
+    }
+
+    private static bool IsReparsePoint(SafeFileHandle handle) =>
+        DataRootNative.GetAttributes(handle).HasFlag(FileAttributes.ReparsePoint);
+
+    private static void RequireDirectory(SafeFileHandle handle, string path)
+    {
+        if (!DataRootNative.GetAttributes(handle).HasFlag(FileAttributes.Directory))
+        {
+            throw new IOException($"'{path}' is not a folder.");
+        }
+    }
+
+    private static void ApplyOwner(SafeFileHandle handle, bool allowFallback)
     {
         try
         {
-            if (info is DirectoryInfo directory)
-            {
-                var security = new DirectorySecurity();
-                security.SetOwner(Administrators);
-                directory.SetAccessControl(security);
-            }
-            else
-            {
-                var file = (FileInfo)info;
-                var security = new FileSecurity();
-                security.SetOwner(Administrators);
-                file.SetAccessControl(security);
-            }
+            DataRootNative.SetOwner(handle, Administrators);
         }
-        catch (Exception ex) when (allowFallback && ex is InvalidOperationException or UnauthorizedAccessException or PrivilegeNotHeldException)
+        catch (Win32Exception ex) when (allowFallback && ex.NativeErrorCode is 5 or 1307 or 1314)
         {
             // Test-only fallback: the current owner stays.
         }
     }
 
-    private static void ResetChildren(DirectoryInfo directory, bool allowOwnerFallback)
+    private static byte[] ToBytes(DirectorySecurity security)
     {
-        foreach (FileSystemInfo child in directory.EnumerateFileSystemInfos().ToList())
+        RawAcl acl = new RawSecurityDescriptor(security.GetSecurityDescriptorBinaryForm(), 0).DiscretionaryAcl!;
+        byte[] bytes = new byte[acl.BinaryLength];
+        acl.GetBinaryForm(bytes, 0);
+        return bytes;
+    }
+
+    private static void ResetChildren(string directory, string directoryFinal, bool allowOwnerFallback)
+    {
+        foreach (string childPath in Directory.EnumerateFileSystemEntries(directory).ToList())
         {
-            if (IsReparsePoint(child))
+            string expected = directoryFinal + "\\" + Path.GetFileName(childPath);
+            using SafeFileHandle child = DataRootNative.OpenNoFollow(childPath, Rights);
+            FileAttributes attributes = DataRootNative.GetAttributes(child);
+            if (attributes.HasFlag(FileAttributes.ReparsePoint))
             {
-                DeleteLink(child);
+                // Only the link goes, never the target.
+                DataRootNative.MarkForDelete(child);
                 continue;
             }
 
-            TrySetOwner(child, allowOwnerFallback);
-            if (child is DirectoryInfo subdirectory)
+            // The handle must be the entry itself, not something an intermediate link redirected to.
+            if (!string.Equals(DataRootNative.GetFinalPath(child), expected, StringComparison.OrdinalIgnoreCase))
             {
-                var security = new DirectorySecurity();
-                security.SetAccessRuleProtection(isProtected: false, preserveInheritance: false);
-                subdirectory.SetAccessControl(security);
-                ResetChildren(subdirectory, allowOwnerFallback);
+                throw new IOException($"'{childPath}' resolved to a different location; refusing to change it.");
             }
-            else
-            {
-                var security = new FileSecurity();
-                security.SetAccessRuleProtection(isProtected: false, preserveInheritance: false);
-                ((FileInfo)child).SetAccessControl(security);
-            }
-        }
-    }
 
-    private static void DeleteLink(FileSystemInfo link)
-    {
-        if (link is DirectoryInfo directory)
-        {
-            directory.Delete(recursive: false);
-        }
-        else
-        {
-            link.Delete();
+            ApplyOwner(child, allowOwnerFallback);
+            DataRootNative.ResetToInherited(child);
+            if (attributes.HasFlag(FileAttributes.Directory))
+            {
+                ResetChildren(childPath, expected, allowOwnerFallback);
+            }
         }
     }
 }

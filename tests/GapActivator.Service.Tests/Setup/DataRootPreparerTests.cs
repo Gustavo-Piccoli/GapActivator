@@ -142,6 +142,87 @@ public sealed class DataRootPreparerTests : IDisposable
     }
 
     [Fact]
+    public void Prepare_PreExistingRootWithForeignAceAndProtectedChild_IsReset()
+    {
+        string path = Path.Combine(_temp, "root");
+        string folder = Path.Combine(path, "sub");
+        Directory.CreateDirectory(folder);
+        var rootInfo = new DirectoryInfo(path);
+        DirectorySecurity foreign = rootInfo.GetAccessControl();
+        foreign.AddAccessRule(new FileSystemAccessRule(Users, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+        rootInfo.SetAccessControl(foreign);
+        var folderInfo = new DirectoryInfo(folder);
+        DirectorySecurity protectedAcl = folderInfo.GetAccessControl();
+        protectedAcl.SetAccessRuleProtection(true, false);
+        protectedAcl.AddAccessRule(new FileSystemAccessRule(CurrentUser(), FileSystemRights.FullControl, AccessControlType.Allow));
+        folderInfo.SetAccessControl(protectedAcl);
+        SecurityIdentifier account = CurrentUser();
+
+        DataRootPreparer.Prepare(path, account, allowOwnerFallback: true);
+
+        DirectorySecurity root = new DirectoryInfo(path).GetAccessControl();
+        Explicit(root).Count.ShouldBe(3);
+        Explicit(root).ShouldNotContain(r => (SecurityIdentifier)r.IdentityReference == Users);
+        DirectorySecurity sub = new DirectoryInfo(folder).GetAccessControl();
+        sub.AreAccessRulesProtected.ShouldBeFalse();
+        Explicit(sub).ShouldBeEmpty();
+        List<FileSystemAccessRule> inherited = [.. sub.GetAccessRules(false, true, typeof(SecurityIdentifier)).Cast<FileSystemAccessRule>()];
+        Rights(inherited, account).ShouldBe(FileSystemRights.Modify | FileSystemRights.Synchronize);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void Prepare_Elevated_HostileFolderOwnedByAUserWithoutAdministrators_IsTakenOver()
+    {
+        Elevation.SkipUnlessElevated();
+        string path = Path.Combine(_temp, "root");
+        string folder = Path.Combine(path, "sub");
+        string file = Path.Combine(folder, "x.txt");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(file, "x");
+        using var privileges = new DataRootNative.PrivilegeScope("SeTakeOwnershipPrivilege", "SeRestorePrivilege", "SeBackupPrivilege");
+        Hostile(file);
+        Hostile(folder);
+        Hostile(path);
+
+        DataRootPreparer.Prepare(path, CurrentUser());
+
+        foreach (string target in new[] { path, folder })
+        {
+            new DirectoryInfo(target).GetAccessControl().GetOwner(typeof(SecurityIdentifier)).ShouldBe(Administrators);
+        }
+
+        new FileInfo(file).GetAccessControl().GetOwner(typeof(SecurityIdentifier)).ShouldBe(Administrators);
+        Explicit(new DirectoryInfo(path).GetAccessControl()).Count.ShouldBe(3);
+        FileSecurity fileSecurity = new FileInfo(file).GetAccessControl();
+        fileSecurity.AreAccessRulesProtected.ShouldBeFalse();
+        Explicit(fileSecurity).ShouldBeEmpty();
+    }
+
+    // Owned by Users, protected DACL granting only Users: Administrators have no rights from the DACL.
+    private static void Hostile(string target)
+    {
+        if (Directory.Exists(target))
+        {
+            var info = new DirectoryInfo(target);
+            var security = new DirectorySecurity();
+            security.SetOwner(Users);
+            security.SetAccessRuleProtection(true, false);
+            security.AddAccessRule(new FileSystemAccessRule(Users, FileSystemRights.FullControl, InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit, PropagationFlags.None, AccessControlType.Allow));
+            info.SetAccessControl(security);
+        }
+        else
+        {
+            var info = new FileInfo(target);
+            var security = new FileSecurity();
+            security.SetOwner(Users);
+            security.SetAccessRuleProtection(true, false);
+            security.AddAccessRule(new FileSystemAccessRule(Users, FileSystemRights.FullControl, AccessControlType.Allow));
+            info.SetAccessControl(security);
+        }
+    }
+
+    [Fact]
     [Trait("Category", "Integration")]
     public void Prepare_Elevated_OwnerIsAdministrators()
     {
@@ -162,7 +243,7 @@ public sealed class DataRootPreparerTests : IDisposable
     {
         Assert.SkipWhen(Elevation.IsElevated, "Only meaningful when not elevated.");
 
-        Should.Throw<Exception>(() => DataRootPreparer.Prepare(Path.Combine(_temp, "root"), CurrentUser()));
+        Should.Throw<System.ComponentModel.Win32Exception>(() => DataRootPreparer.Prepare(Path.Combine(_temp, "root"), CurrentUser()));
     }
 
     private void Junction(string link, string target)
