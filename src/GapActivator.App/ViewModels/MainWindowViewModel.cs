@@ -6,8 +6,8 @@ using GapActivator.App.Updates;
 namespace GapActivator.App.ViewModels;
 
 /// <summary>
-/// The main window: the navigation rail, the banner above the page and the rail footer. Later tasks add one constructor
-/// parameter and one property per page, a nav entry and a data template in MainWindow.axaml.
+/// The main window: the navigation rail, the banner above the page and the rail footer. It holds one view model per page and
+/// shows the current one; MainWindow.axaml maps each page view model to its view.
 /// </summary>
 public sealed partial class MainWindowViewModel : ViewModelBase
 {
@@ -87,7 +87,7 @@ public sealed partial class MainWindowViewModel : ViewModelBase
 
     public bool HasUpdateNotice => _availableUpdate is not null;
 
-    /// <summary>The view model of the current page, or null for a page that is not built yet (the window then shows its title).</summary>
+    /// <summary>The view model of the current page. Every <see cref="AppPage"/> has one; the null arm only completes the switch.</summary>
     public ViewModelBase? PageContent => CurrentPage switch
     {
         AppPage.Dashboard => Dashboard,

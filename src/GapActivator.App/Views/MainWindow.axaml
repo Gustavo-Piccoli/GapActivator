@@ -74,10 +74,7 @@
         </StackPanel>
       </Border>
 
-      <!-- Later tasks add one data template per page view model; a page that is not built yet shows its title. -->
       <Grid Margin="28,24">
-        <TextBlock Classes="title" Text="{Binding PageTitle}"
-                   IsVisible="{Binding PageContent, Converter={x:Static ObjectConverters.IsNull}}" />
         <ContentControl x:Name="PageHost" Content="{Binding PageContent}">
           <ContentControl.DataTemplates>
             <DataTemplate DataType="vm:DashboardViewModel">

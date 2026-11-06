@@ -420,8 +420,9 @@ public sealed class IpcServerTests
             await raw.DisposeAsync();
         }
 
-        // The server notices each vanished client only when its read ends. Until then those clients still count against
-        // the 16-connection cap and the next one would be told busy, so wait for the registry to drain first.
+        // A vanished client keeps its slot until the server's read of it ends and its running handlers finish. Until then
+        // those clients still count against the 16-connection cap and the next one would be told busy, so wait for the
+        // registry to drain first.
         (await BecomesTrueAsync(() => server.Registry.Count == 0, Long)).ShouldBeTrue();
 
         await using GapActivatorClient client = await server.ConnectAsync();
