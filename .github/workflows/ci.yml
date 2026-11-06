@@ -23,6 +23,10 @@ jobs:
       # Tests run on Microsoft.Testing.Platform (opted in via global.json), so the
       # VSTest-style --collect flag is replaced by its MTP equivalent.
       - run: dotnet test -c Release --no-build --coverage --coverage-output-format cobertura --results-directory TestResults
+      # AOT publish check (the app is published Native AOT; this catches trimming and linker failures).
+      - name: AOT publish check
+        shell: pwsh
+        run: ./build/Publish-App.ps1 -Runtime win-x64 -Version 0.0.0-ci.${{ github.run_number }}
       - run: dotnet reportgenerator -reports:"TestResults/**/*.cobertura.xml" -targetdir:coverage -reporttypes:"MarkdownSummaryGithub;Cobertura"
       - name: Publish coverage summary
         shell: pwsh
