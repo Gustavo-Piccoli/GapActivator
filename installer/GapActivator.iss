@@ -214,8 +214,26 @@ function lstrcpynW(lpString1: String; lpString2: Cardinal; iMaxLength: Longint):
 external 'lstrcpynW@kernel32.dll stdcall';
 
 // The DOMAIN\user name (NameSamCompatible = 2) of the account Setup itself runs as.
-function GetUserNameExW(NameFormat: Longint; lpNameBuffer: String; var nSize: Cardinal): Longint;
+// It returns a one-byte BOOLEAN, so the result is declared as a Byte (the upper bytes of EAX are not defined).
+function GetUserNameExW(NameFormat: Longint; lpNameBuffer: String; var nSize: Cardinal): Byte;
 external 'GetUserNameExW@secur32.dll stdcall';
+
+// The SID of the account Setup runs as, to tell LocalSystem apart by SID instead of by name.
+function GetCurrentProcess: Cardinal;
+external 'GetCurrentProcess@kernel32.dll stdcall';
+
+function OpenProcessToken(ProcessHandle, DesiredAccess: Cardinal; var TokenHandle: Cardinal): Longint;
+external 'OpenProcessToken@advapi32.dll stdcall';
+
+function GetTokenInformation(TokenHandle, TokenInformationClass: Cardinal; TokenInformation: String;
+  TokenInformationLength: Cardinal; var ReturnLength: Cardinal): Longint;
+external 'GetTokenInformation@advapi32.dll stdcall';
+
+function ConvertSidToStringSidW(Sid: Cardinal; var StringSid: Cardinal): Longint;
+external 'ConvertSidToStringSidW@advapi32.dll stdcall';
+
+function LocalFree(hMem: Cardinal): Cardinal;
+external 'LocalFree@kernel32.dll stdcall';
 
 function LogonUserW(lpszUsername, lpszDomain, lpszPassword: String; dwLogonType, dwLogonProvider: Cardinal;
   var phToken: Cardinal): Longint;
@@ -346,6 +364,36 @@ begin
     Result := Copy(Buffer, 1, Size);
 end;
 
+// The SID string of the account Setup runs as ('' on failure), read from the process token (TokenUser = 1,
+// TOKEN_QUERY = 8). TOKEN_USER starts with the SID pointer; the buffer is a String used as raw memory.
+function GetProcessSid: String;
+var
+  Token, Needed, SidPointer, SidString: Cardinal;
+  Buffer: String;
+begin
+  Result := '';
+  Token := 0;
+  if OpenProcessToken(GetCurrentProcess, 8, Token) = 0 then
+    exit;
+  try
+    SetLength(Buffer, 128);
+    Needed := 0;
+    if GetTokenInformation(Token, 1, Buffer, 256, Needed) <> 0 then
+    begin
+      // The first four bytes (two UTF-16 units) are the 32-bit pointer to the SID.
+      SidPointer := Ord(Buffer[1]) + Ord(Buffer[2]) * 65536;
+      SidString := 0;
+      if ConvertSidToStringSidW(SidPointer, SidString) <> 0 then
+      begin
+        Result := PointerToString(SidString);
+        LocalFree(SidString);
+      end;
+    end;
+  finally
+    CloseHandle(Token);
+  end;
+end;
+
 // DOMAIN\user of the user who started Setup, from the WTS session of this process. This works when Setup was
 // elevated with another administrator's credentials (the user's temp folder is not reachable then), and the
 // name arrives as Unicode, so accented names survive.
@@ -372,7 +420,21 @@ begin
       end;
     end;
     if OriginalUser = '' then
-      OriginalUser := GetProcessUserName;
+    begin
+      // No interactive user. A deployment tool runs Setup as LocalSystem (S-1-5-18, whose name reads as the
+      // machine account PC$); neither is a person to add to the Operators group, so there is no installing user.
+      if GetProcessSid = 'S-1-5-18' then
+        Log('Setup runs as LocalSystem and no user is logged on in this session.')
+      else
+      begin
+        OriginalUser := GetProcessUserName;
+        if (OriginalUser <> '') and (Copy(OriginalUser, Length(OriginalUser), 1) = '$') then
+        begin
+          Log('Setup runs as the machine account ' + OriginalUser + '.');
+          OriginalUser := '';
+        end;
+      end;
+    end;
     Log('Installing user: ' + OriginalUser);
   end;
   Result := OriginalUser;
@@ -743,11 +805,6 @@ begin
     Account := VirtualAccount;
     GrantRight := False;
     User := GetOriginalUser;
-    if User = '' then
-    begin
-      PostError := StepMessage('StepOriginalUser', -1, '');
-      exit;
-    end;
   end;
 
   // 1. Create the service (new install), or re-apply the start type of an existing one (upgrade). sc.exe strips
@@ -833,7 +890,13 @@ begin
   // missing and adds the user; an existing group or membership is success.
   if (not IsUpgrade) and (not UseSpecific) then
   begin
-    Code := ServiceTool('setup add-operator --account "' + User + '"', Output);
+    if User = '' then
+    begin
+      Log('No interactive user to add: the GapActivator Operators group is created without members.');
+      Code := ServiceTool('setup add-operator', Output);
+    end
+    else
+      Code := ServiceTool('setup add-operator --account "' + User + '"', Output);
     if Code <> 0 then
     begin
       PostError := StepMessage('StepOperators', Code, Output);
