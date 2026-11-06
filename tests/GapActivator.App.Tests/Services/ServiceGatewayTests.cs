@@ -97,6 +97,52 @@ public class ServiceGatewayTests
     }
 
     [Fact]
+    public async Task Start_SameFailureRepeating_LogsTheFirstAsWarningAndTheRepeatsAsDebug()
+    {
+        var logger = new ListLogger<ServiceGateway>();
+        await using var h = new Harness(ServiceInstallState.Running, logger);
+        for (var i = 0; i < 3; i++)
+        {
+            h.Script(new InvalidOperationException("boom"));
+        }
+
+        h.Gateway.Start();
+        await h.WaitTimersAsync(1);
+        h.Time.Advance(ServiceGateway.RetryDelays[0]);
+        await h.WaitTimersAsync(2);
+        h.Time.Advance(ServiceGateway.RetryDelays[1]);
+        await h.WaitTimersAsync(3);
+
+        logger.Levels.ShouldBe([Microsoft.Extensions.Logging.LogLevel.Warning, Microsoft.Extensions.Logging.LogLevel.Debug, Microsoft.Extensions.Logging.LogLevel.Debug]);
+    }
+
+    [Fact]
+    public async Task Start_FailureChangesType_LogsTheChangeAsWarningAgain()
+    {
+        var logger = new ListLogger<ServiceGateway>();
+        await using var h = new Harness(ServiceInstallState.Running, logger);
+        h.Script(new InvalidOperationException("boom"));
+        h.Script(new InvalidOperationException("boom"));
+        h.Script(new ArgumentException("other"));
+        h.Script(new GapActivatorRequestException(IpcErrorCodes.Internal, "x", retryable: false));
+        h.Script(new GapActivatorRequestException(IpcErrorCodes.Internal, "y", retryable: false));
+        h.Script(new GapActivatorRequestException(IpcErrorCodes.Conflict, "z", retryable: false));
+
+        h.Gateway.Start();
+        for (var i = 0; i < 5; i++)
+        {
+            await h.WaitTimersAsync(i + 1);
+            h.Time.Advance(ServiceGateway.RetryDelays[Math.Min(i, ServiceGateway.RetryDelays.Count - 1)]);
+        }
+
+        await h.WaitTimersAsync(6);
+
+        var warning = Microsoft.Extensions.Logging.LogLevel.Warning;
+        var debug = Microsoft.Extensions.Logging.LogLevel.Debug;
+        logger.Levels.ShouldBe([warning, debug, warning, warning, debug, warning]);
+    }
+
+    [Fact]
     public void RetryDelays_AreTwoFourEightThenTen() =>
         ServiceGateway.RetryDelays.ShouldBe([TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4), TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(10)]);
 
@@ -177,9 +223,9 @@ public class ServiceGatewayTests
         h.Gateway.Start();
         await h.WaitTimersAsync(1);
 
+        // Disposing waits for the loop to end, so no later attempt can still be on its way.
         await h.Gateway.DisposeAsync();
         h.Time.Advance(TimeSpan.FromMinutes(1));
-        await Task.Delay(50, TestContext.Current.CancellationToken);
 
         h.Attempts.Count.ShouldBe(1);
     }
@@ -194,9 +240,13 @@ public class ServiceGatewayTests
         h.Gateway.Start();
         h.Gateway.Start();
         await h.WaitTimersAsync(1);
-        await Task.Delay(50, TestContext.Current.CancellationToken);
 
-        h.Attempts.Count.ShouldBe(1);
+        // One loop makes exactly the two scripted attempts, 2 s apart; a second loop would have taken extra attempts.
+        h.Time.Advance(ServiceGateway.RetryDelays[0]);
+        await h.WaitTimersAsync(2);
+        await h.Gateway.DisposeAsync();
+
+        h.Attempts.Select(a => (int)a.TotalSeconds).ShouldBe([0, 2]);
     }
 
     [Fact]

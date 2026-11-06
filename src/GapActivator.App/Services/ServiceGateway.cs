@@ -168,6 +168,26 @@ public sealed partial class ServiceGateway : IServiceGateway
     [LoggerMessage(Level = Microsoft.Extensions.Logging.LogLevel.Warning, Message = "Connecting to the service failed.")]
     private partial void LogConnectFailed(Exception exception);
 
+    [LoggerMessage(Level = Microsoft.Extensions.Logging.LogLevel.Debug, Message = "Connecting to the service failed again.")]
+    private partial void LogConnectFailedAgain(Exception exception);
+
+    // The first failure, and each change of exception type or code, is a warning; the same failure repeating every few seconds is not.
+    private void ReportConnectFailure(Exception exception, ref string? lastKind)
+    {
+        var kind = exception is GapActivatorRequestException request
+            ? exception.GetType().FullName + ":" + request.Code
+            : exception.GetType().FullName;
+        if (string.Equals(kind, lastKind, StringComparison.Ordinal))
+        {
+            LogConnectFailedAgain(exception);
+        }
+        else
+        {
+            LogConnectFailed(exception);
+            lastKind = kind;
+        }
+    }
+
     private GatewayConnection Connected()
     {
         GatewayConnection? connection;
@@ -212,12 +232,14 @@ public sealed partial class ServiceGateway : IServiceGateway
     private async Task RunAsync(CancellationToken ct)
     {
         int failures = 0;
+        string? lastFailure = null;
         while (!ct.IsCancellationRequested)
         {
             try
             {
                 GapActivatorClient client = await _connect(_options, ct).ConfigureAwait(false);
                 failures = 0;
+                lastFailure = null;
                 await HoldAsync(client, ct).ConfigureAwait(false);
                 SetStatus(GatewayStatus.Initial);
 
@@ -240,7 +262,7 @@ public sealed partial class ServiceGateway : IServiceGateway
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                LogConnectFailed(ex);
+                ReportConnectFailure(ex, ref lastFailure);
                 SetStatus(GatewayStatus.Initial);
             }
 
