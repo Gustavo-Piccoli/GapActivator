@@ -280,6 +280,61 @@ public class ProcessActionsTests
     }
 
     [Fact]
+    public async Task Delete_RunEndedBeforeTheCancelArrived_TreatsRunNotActiveAsStoppedAndDeletes()
+    {
+        var run = Active();
+        var process = Dtos.Summary("Busy", activeRun: run);
+        _h.Gateway.Details[process.Id] = Dtos.Details(process with { ActiveRun = null });
+        _h.Gateway.FailNext("CancelRunAsync", new GapActivatorRequestException(IpcErrorCodes.RunNotActive, "ended", retryable: false));
+        _h.Dialogs.Enqueue(DialogChoice.Primary);
+
+        DeleteResult result = await Actions.DeleteAsync(process);
+
+        result.ShouldBe(DeleteResult.Deleted);
+        Methods().ShouldBe(["CancelRunAsync", "GetProcessAsync", "DeleteProcessAsync"]);
+    }
+
+    [Fact]
+    public async Task Delete_NewRunStartedDuringThePoll_IsCancelledBeforeTheDelete()
+    {
+        var first = Active();
+        var second = Active();
+        var process = Dtos.Summary("Busy", activeRun: first);
+        _h.Gateway.Details[process.Id] = Dtos.Details(process with { ActiveRun = second });
+        _h.Dialogs.Enqueue(DialogChoice.Primary);
+
+        Task<DeleteResult> task = Actions.DeleteAsync(process);
+        await PumpAsync(task, () =>
+        {
+            // Once the new run has been cancelled too, the next read shows nothing running.
+            if (Count("CancelRunAsync") >= 2)
+            {
+                _h.Gateway.Details[process.Id] = Dtos.Details(process with { ActiveRun = null });
+            }
+        });
+
+        (await task).ShouldBe(DeleteResult.Deleted);
+        Methods().ShouldBe(["CancelRunAsync", "GetProcessAsync", "CancelRunAsync", "GetProcessAsync", "DeleteProcessAsync"]);
+        ShouldHaveSent(0, "CancelRunAsync", first.RunId);
+        ShouldHaveSent(2, "CancelRunAsync", second.RunId);
+    }
+
+    [Fact]
+    public async Task Delete_RunStartsBetweenTheLastReadAndTheDelete_WaitsAndTriesAgain()
+    {
+        var process = Dtos.Summary("Busy", activeRun: Active());
+        _h.Gateway.Details[process.Id] = Dtos.Details(process with { ActiveRun = null });
+        _h.Gateway.FailNext("DeleteProcessAsync", new GapActivatorRequestException(IpcErrorCodes.HasActiveRun, "a run started", retryable: false));
+        _h.Dialogs.Enqueue(DialogChoice.Primary);
+
+        Task<DeleteResult> task = Actions.DeleteAsync(process);
+        await PumpAsync(task);
+
+        (await task).ShouldBe(DeleteResult.Deleted);
+        Methods().ShouldBe(["CancelRunAsync", "GetProcessAsync", "DeleteProcessAsync", "GetProcessAsync", "DeleteProcessAsync"]);
+    }
+
+    [Fact]
     public async Task Delete_ActiveService_StopsWithoutAskingASecondQuestion()
     {
         var process = Dtos.Summary("Svc", kind: ProcessKind.Service, activeRun: Active());

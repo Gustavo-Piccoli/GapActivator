@@ -99,16 +99,31 @@ public sealed class ProcessActions(Localizer l, IServiceGateway gateway, IDialog
 
         // The user has answered once; stopping a service-kind process must not ask again.
         stopping?.Invoke();
-        await runs.StopAsync(run.RunId, process.Id, process.Kind).ConfigureAwait(true);
+        await StopRunAsync(run.RunId, process).ConfigureAwait(true);
 
+        // One bound covers everything below: the polls, a run that started meanwhile, and a delete that lost the race to one.
         var started = time.GetTimestamp();
+        var stopped = run.RunId;
         while (true)
         {
             ProcessDetailsDto details = await gateway.GetProcessAsync(process.Id).ConfigureAwait(true);
-            if (details.Summary.ActiveRun is null)
+            if (details.Summary.ActiveRun is not { } active)
             {
-                await gateway.DeleteProcessAsync(process.Id).ConfigureAwait(true);
-                return DeleteResult.Deleted;
+                try
+                {
+                    await gateway.DeleteProcessAsync(process.Id).ConfigureAwait(true);
+                    return DeleteResult.Deleted;
+                }
+                catch (GapActivatorRequestException ex) when (ServiceErrors.Is(ex, IpcErrorCodes.HasActiveRun))
+                {
+                    // A run started between the read and the delete: read again and stop that one too.
+                }
+            }
+            else if (active.RunId != stopped)
+            {
+                // A schedule started a new run while the first was stopping.
+                stopped = active.RunId;
+                await StopRunAsync(active.RunId, process).ConfigureAwait(true);
             }
 
             if (time.GetElapsedTime(started) >= DeleteWaitLimit)
@@ -117,6 +132,19 @@ public sealed class ProcessActions(Localizer l, IServiceGateway gateway, IDialog
             }
 
             await Task.Delay(DeletePollInterval, time).ConfigureAwait(true);
+        }
+    }
+
+    // A run that ended before the cancel arrived is what the caller wanted, so "not active" is not an error here.
+    private async Task StopRunAsync(Guid runId, ProcessSummaryDto process)
+    {
+        try
+        {
+            await runs.StopAsync(runId, process.Id, process.Kind).ConfigureAwait(true);
+        }
+        catch (GapActivatorRequestException ex) when (ServiceErrors.Is(ex, IpcErrorCodes.RunNotActive))
+        {
+            // Already over.
         }
     }
 
