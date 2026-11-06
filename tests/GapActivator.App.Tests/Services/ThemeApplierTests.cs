@@ -23,7 +23,7 @@ public class ThemeApplierTests(HeadlessFixture fixture)
         using var dir = new TempDirectory();
         var other = theme == AppTheme.Dark ? AppTheme.Light : AppTheme.Dark;
         var service = NewService(dir, AppSettings.Defaults(English) with { Theme = other });
-        var applier = new ThemeApplier(new Localizer(AppLanguage.English), service, new ImmediateUiDispatcher());
+        var applier = new ThemeApplier(new Localizer(AppLanguage.English), service, new ImmediateUiDispatcher(), new RecordingCultureApplier());
 
         var variant = await fixture.Session.Dispatch(
             () =>
@@ -49,7 +49,7 @@ public class ThemeApplierTests(HeadlessFixture fixture)
         using var dir = new TempDirectory();
         var service = NewService(dir, AppSettings.Defaults(English));
         var localizer = new Localizer(AppLanguage.English);
-        var applier = new ThemeApplier(localizer, service, new ImmediateUiDispatcher());
+        var applier = new ThemeApplier(localizer, service, new ImmediateUiDispatcher(), new RecordingCultureApplier());
         var refreshed = 0;
         localizer.PropertyChanged += (_, _) => refreshed++;
 
@@ -73,7 +73,7 @@ public class ThemeApplierTests(HeadlessFixture fixture)
         var service = NewService(dir, AppSettings.Defaults(English));
         var localizer = new Localizer(AppLanguage.English);
         var queue = new QueueingDispatcher();
-        var applier = new ThemeApplier(localizer, service, queue);
+        var applier = new ThemeApplier(localizer, service, queue, new RecordingCultureApplier());
         applier.Start();
 
         await Task.Run(() => service.Update(s => s with { Language = AppLanguage.Portuguese }), TestContext.Current.CancellationToken);
@@ -87,6 +87,34 @@ public class ThemeApplierTests(HeadlessFixture fixture)
             },
             TestContext.Current.CancellationToken);
         localizer.Language.ShouldBe(AppLanguage.Portuguese);
+    }
+
+    [Fact]
+    public async Task LanguageChange_AppliesTheUiCulture()
+    {
+        using var dir = new TempDirectory();
+        var service = NewService(dir, AppSettings.Defaults(English));
+        var localizer = new Localizer(AppLanguage.English);
+        var culture = new RecordingCultureApplier();
+        var applier = new ThemeApplier(localizer, service, new ImmediateUiDispatcher(), culture);
+
+        await fixture.Session.Dispatch(
+            () =>
+            {
+                applier.Start();
+                service.Update(s => s with { Language = AppLanguage.Portuguese });
+                return 0;
+            },
+            TestContext.Current.CancellationToken);
+
+        culture.Applied.Select(c => c.Name).ShouldBe(["en-US", "pt-BR"]);
+    }
+
+    private sealed class RecordingCultureApplier : ICultureApplier
+    {
+        public List<CultureInfo> Applied { get; } = [];
+
+        public void Apply(CultureInfo culture) => Applied.Add(culture);
     }
 
     private sealed class QueueingDispatcher : IUiDispatcher

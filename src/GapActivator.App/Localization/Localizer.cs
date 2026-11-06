@@ -13,6 +13,8 @@ public sealed partial class Localizer(AppLanguage language) : ObservableObject
     internal static IReadOnlySet<string> SameInBothLanguages { get; } = new HashSet<string>
     {
         nameof(AppName),
+        nameof(LanguageEnglish),
+        nameof(LanguagePortuguese),
     };
 
     public AppLanguage Language { get; private set; } = language;

@@ -67,7 +67,8 @@ public static class AppComposition
         services.AddSingleton(sp => new ThemeApplier(
             sp.GetRequiredService<Localizer>(),
             sp.GetRequiredService<IAppSettingsService>(),
-            sp.GetRequiredService<IUiDispatcher>()));
+            sp.GetRequiredService<IUiDispatcher>(),
+            new ProcessCultureApplier()));
     }
 
     private static void AddGateway(IServiceCollection services)
@@ -175,6 +176,16 @@ public static class AppComposition
             sp.GetRequiredService<TimeDisplay>(),
             sp.GetRequiredService<TimeZoneInfo>(),
             sp.GetRequiredService<Func<RunDetailViewModel>>()));
+        services.AddSingleton(sp => new ServiceActions(
+            sp.GetRequiredService<Localizer>(),
+            sp.GetRequiredService<IServiceGateway>(),
+            sp.GetRequiredService<IDialogService>()));
+        services.AddSingleton(sp => new SettingsViewModel(
+            sp.GetRequiredService<Localizer>(),
+            sp.GetRequiredService<IServiceGateway>(),
+            sp.GetRequiredService<Permissions>(),
+            sp.GetRequiredService<IAppSettingsService>(),
+            sp.GetRequiredService<ServiceActions>()));
         services.AddSingleton(sp => new MainWindowViewModel(
             sp.GetRequiredService<Localizer>(),
             sp.GetRequiredService<INavigator>(),
@@ -182,7 +193,8 @@ public static class AppComposition
             sp.GetRequiredService<Permissions>(),
             sp.GetRequiredService<DashboardViewModel>(),
             sp.GetRequiredService<ProcessesViewModel>(),
-            sp.GetRequiredService<HistoryViewModel>()));
+            sp.GetRequiredService<HistoryViewModel>(),
+            sp.GetRequiredService<SettingsViewModel>()));
 
         services.AddSingleton<Func<MainWindow>>(sp => () => new MainWindow { DataContext = sp.GetRequiredService<MainWindowViewModel>() });
         services.AddSingleton(sp => new MainWindowService(

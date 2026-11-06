@@ -1,0 +1,266 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:GapActivator.App.ViewModels"
+             x:Class="GapActivator.App.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel"
+             Classes="settings">
+  <!--
+    Operate surface. One column of cards: how runs and the cycle behave, retention and logs, the e-mail alerts, and last the options
+    of this app. Every field has its label above it (long pt-BR labels wrap instead of clipping) and its hint below. The service
+    cards appear after the first read; before that the page says it is loading, or says why it could not (the error), so an empty
+    form never passes for real values. A viewer sees the service values read-only, with the reason; the app options stay editable and
+    apply at once. The footer (status or error, restart, save) stays below the scrolling form, after it in the tab order. Every
+    state is words plus a glyph, never color alone, and keyboard focus uses the app's focus ring (see Controls.axaml).
+  -->
+  <Grid RowDefinitions="Auto,*,Auto" RowSpacing="12">
+
+    <TextBlock Grid.Row="0" Classes="title" Text="{Binding L.NavSettings}" AutomationProperties.HeadingLevel="1" />
+
+    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+      <StackPanel Spacing="16" MaxWidth="880" HorizontalAlignment="Stretch" Margin="0,0,12,0">
+
+        <Grid x:Name="LoadingLine" ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding IsLoading}">
+          <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE895;" />
+          <TextBlock Grid.Column="1" Text="{Binding L.SettingsLoading}" TextWrapping="Wrap" VerticalAlignment="Center"
+                     AutomationProperties.LiveSetting="Polite" />
+        </Grid>
+
+        <!-- Who may change what: the operators mode, and for a viewer the reason the service fields are locked. -->
+        <Border x:Name="AuthorizationCard" Classes="card" Padding="16"
+                IsVisible="{Binding AuthorizationText, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <StackPanel Spacing="8">
+            <TextBlock Classes="group" Text="{Binding L.AuthorizationLabel}" TextWrapping="Wrap" AutomationProperties.HeadingLevel="2" />
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+              <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE946;" />
+              <TextBlock x:Name="AuthorizationText" Grid.Column="1" Classes="muted" Text="{Binding AuthorizationText}"
+                         TextWrapping="Wrap" VerticalAlignment="Center" />
+            </Grid>
+            <Grid x:Name="ReadOnlyReason" ColumnDefinitions="Auto,*" ColumnSpacing="10"
+                  IsVisible="{Binding ServiceFieldsReadOnly}">
+              <TextBlock Grid.Column="0" Classes="railIcon warning" Text="&#xE72E;" />
+              <TextBlock Grid.Column="1" Classes="warning" Text="{Binding Permissions.DeniedReason}"
+                         TextWrapping="Wrap" VerticalAlignment="Center" />
+            </Grid>
+          </StackPanel>
+        </Border>
+
+        <StackPanel x:Name="ServiceSections" Spacing="16" IsVisible="{Binding HasLoaded}">
+
+          <!-- Runs and cycle -->
+          <Border Classes="card" Padding="16">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="group" Text="{Binding L.SectionServiceRuns}" TextWrapping="Wrap" AutomationProperties.HeadingLevel="2" />
+              <WrapPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <StackPanel Spacing="4" Width="260" Margin="0,0,16,14">
+                  <TextBlock Text="{Binding L.CycleIntervalLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <NumericUpDown x:Name="CycleBox" Value="{Binding CycleIntervalSeconds}" Minimum="5" Maximum="3600" Increment="1"
+                                 FormatString="0" IsReadOnly="{Binding ServiceFieldsReadOnly}"
+                                 AutomationProperties.Name="{Binding L.CycleIntervalLabel}" />
+                </StackPanel>
+                <StackPanel Spacing="4" Width="260" Margin="0,0,16,14">
+                  <TextBlock Text="{Binding L.FailureLimitLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <NumericUpDown x:Name="FailureLimitBox" Value="{Binding FailureLimit}" Minimum="1" Maximum="100" Increment="1"
+                                 FormatString="0" IsReadOnly="{Binding ServiceFieldsReadOnly}"
+                                 AutomationProperties.Name="{Binding L.FailureLimitLabel}" />
+                </StackPanel>
+                <StackPanel Spacing="4" Width="260" Margin="0,0,16,14">
+                  <TextBlock Text="{Binding L.DefaultTimeLimitLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <NumericUpDown x:Name="TimeLimitBox" Value="{Binding DefaultTimeLimitSeconds}" Minimum="1" Increment="1"
+                                 FormatString="0" IsReadOnly="{Binding ServiceFieldsReadOnly}"
+                                 AutomationProperties.Name="{Binding L.DefaultTimeLimitLabel}" />
+                  <TextBlock Classes="caption" Text="{Binding L.DefaultTimeLimitHint}" TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Spacing="4" Width="260" Margin="0,0,16,14">
+                  <TextBlock Text="{Binding L.DefaultGraceLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <NumericUpDown x:Name="GraceBox" Value="{Binding DefaultGracePeriodSeconds}" Minimum="1" Maximum="600" Increment="1"
+                                 FormatString="0" IsReadOnly="{Binding ServiceFieldsReadOnly}"
+                                 AutomationProperties.Name="{Binding L.DefaultGraceLabel}" />
+                </StackPanel>
+              </WrapPanel>
+            </StackPanel>
+          </Border>
+
+          <!-- Retention and logs -->
+          <Border Classes="card" Padding="16">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="group" Text="{Binding L.SectionServiceRetention}" TextWrapping="Wrap" AutomationProperties.HeadingLevel="2" />
+              <WrapPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <StackPanel Spacing="4" Width="260" Margin="0,0,16,14">
+                  <TextBlock Text="{Binding L.LogRetentionLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <NumericUpDown x:Name="LogRetentionBox" Value="{Binding LogRetentionDays}" Minimum="1" Maximum="3650" Increment="1"
+                                 FormatString="0" IsReadOnly="{Binding ServiceFieldsReadOnly}"
+                                 AutomationProperties.Name="{Binding L.LogRetentionLabel}" />
+                </StackPanel>
+                <StackPanel Spacing="4" Width="260" Margin="0,0,16,14">
+                  <TextBlock Text="{Binding L.HistoryRetentionLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <NumericUpDown x:Name="HistoryRetentionBox" Value="{Binding HistoryRetentionDays}" Minimum="1" Maximum="3650" Increment="1"
+                                 FormatString="0" IsReadOnly="{Binding ServiceFieldsReadOnly}"
+                                 AutomationProperties.Name="{Binding L.HistoryRetentionLabel}" />
+                </StackPanel>
+                <StackPanel Spacing="4" Width="260" Margin="0,0,16,14">
+                  <TextBlock Text="{Binding L.LogLevelLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <ComboBox x:Name="LogLevelBox" HorizontalAlignment="Stretch" ItemsSource="{Binding LogLevelOptions}"
+                            SelectedItem="{Binding LogLevelChoice, Mode=TwoWay}" IsEnabled="{Binding !ServiceFieldsReadOnly}"
+                            AutomationProperties.Name="{Binding L.LogLevelLabel}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ChoiceOption">
+                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
+              </WrapPanel>
+            </StackPanel>
+          </Border>
+
+          <!-- E-mail alerts -->
+          <Border x:Name="EmailCard" Classes="card" Padding="16">
+            <StackPanel Spacing="14">
+              <TextBlock Classes="group" Text="{Binding L.SectionEmail}" TextWrapping="Wrap" AutomationProperties.HeadingLevel="2" />
+              <CheckBox x:Name="EmailEnabledCheck" IsChecked="{Binding EmailEnabled}" IsEnabled="{Binding !ServiceFieldsReadOnly}"
+                        AutomationProperties.Name="{Binding L.EmailEnabledLabel}">
+                <TextBlock Text="{Binding L.EmailEnabledLabel}" TextWrapping="Wrap" />
+              </CheckBox>
+
+              <WrapPanel Orientation="Horizontal">
+                <StackPanel Spacing="4" Width="360" Margin="0,0,16,14">
+                  <TextBlock Text="{Binding L.SmtpHostLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <TextBox x:Name="HostBox" Text="{Binding SmtpHost}" IsReadOnly="{Binding ServiceFieldsReadOnly}"
+                           AutomationProperties.Name="{Binding L.SmtpHostLabel}" />
+                </StackPanel>
+                <StackPanel Spacing="4" Width="160" Margin="0,0,16,14">
+                  <TextBlock Text="{Binding L.SmtpPortLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <NumericUpDown x:Name="PortBox" Value="{Binding SmtpPort}" Minimum="1" Maximum="65535" Increment="1"
+                                 FormatString="0" IsReadOnly="{Binding ServiceFieldsReadOnly}"
+                                 AutomationProperties.Name="{Binding L.SmtpPortLabel}" />
+                </StackPanel>
+                <StackPanel Spacing="4" Width="260" Margin="0,0,16,14">
+                  <TextBlock Text="{Binding L.TlsLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <ComboBox x:Name="TlsBox" HorizontalAlignment="Stretch" ItemsSource="{Binding TlsOptions}"
+                            SelectedItem="{Binding TlsChoice, Mode=TwoWay}" IsEnabled="{Binding !ServiceFieldsReadOnly}"
+                            AutomationProperties.Name="{Binding L.TlsLabel}">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ChoiceOption">
+                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                </StackPanel>
+                <StackPanel Spacing="4" Width="360" Margin="0,0,16,14">
+                  <TextBlock Text="{Binding L.SmtpUsernameLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <TextBox x:Name="UsernameBox" Text="{Binding Username}" IsReadOnly="{Binding ServiceFieldsReadOnly}"
+                           AutomationProperties.Name="{Binding L.SmtpUsernameLabel}" />
+                </StackPanel>
+                <StackPanel Spacing="4" Width="360" Margin="0,0,16,14">
+                  <TextBlock Text="{Binding L.SmtpPasswordLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <TextBox x:Name="PasswordBox" Text="{Binding NewPassword}" PasswordChar="&#x2022;" IsReadOnly="{Binding ServiceFieldsReadOnly}"
+                           AutomationProperties.Name="{Binding L.SmtpPasswordLabel}" />
+                  <TextBlock x:Name="PasswordHint" Classes="caption" TextWrapping="Wrap"
+                             Text="{Binding L.PasswordStoredHint}" IsVisible="{Binding HasStoredPassword}" />
+                  <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding L.PasswordNoneHint}"
+                             IsVisible="{Binding !HasStoredPassword}" />
+                  <CheckBox x:Name="ClearPasswordCheck" IsChecked="{Binding ClearPassword}" IsVisible="{Binding HasStoredPassword}"
+                            IsEnabled="{Binding !ServiceFieldsReadOnly}" AutomationProperties.Name="{Binding L.ClearPassword}">
+                    <TextBlock Text="{Binding L.ClearPassword}" TextWrapping="Wrap" />
+                  </CheckBox>
+                </StackPanel>
+                <StackPanel Spacing="4" Width="360" Margin="0,0,16,14">
+                  <TextBlock Text="{Binding L.SenderLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <TextBox x:Name="SenderBox" Text="{Binding Sender}" IsReadOnly="{Binding ServiceFieldsReadOnly}"
+                           AutomationProperties.Name="{Binding L.SenderLabel}" />
+                </StackPanel>
+              </WrapPanel>
+
+              <StackPanel Spacing="4">
+                <TextBlock Text="{Binding L.RecipientsLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <TextBox x:Name="RecipientsBox" Text="{Binding RecipientsText}" AcceptsReturn="True" TextWrapping="NoWrap"
+                         MinHeight="72" MaxHeight="160" MaxWidth="480" HorizontalAlignment="Left" IsReadOnly="{Binding ServiceFieldsReadOnly}"
+                         AutomationProperties.Name="{Binding L.RecipientsLabel}" />
+              </StackPanel>
+
+              <StackPanel Spacing="6">
+                <TextBlock Text="{Binding L.AlertsLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <ItemsControl x:Name="AlertList" ItemsSource="{Binding Alerts}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:AlertOption">
+                      <CheckBox IsChecked="{Binding IsChecked}" AutomationProperties.Name="{Binding Text}"
+                                IsEnabled="{Binding !$parent[ItemsControl].((vm:SettingsViewModel)DataContext).ServiceFieldsReadOnly}">
+                        <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                      </CheckBox>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+
+              <Button x:Name="TestEmailButton" HorizontalAlignment="Left" Content="{Binding L.SendTestEmail}"
+                      Command="{Binding SendTestEmailCommand}"
+                      ToolTip.Tip="{Binding Permissions.DeniedReason}" ToolTip.ShowOnDisabled="True" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
+        <!-- This app: always editable, applied at once. -->
+        <Border x:Name="AppCard" Classes="card" Padding="16">
+          <StackPanel Spacing="6">
+            <TextBlock Classes="group" Text="{Binding L.SectionThisApp}" TextWrapping="Wrap" AutomationProperties.HeadingLevel="2" />
+            <TextBlock Classes="caption" Text="{Binding L.AppSettingsNote}" TextWrapping="Wrap" />
+            <WrapPanel Orientation="Horizontal" Margin="0,8,0,0">
+              <StackPanel Spacing="4" Width="260" Margin="0,0,16,14">
+                <TextBlock Text="{Binding L.ThemeLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <ComboBox x:Name="ThemeBox" HorizontalAlignment="Stretch" ItemsSource="{Binding ThemeOptions}"
+                          SelectedItem="{Binding ThemeChoice, Mode=TwoWay}" AutomationProperties.Name="{Binding L.ThemeLabel}">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ChoiceOption">
+                      <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </StackPanel>
+              <StackPanel Spacing="4" Width="260" Margin="0,0,16,14">
+                <TextBlock Text="{Binding L.LanguageLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <ComboBox x:Name="LanguageBox" HorizontalAlignment="Stretch" ItemsSource="{Binding LanguageOptions}"
+                          SelectedItem="{Binding LanguageChoice, Mode=TwoWay}" AutomationProperties.Name="{Binding L.LanguageLabel}">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ChoiceOption">
+                      <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+              </StackPanel>
+            </WrapPanel>
+            <CheckBox x:Name="NotificationsCheck" IsChecked="{Binding Notifications}" AutomationProperties.Name="{Binding L.ShowNotifications}">
+              <TextBlock Text="{Binding L.ShowNotifications}" TextWrapping="Wrap" />
+            </CheckBox>
+            <CheckBox x:Name="UpdatesCheck" IsChecked="{Binding CheckForUpdates}" AutomationProperties.Name="{Binding L.CheckForUpdatesLabel}">
+              <TextBlock Text="{Binding L.CheckForUpdatesLabel}" TextWrapping="Wrap" />
+            </CheckBox>
+          </StackPanel>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+
+    <!-- Footer: always visible, after the form in the tab order. -->
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="16" MaxWidth="880" HorizontalAlignment="Stretch">
+      <StackPanel Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+        <Grid x:Name="ErrorLine" ColumnDefinitions="Auto,*" ColumnSpacing="10"
+              IsVisible="{Binding ErrorText, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <TextBlock Grid.Column="0" Classes="railIcon error" Text="&#xE783;" />
+          <TextBlock x:Name="ErrorTextBlock" Grid.Column="1" Classes="error" Text="{Binding ErrorText}" TextWrapping="Wrap"
+                     VerticalAlignment="Center" AutomationProperties.LiveSetting="Assertive" />
+        </Grid>
+        <Grid x:Name="StatusLine" ColumnDefinitions="Auto,*" ColumnSpacing="10"
+              IsVisible="{Binding StatusText, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <TextBlock Grid.Column="0" Classes="railIcon" Text="&#xE73E;" />
+          <TextBlock x:Name="StatusTextBlock" Grid.Column="1" Text="{Binding StatusText}" TextWrapping="Wrap"
+                     VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+        </Grid>
+      </StackPanel>
+      <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+        <Button x:Name="RestartServiceButton" Content="{Binding L.RestartServiceAction}" Command="{Binding RestartServiceCommand}"
+                ToolTip.Tip="{Binding Permissions.DeniedReason}" ToolTip.ShowOnDisabled="True" />
+        <Button x:Name="SaveButton" Classes="accent" Content="{Binding L.Save}" Command="{Binding SaveCommand}"
+                ToolTip.Tip="{Binding Permissions.DeniedReason}" ToolTip.ShowOnDisabled="True" />
+      </StackPanel>
+    </Grid>
+  </Grid>
+</UserControl>

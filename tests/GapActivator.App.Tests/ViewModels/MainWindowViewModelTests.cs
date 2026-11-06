@@ -22,7 +22,8 @@ public class MainWindowViewModelTests : IAsyncDisposable
             harness.Permissions,
             harness.Dashboard,
             harness.Processes,
-            harness.History);
+            harness.History,
+            harness.Settings);
     }
 
     public ValueTask DisposeAsync()
@@ -40,6 +41,16 @@ public class MainWindowViewModelTests : IAsyncDisposable
         _navigator.Navigate(AppPage.History);
 
         vm.PageContent.ShouldBeSameAs(vm.History);
+    }
+
+    [Fact]
+    public void PageContent_Settings_IsTheSettingsViewModel()
+    {
+        var vm = Create();
+
+        _navigator.Navigate(AppPage.Settings);
+
+        vm.PageContent.ShouldBeSameAs(vm.Settings);
     }
 
     [Fact]

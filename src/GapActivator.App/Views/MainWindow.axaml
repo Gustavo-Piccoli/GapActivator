@@ -79,6 +79,9 @@
             <DataTemplate DataType="vm:HistoryViewModel">
               <views:HistoryView />
             </DataTemplate>
+            <DataTemplate DataType="vm:SettingsViewModel">
+              <views:SettingsView />
+            </DataTemplate>
           </ContentControl.DataTemplates>
         </ContentControl>
       </Grid>

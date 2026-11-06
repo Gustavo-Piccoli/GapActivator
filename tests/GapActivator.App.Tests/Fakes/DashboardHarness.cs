@@ -22,6 +22,8 @@ internal sealed class DashboardHarness
         Actions = new ProcessActions(L, Gateway, Dialogs, Runs, Time);
         Processes = new ProcessesViewModel(L, Gateway, Live, Permissions, Actions, Runs, Navigator, Times, NewEditor);
         History = new HistoryViewModel(L, Gateway, Live, Seen, Navigator, Times, zone ?? TimeZoneInfo.Utc, NewDetail);
+        Service = new ServiceActions(L, Gateway, Dialogs);
+        Settings = new SettingsViewModel(L, Gateway, Permissions, AppSettings, Service);
     }
 
     private ProcessEditorViewModel NewEditor() =>
@@ -69,4 +71,10 @@ internal sealed class DashboardHarness
     public ProcessesViewModel Processes { get; }
 
     public HistoryViewModel History { get; }
+
+    public FakeAppSettings AppSettings { get; } = new();
+
+    public ServiceActions Service { get; }
+
+    public SettingsViewModel Settings { get; }
 }

@@ -4,8 +4,8 @@ using GapActivator.App.Settings;
 
 namespace GapActivator.App.Services;
 
-/// <summary>Applies the theme and language from the settings now and whenever they change.</summary>
-public sealed class ThemeApplier(Localizer localizer, IAppSettingsService settings, IUiDispatcher ui)
+/// <summary>Applies the theme, the language and its culture from the settings now and whenever they change.</summary>
+public sealed class ThemeApplier(Localizer localizer, IAppSettingsService settings, IUiDispatcher ui, ICultureApplier culture)
 {
     private bool _started;
 
@@ -35,5 +35,8 @@ public sealed class ThemeApplier(Localizer localizer, IAppSettingsService settin
         }
 
         localizer.SetLanguage(current.Language);
+
+        // The date pickers format with the thread culture, so it follows the app language.
+        culture.Apply(localizer.Culture);
     }
 }

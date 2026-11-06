@@ -79,6 +79,14 @@
     <Setter Property="BorderBrush" Value="{DynamicResource GaFocusBrush}" />
     <Setter Property="BorderThickness" Value="2" />
   </Style>
+  <!-- Keyboard focus on the form controls of the settings page: the same ring color as the buttons and the rail. -->
+  <Style Selector="UserControl.settings CheckBox:focus-visible, UserControl.settings ComboBox:focus-visible, UserControl.settings NumericUpDown:focus-visible, UserControl.settings TextBox:focus-visible">
+    <Setter Property="FocusAdorner">
+      <FocusAdornerTemplate>
+        <Border BorderBrush="{DynamicResource GaFocusBrush}" BorderThickness="2" CornerRadius="{DynamicResource GaControlRadius}" />
+      </FocusAdornerTemplate>
+    </Setter>
+  </Style>
   <Style Selector="TabControl.rail">
     <Setter Property="Padding" Value="0" />
     <Setter Property="Background" Value="{DynamicResource GaGroundBrush}" />
