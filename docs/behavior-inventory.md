@@ -3,10 +3,10 @@
 This document lists the candidate behavior rules considered while designing GapActivator. Each rule is written in neutral English domain language and gets a verdict:
 
 - **keep**: GapActivator preserves the rule as stated.
-- **redesign**: GapActivator preserves the intent with a different rule (column *New rule*).
-- **drop**: GapActivator does not carry the rule over.
+- **redesign**: GapActivator keeps the intent but adopts a different rule (column *New rule*).
+- **drop**: GapActivator does not adopt the rule.
 
-Every **keep** and **redesign** row becomes at least one test in the new codebase.
+Every **keep** and **redesign** row becomes at least one test.
 
 Column *Spec §* points to the section of the project design document (kept outside this repository) that decides the row. Rules the design did not originally decide were put to the owner; the column then names the owner decision (Q-n), listed in the final section. Column *Plan* says where the rule lands: 1 = domain rule, 2 = application/orchestration, 3 = infrastructure/service, 4 = IPC/app, 5 = installer/distribution.
 
