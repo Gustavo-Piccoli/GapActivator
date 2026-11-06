@@ -18,17 +18,10 @@ public sealed class ScServiceStarter : IServiceStarter
 
     private static async Task<ServiceStartOutcome> RunAsync(CancellationToken ct)
     {
-        var info = new ProcessStartInfo("sc.exe", "start " + IpcProtocol.ServiceName)
-        {
-            UseShellExecute = true,
-            Verb = "runas",
-            WindowStyle = ProcessWindowStyle.Hidden,
-        };
-
         Process? process;
         try
         {
-            process = Process.Start(info);
+            process = Process.Start(CreateStartInfo());
         }
         catch (Win32Exception ex)
         {
@@ -58,6 +51,15 @@ public sealed class ScServiceStarter : IServiceStarter
             return MapExitCode(process.ExitCode);
         }
     }
+
+    /// <summary>The elevated start. The executable is the rooted system one: a bare name would be searched for in the current and application folders first.</summary>
+    internal static ProcessStartInfo CreateStartInfo() =>
+        new(Path.Combine(Environment.SystemDirectory, "sc.exe"), "start " + IpcProtocol.ServiceName)
+        {
+            UseShellExecute = true,
+            Verb = "runas",
+            WindowStyle = ProcessWindowStyle.Hidden,
+        };
 
     /// <summary>0 and 1056 (already running) mean started; any other code is a failure with that code.</summary>
     internal static ServiceStartOutcome MapExitCode(int exitCode) =>
