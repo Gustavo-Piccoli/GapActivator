@@ -17,7 +17,7 @@ GapActivator is an open-source scheduled-process runner for Windows. A Windows s
 - **History.** Every run is recorded with its outcome, exit code, duration, events and captured output. A schedule that comes due while the previous run is still active is recorded as skipped.
 - **Pause.** Pause the whole installation: no new run starts until you resume it.
 - **Alerts.** Windows notifications through the app, and optional e-mail through your own SMTP server.
-- **Safe by default.** The service runs under a virtual account with no password, the data folder is locked down, and only Administrators (and, in the default mode, the `GapActivator Operators` group) can change anything.
+- **Locked down by default.** The service runs under a virtual account with no password, the data folder is locked down, and only Administrators (and, in the default mode, the `GapActivator Operators` group) can change anything. Treat membership of that group as equal to local administrator: see [Who can do what](#who-can-do-what).
 - **The app.** Dashboard, Processes, History, Settings and About; light and dark themes; English and Brazilian Portuguese; a tray icon colored by state.
 
 | | |
@@ -60,7 +60,7 @@ The builds are not code-signed yet, so Windows SmartScreen may warn you. Choose 
 
 **Choosing the account.** The installer asks which account the service runs under.
 
-- **Virtual service account `NT SERVICE\GapActivator` (recommended).** No password and few rights of its own. A process gets "access denied" on folders that only specific users can reach, until you grant `NT SERVICE\GapActivator` access to them. The installing user is added to the local group `GapActivator Operators`, whose members can change processes and settings.
+- **Virtual service account `NT SERVICE\GapActivator` (recommended).** No password and few rights of its own. A process gets "access denied" on folders that only specific users can reach, until you grant `NT SERVICE\GapActivator` access to them. The installing user is added to the local group `GapActivator Operators`, whose members can change processes and settings. Membership is in practice equal to local administrator, because an Operator can register any program and it runs as the service account, whose token can be escalated to SYSTEM. Add only users you would trust as administrators.
 - **A specific account.** Your processes behave as if you ran them by hand. The installer asks for the password and the account gets the "Log on as a service" right. Because whoever changes the process list then runs programs with that account's rights, only Administrators can change anything in this mode.
 
 [docs/installing.md](docs/installing.md) covers the installer pages, the silent switches, what gets created, upgrades and uninstall.
@@ -84,7 +84,7 @@ Any executable works as it is. Exit code `0` is success and any other code is a 
 |---|---|
 | Any user with an interactive logon (console or Remote Desktop) | View state, runs, history and settings. Viewers do not see process arguments or environment variable values. |
 | Administrators (elevated token) | Everything. |
-| Members of `GapActivator Operators` | Everything, but only when the service runs under the virtual account. |
+| Members of `GapActivator Operators` | Everything, but only when the service runs under the virtual account. Treat this as equal to local administrator (an Operator can register any program, and it runs as the service account, which can be escalated to SYSTEM). Add only users you would trust as administrators. |
 
 Captured run output is visible to every viewer, so a process should never print secrets (see [docs/child-contract.md](docs/child-contract.md)). [docs/running-the-service.md](docs/running-the-service.md) has the authorization details.
 

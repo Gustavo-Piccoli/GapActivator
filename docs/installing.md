@@ -14,7 +14,7 @@ The installer is available in English and Brazilian Portuguese.
 
 1. **Destination.** The default is `C:\Program Files\GapActivator` (the 64-bit Program Files folder of your architecture).
 2. **Service account.** Choose the account the service runs under.
-   - **Virtual service account `NT SERVICE\GapActivator` (recommended).** No password. The page notes that Operators mode is on: Administrators and members of the local group `GapActivator Operators` can change processes and settings, and everyone else can view. The user who runs the installer is added to that group.
+   - **Virtual service account `NT SERVICE\GapActivator` (recommended).** No password. The page notes that Operators mode is on: Administrators and members of the local group `GapActivator Operators` can change processes and settings, and everyone else can view. The user who runs the installer is added to that group. Membership is in practice equal to local administrator, because an Operator can register any program and it runs as the service account, whose token can be escalated to SYSTEM, so add only users you would trust as administrators. A silent install that runs as SYSTEM (for example from a deployment tool) has no user to add, so it creates the group with no members. With over-the-shoulder elevation, the user who is signed in to the session is added, not the administrator whose credentials were typed.
    - **A specific account.** Enter `DOMAIN\user` (the box is pre-filled with the installing user) and the password. The installer checks them with Windows before it goes on, and grants the account the "Log on as a service" right. The page notes that Operators mode is off: only Administrators can change anything, because whoever changes what the service runs gets that account's rights.
 3. **Tasks.** A Start Menu shortcut and a desktop shortcut.
 4. **Finish.** Optionally launch GapActivator.
@@ -59,7 +59,7 @@ If the account and password are not accepted, the install stops with an error an
 | The service | Name and display name `GapActivator`, with a description. Start type automatic (delayed). Default account `NT SERVICE\GapActivator`. The installer starts it at the end. |
 | Recovery settings | Restart after 60 seconds on the first, second and later failures, with the failure count reset after one day. The service is also restarted when it stops with a non-zero exit code, which is how a requested restart comes back. |
 | Event source | `GapActivator` in the `Application` log. |
-| Group | The local group `GapActivator Operators`, only in virtual-account mode, with the installing user in it. |
+| Group | The local group `GapActivator Operators`, only in virtual-account mode, with the installing user in it (the user signed in to the session, which with over-the-shoulder elevation is not the administrator who typed the credentials). A silent install that runs as SYSTEM creates the group with no members. Treat membership as equal to local administrator. |
 | The data folder | `%ProgramData%\GapActivator`, owned by Administrators, with a protected ACL (no inherited entries): SYSTEM Full, Administrators Full and the service account Modify, each inherited by everything below. A folder that already exists is taken over: a junction in its place is removed (never its target), and the previous ACL is replaced. |
 | Shortcuts | The ones you chose. |
 

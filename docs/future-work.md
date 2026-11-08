@@ -9,6 +9,7 @@ Things GapActivator does not do yet, and known limits. Nothing here is promised 
 - **Generic webhook notifications** for chat tools, next to the Windows notifications and e-mail.
 - **More database providers**, through the existing repository ports.
 - **Configurable retry backoff.**
+- **Restricted service privileges.** Restrict the service's privileges with `sc.exe privs` to the minimum it needs, so that children do not inherit `SeImpersonatePrivilege`. This needs verifying first which privileges the service and typical children need.
 - **Code signing and a winget package.** The first releases are unsigned, so SmartScreen warns about them.
 
 ## Known limits

@@ -43,7 +43,7 @@ sc.exe failureflag GapActivator 1
 
 `failureflag 1` makes the Service Control Manager apply the recovery actions also when the service stops with a non-zero exit code, which is how a requested restart (exit code `3`) and a fatal failure (exit code `1`) come back. A requested restart takes effect only after the Service Control Manager's recovery delay of 60 seconds.
 
-Remove it with `sc.exe delete GapActivator`.
+Remove it with `sc.exe delete GapActivator`. Delete a service created this way before you run the installer: otherwise the installer treats it as an upgrade and keeps its account.
 
 > **Warning: this is for a developer install only.** Without the installer, nothing sets access rights on the data root, so it inherits `Users: Read` from ProgramData and any local user can read the database and the run output. ProgramData also lets any local user create files in the folder. That user can therefore plant a `gapactivator.db-wal` file before the service creates its own, and change the process definitions that the service then runs with its own rights. On a developer install this is privilege escalation, not only secret exposure. Secrets are protected with machine-scope DPAPI, which lets any local user decrypt them. `sc.exe create` without `obj=` runs the service, and every child it starts, as LocalSystem. Never store real SMTP passwords or secret variables in a developer install. The installer sets the access rights.
 

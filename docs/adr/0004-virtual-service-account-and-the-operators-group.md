@@ -27,7 +27,7 @@ Whoever can edit the list of registered processes can make the service run any p
 ## Consequences
 
 - Out of the box the service has few rights of its own. A process gets "access denied" on folders that only specific users can reach, until the user grants the virtual account access to them. The account's token still carries the groups every service has (such as Users, Authenticated Users and SERVICE), so it can reach what those groups can. The installer's documentation says so.
-- A shared machine can let selected users manage processes without making them administrators.
+- Membership of the Operators group is effectively equal to local administrator. An Operator can register any program, and it runs as `NT SERVICE\GapActivator`. That token has `SeImpersonatePrivilege`, which can be escalated to SYSTEM. The group is a way to delegate day-to-day management, not a security boundary, so add only users you would trust as administrators. Restricting the service's privileges is listed in [future work](../future-work.md).
 - Viewers can read run output, so [the child contract](../child-contract.md) tells authors never to print secrets.
 - A specific account's password is never put on a command line by the installer, but a silent install can still receive it ([installing](../installing.md#silent-install)).
 - Per-process run-as accounts are future work.
