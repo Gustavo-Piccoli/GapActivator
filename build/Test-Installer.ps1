@@ -76,9 +76,13 @@ function Get-ServiceProcessId {
 # The Inno logs contain no password in a passing run. When a run fails, the logs are printed with the test password masked.
 $secretToMask = $null
 function Show-Logs {
+    if (-not (Test-Path -LiteralPath $logDir -PathType Container)) { return }
     foreach ($file in Get-ChildItem -LiteralPath $logDir -File | Sort-Object Name) {
         Write-Host "---- $($file.Name) ----"
-        $text = Get-Content -LiteralPath $file.FullName -Raw
+        # Get-Content -Raw returns $null for an empty file, so force a string.
+        $text = ''
+        try { $text = [string](Get-Content -LiteralPath $file.FullName -Raw) }
+        catch { Write-Warning "Cannot read $($file.Name): $($_.Exception.Message)" }
         if ($secretToMask) { $text = $text.Replace($secretToMask, '***') }
         Write-Host $text
         Write-Host "---- end of $($file.Name) ----"
@@ -89,10 +93,17 @@ function Show-Logs {
 # without publishing the throwaway password, even when the leak assertion itself is what failed.
 function Hide-Secret {
     if (-not $secretToMask) { return }
+    if (-not (Test-Path -LiteralPath $logDir -PathType Container)) { return }
     foreach ($file in Get-ChildItem -LiteralPath $logDir -File) {
-        $text = [IO.File]::ReadAllText($file.FullName)
-        if ($text.Contains($secretToMask)) {
-            [IO.File]::WriteAllText($file.FullName, $text.Replace($secretToMask, '***'), (New-Object Text.UTF8Encoding($false)))
+        # A locked or unreadable file is skipped with a warning; the other files still get masked.
+        try {
+            $text = [string][IO.File]::ReadAllText($file.FullName)
+            if ($text.Contains($secretToMask)) {
+                [IO.File]::WriteAllText($file.FullName, $text.Replace($secretToMask, '***'), (New-Object Text.UTF8Encoding($false)))
+            }
+        }
+        catch {
+            Write-Warning "Could not mask the password in $($file.Name): $($_.Exception.Message)"
         }
     }
 }
@@ -343,19 +354,19 @@ try {
     $installLog = Invoke-Install 'phase5-install' @("/ACCOUNT=`"$specificAccount`"") $password
     Assert-ServiceConfiguration $specificAccount ('SERVICE_START_NAME\s*:\s*\.\\' + [regex]::Escape($userName) + '\s') 'phase 5'
     Wait-ServiceRunning 'phase 5'
-    $installText = Get-Content -LiteralPath $installLog -Raw
+    $installText = [string](Get-Content -LiteralPath $installLog -Raw)
     Assert ($installText.Contains('Setting the service account to')) 'phase 5 : the Inno log shows the account was set through the API'
     Assert (-not $installText.Contains($password)) 'phase 5 : the Inno install log does not contain the password'
     Assert (-not (Test-GroupExists)) "phase 5 : no '$groupName' group is created with a specific account"
     Assert (Test-Path -LiteralPath $eventSourceKey) 'phase 5 : the event source exists'
     Assert-DataRootAcl "$env:COMPUTERNAME\$userName" 'phase 5'
     $uninstallLog = Invoke-Uninstall 'phase5-uninstall' -DeleteData
-    Assert (-not (Get-Content -LiteralPath $uninstallLog -Raw).Contains($password)) 'phase 5 : the Inno uninstall log does not contain the password'
+    Assert (-not ([string](Get-Content -LiteralPath $uninstallLog -Raw)).Contains($password)) 'phase 5 : the Inno uninstall log does not contain the password'
     Assert-EverythingRemoved 'phase 5'
     $dataGone = Wait-Until { -not (Test-Path -LiteralPath $dataRoot) } 60
     Assert $dataGone 'phase 5 : the data root is deleted by /DELETEDATA'
     foreach ($file in Get-ChildItem -LiteralPath $logDir -File) {
-        Assert (-not (Get-Content -LiteralPath $file.FullName -Raw).Contains($password)) "phase 5 : $($file.Name) does not contain the password"
+        Assert (-not ([string](Get-Content -LiteralPath $file.FullName -Raw)).Contains($password)) "phase 5 : $($file.Name) does not contain the password"
     }
 
     $passed = $true
@@ -363,8 +374,9 @@ try {
 }
 catch {
     Write-Host "Installer test FAILED: $($_.Exception.Message)"
-    Show-Logs
+    # Mask first, so no later step can publish or print the password even if showing the logs fails.
     Hide-Secret
+    Show-Logs
     throw
 }
 finally {

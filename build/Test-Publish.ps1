@@ -67,7 +67,12 @@ function Test-ServiceSmoke {
             }
             $found = [IO.Directory]::GetFiles('\\.\pipe\') -contains $pipePath
         }
-        if (-not $found) { throw "Service smoke: pipe '$pipeName' did not appear within $PipeTimeoutSeconds s" }
+        if (-not $found) {
+            $err = Read-TextOrEmpty $stderrFile
+            $out = Read-TextOrEmpty $stdoutFile
+            $state = if ($process.HasExited) { "exited with code $($process.ExitCode)" } else { 'still running' }
+            throw "Service smoke: pipe '$pipeName' did not appear within $PipeTimeoutSeconds s (process $state). stderr: $(Limit-Text $err) stdout: $(Limit-Text $out)"
+        }
         Write-Host "Service smoke OK: pipe $pipeName appeared"
     }
     finally {
