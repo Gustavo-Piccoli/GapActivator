@@ -92,7 +92,7 @@ brazilianportuguese.StepUpdateService=atualizar o serviço
 english.StepConfigureService=configuring the service
 brazilianportuguese.StepConfigureService=configurar o serviço
 english.StepLogonRight=granting the Log on as a service right
-brazilianportuguese.StepLogonRight=conceder o direito Fazer logon como serviço
+brazilianportuguese.StepLogonRight=conceder o direito Fazer logon como um serviço
 english.StepDataRoot=preparing the data folder
 brazilianportuguese.StepDataRoot=preparar a pasta de dados
 english.StepEventSource=registering the event source
@@ -511,6 +511,15 @@ begin
     Result := 'NT AUTHORITY\SYSTEM';
 end;
 
+// A bare name (no DOMAIN\ and no @) means an account of this machine. ChangeServiceConfigW needs the .\ form,
+// so the name is normalized once, before the logon check and before it reaches the setup verbs.
+function NormalizeAccount(const Account: String): String;
+begin
+  Result := Account;
+  if (Result <> '') and (Pos('\', Result) = 0) and (Pos('@', Result) = 0) then
+    Result := '.\' + Result;
+end;
+
 // Checks the name and password with a network logon. Err is the Win32 error code on failure.
 function CheckLogon(const Account, Password: String; var Err: Longint): Boolean;
 var
@@ -618,7 +627,7 @@ begin
     exit;
   end;
   CommandLineRead := True;
-  SpecificAccount := Trim(ExpandConstant('{param:ACCOUNT|}'));
+  SpecificAccount := NormalizeAccount(Trim(ExpandConstant('{param:ACCOUNT|}')));
   // Setup's own log records its command line, so /PASSWORD ends up in /LOG output. The environment variable is
   // the way to keep the password out of both; /PASSWORD wins when both are given.
   SpecificPassword := ExpandConstant('{param:PASSWORD|}');
@@ -739,7 +748,7 @@ begin
     exit;
   if (AccountPage <> nil) and (CurPageID = AccountPage.ID) and SpecificRadio.Checked then
   begin
-    SpecificAccount := Trim(NameEdit.Text);
+    SpecificAccount := NormalizeAccount(Trim(NameEdit.Text));
     SpecificPassword := PasswordEdit.Text;
     if SpecificAccount = '' then
     begin
@@ -773,6 +782,7 @@ begin
     UseSpecific := SpecificRadio.Checked;
   if UseSpecific then
   begin
+    SpecificAccount := NormalizeAccount(SpecificAccount);
     if SpecificAccount = '' then
       Result := CustomMessage('AccountNameRequired')
     else if WizardSilent and not CheckLogon(SpecificAccount, SpecificPassword, Err) then
@@ -928,6 +938,11 @@ begin
       begin
         Sc('stop ' + ServiceName, Output);
         Sc('delete ' + ServiceName, Output);
+      end
+      else
+      begin
+        // The upgrade stopped the service; try to bring it back. The result is only logged.
+        Log('Upgrade failed; starting the service again, sc start exit code: ' + IntToStr(Sc('start ' + ServiceName, Output)));
       end;
       if not WizardSilent then
         MsgBox(PostError, mbCriticalError, MB_OK);
