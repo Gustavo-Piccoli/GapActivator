@@ -3,9 +3,11 @@
   Generates the GapActivator brand icon (gapactivator.ico).
 .DESCRIPTION
   Works in Windows PowerShell 5.1 and pwsh on Windows (System.Drawing only).
-  The motif is a scheduled run: a white clock ring with a small gap at 12 o'clock and a play triangle inside,
-  on a rounded square in the Busy blue (#2F6FED) of the app tokens. The tray icons are plain circles, so the
-  square tile keeps the brand icon distinct from them. Stored as PNG entries at 16, 20, 24, 32, 40, 48, 64 and 256 px.
+  The motif is a scheduled run: a solid white play triangle on a rounded square in the Busy blue (#2F6FED) of the
+  app tokens, with four small clock-tick dots (12, 3, 6 and 9 o'clock) around it from 40 px up. At 16, 20, 24 and
+  32 px the glyph is the triangle alone, snapped to whole pixels so it stays crisp. The tray icons are plain
+  circles, so the square tile keeps the brand icon distinct from them.
+  Stored as PNG entries at 16, 20, 24, 32, 40, 48, 64 and 256 px.
 .PARAMETER OutputDirectory
   Folder that receives gapactivator.ico. Defaults to src/GapActivator.App/Assets/Icons.
 .PARAMETER PreviewDirectory
@@ -55,23 +57,34 @@ function New-IconPng([int]$size) {
     $white = [System.Drawing.Color]::White
     $c = $size / 2.0
 
-    # Clock ring: open at 12 o'clock (the gap), round caps. Thicker on small frames so it survives 16 px.
-    $stroke = if ($size -le 24) { $size * 0.11 } else { $size * 0.085 }
-    $radius = $size * 0.33
-    $pen = New-Object System.Drawing.Pen $white, ([single]$stroke)
-    $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
-    $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
-    $g.DrawArc($pen, [single]($c - $radius), [single]($c - $radius), [single](2 * $radius), [single](2 * $radius), [single]292, [single]316)
-
-    # Play triangle, nudged right so its centroid (not its bounding box) sits at the center.
-    $h = $size * 0.30
-    $w = $size * 0.26
-    $left = $c - ($w / 3.0)
-    $points = [System.Drawing.PointF[]]@(
-        (New-Object System.Drawing.PointF([single]$left, [single]($c - $h / 2))),
-        (New-Object System.Drawing.PointF([single]($left + $w), [single]$c)),
-        (New-Object System.Drawing.PointF([single]$left, [single]($c + $h / 2))))
     $whiteBrush = New-Object System.Drawing.SolidBrush $white
+    if ($size -le 32) {
+        # Simplified glyph: a larger triangle with every vertex on a whole pixel, so the left edge is crisp.
+        $h = [Math]::Round($size * 0.62 / 2) * 2
+        $w = [Math]::Round($h * 0.86)
+        $left = [Math]::Round($c - ($w / 3.0))
+        $top = $c - ($h / 2)
+    }
+    else {
+        # Full glyph: the triangle, nudged right so its centroid (not its bounding box) sits at the center,
+        # and four clock-tick dots around it.
+        $h = $size * 0.40
+        $w = $size * 0.35
+        $left = $c - ($w / 3.0)
+        $top = $c - ($h / 2)
+        $dot = $size * 0.032
+        $ring = $size * 0.36
+        foreach ($angle in 0, 90, 180, 270) {
+            $rad = $angle * [Math]::PI / 180.0
+            $dx = $c + $ring * [Math]::Cos($rad)
+            $dy = $c + $ring * [Math]::Sin($rad)
+            $g.FillEllipse($whiteBrush, [single]($dx - $dot), [single]($dy - $dot), [single](2 * $dot), [single](2 * $dot))
+        }
+    }
+    $points = [System.Drawing.PointF[]]@(
+        (New-Object System.Drawing.PointF([single]$left, [single]$top)),
+        (New-Object System.Drawing.PointF([single]($left + $w), [single]$c)),
+        (New-Object System.Drawing.PointF([single]$left, [single]($top + $h))))
     $g.FillPolygon($whiteBrush, $points)
 
     $ms = New-Object System.IO.MemoryStream
@@ -82,7 +95,7 @@ function New-IconPng([int]$size) {
         [System.IO.File]::WriteAllBytes((Join-Path (Resolve-Path $PreviewDirectory) "frame-$size.png"), $bytes)
     }
 
-    $pen.Dispose(); $whiteBrush.Dispose(); $tile.Dispose(); $fill.Dispose(); $ms.Dispose(); $g.Dispose(); $bmp.Dispose()
+    $whiteBrush.Dispose(); $tile.Dispose(); $fill.Dispose(); $ms.Dispose(); $g.Dispose(); $bmp.Dispose()
     # Unary comma keeps the byte[] from being unrolled by the pipeline.
     return , $bytes
 }
